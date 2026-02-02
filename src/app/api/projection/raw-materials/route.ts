@@ -429,7 +429,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Calcular média diária histórica
-      const totalHistorySales = mpSales.reduce((sum, s) => sum + s.quantity, 0);
+      const totalHistorySales = mpSales.reduce((sum: number, s: any) => sum + s.quantity, 0);
       const avgDailySales = validHistoryDays > 0 ? totalHistorySales / validHistoryDays : 0;
 
       // Calcular médias por dia da semana

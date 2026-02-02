@@ -203,7 +203,7 @@ export default function ProjecaoMPPage() {
       { name: 'Sexta', value: averages.sexta },
       { name: 'Sábado', value: averages.sabado },
     ];
-    return days.reduce((max, day) => day.value > max.value ? day : max, days[0]);
+    return days.reduce((max: any, day: any) => day.value > max.value ? day : max, days[0]);
   };
 
   // Calcular máximo para escala do gráfico

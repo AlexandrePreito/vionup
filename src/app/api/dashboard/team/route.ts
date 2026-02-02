@@ -263,7 +263,7 @@ export async function GET(request: NextRequest) {
     employeesData.sort((a, b) => b.revenue.realized - a.revenue.realized);
 
     // Adicionar ranking
-    const employeesWithRanking = employeesData.map((emp, index) => ({
+    const employeesWithRanking = employeesData.map((emp: any, index: number) => ({
       ...emp,
       ranking: index + 1
     }));
@@ -271,13 +271,13 @@ export async function GET(request: NextRequest) {
     // 9. Calcular resumo
     const summary = {
       total: employees.length,
-      achievedRevenue: employeesData.filter(e => e.revenue.status === 'achieved').length,
-      onTrackRevenue: employeesData.filter(e => e.revenue.status === 'ontrack').length,
-      behindRevenue: employeesData.filter(e => e.revenue.status === 'behind').length,
-      totalRevenueGoal: Object.values(revenueGoalByEmployee).reduce((a, b) => a + b, 0),
-      totalRevenueRealized: employeesData.reduce((sum, e) => sum + e.revenue.realized, 0),
+      achievedRevenue: employeesData.filter((e: any) => e.revenue.status === 'achieved').length,
+      onTrackRevenue: employeesData.filter((e: any) => e.revenue.status === 'ontrack').length,
+      behindRevenue: employeesData.filter((e: any) => e.revenue.status === 'behind').length,
+      totalRevenueGoal: Object.values(revenueGoalByEmployee).reduce((a: number, b: number) => a + b, 0),
+      totalRevenueRealized: employeesData.reduce((sum: number, e: any) => sum + e.revenue.realized, 0),
       totalProductGoals: (productGoals || []).length,
-      totalProductsAchieved: Object.values(productGoalsByEmployee).reduce((sum, p) => sum + p.achieved, 0)
+      totalProductsAchieved: Object.values(productGoalsByEmployee).reduce((sum: number, p: any) => sum + p.achieved, 0)
     };
 
     console.log('Resumo:', summary);

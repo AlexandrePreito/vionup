@@ -239,7 +239,7 @@ export default function PrevisaoPage() {
     previsaoData.periodo.month === new Date().getMonth() + 1;
 
   // Calcular totais da projeção diária
-  const totaisProjecao = previsaoData?.projecaoDiaria.reduce((acc, item) => ({
+  const totaisProjecao = previsaoData?.projecaoDiaria.reduce((acc: any, item: any) => ({
     otimista: acc.otimista + item.otimista,
     realista: acc.realista + item.realista,
     pessimista: acc.pessimista + item.pessimista

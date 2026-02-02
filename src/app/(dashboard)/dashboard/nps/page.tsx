@@ -700,7 +700,7 @@ export default function NPSDashboardPage() {
                           'bg-cyan-500',
                           'bg-teal-500'
                         ];
-                        const total = data.pesquisas.frequencia.reduce((sum, i) => sum + i.frequencia, 0);
+                        const total = data.pesquisas.frequencia.reduce((sum: number, i: any) => sum + i.frequencia, 0);
                         const percent = total > 0 ? (item.frequencia / total) * 100 : 0;
                         
                         return (
@@ -727,7 +727,7 @@ export default function NPSDashboardPage() {
                     <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between">
                       <span className="text-sm text-gray-500">Total de respostas</span>
                       <span className="font-semibold text-gray-900">
-                        {data.pesquisas.frequencia.reduce((sum, i) => sum + i.frequencia, 0).toLocaleString()}
+                        {data.pesquisas.frequencia.reduce((sum: number, i: any) => sum + i.frequencia, 0).toLocaleString()}
                       </span>
                     </div>
                   </div>
@@ -767,7 +767,7 @@ export default function NPSDashboardPage() {
                           'Indicação': '👥',
                           'Outros': '📌'
                         };
-                        const total = data.pesquisas.origem.reduce((sum, i) => sum + i.frequencia, 0);
+                        const total = data.pesquisas.origem.reduce((sum: number, i: any) => sum + i.frequencia, 0);
                         const percent = total > 0 ? (item.frequencia / total) * 100 : 0;
                         
                         return (
@@ -797,7 +797,7 @@ export default function NPSDashboardPage() {
                     <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between">
                       <span className="text-sm text-gray-500">Total de respostas</span>
                       <span className="font-semibold text-gray-900">
-                        {data.pesquisas.origem.reduce((sum, i) => sum + i.frequencia, 0).toLocaleString()}
+                        {data.pesquisas.origem.reduce((sum: number, i: any) => sum + i.frequencia, 0).toLocaleString()}
                       </span>
                     </div>
                   </div>

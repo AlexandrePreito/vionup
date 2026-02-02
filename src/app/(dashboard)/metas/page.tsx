@@ -1553,7 +1553,7 @@ export default function MetasPage() {
                           <span className="font-medium">{selectedSaleModes.length}</span> modo(s) selecionado(s)
                         </div>
                         <div className="text-sm text-gray-600">
-                          Total: <span className="font-bold text-gray-900">{formatValue(selectedSaleModes.reduce((sum, m) => sum + m.value, 0), formData.goal_unit)}</span>
+                          Total: <span className="font-bold text-gray-900">{formatValue(selectedSaleModes.reduce((sum: number, m: any) => sum + m.value, 0), formData.goal_unit)}</span>
                         </div>
                       </div>
                     )}
@@ -1766,7 +1766,7 @@ export default function MetasPage() {
                           <span className="font-medium">{selectedEmployees.length}</span> funcionário(s) selecionado(s)
                         </div>
                         <div className="text-sm text-gray-600">
-                          Total: <span className="font-bold text-gray-900">{formatValue(selectedEmployees.reduce((sum, e) => sum + e.value, 0), formData.goal_unit)}</span>
+                          Total: <span className="font-bold text-gray-900">{formatValue(selectedEmployees.reduce((sum: number, e: any) => sum + e.value, 0), formData.goal_unit)}</span>
                         </div>
                       </div>
                     )}
@@ -2057,7 +2057,7 @@ export default function MetasPage() {
                           <span className="font-medium">{selectedShifts.length}</span> turno(s) selecionado(s)
                         </div>
                         <div className="text-sm text-gray-600">
-                          Total: <span className="font-bold text-gray-900">{formatValue(selectedShifts.reduce((sum, s) => sum + s.value, 0), formData.goal_unit)}</span>
+                          Total: <span className="font-bold text-gray-900">{formatValue(selectedShifts.reduce((sum: number, s: any) => sum + s.value, 0), formData.goal_unit)}</span>
                         </div>
                       </div>
                     )}

@@ -317,7 +317,7 @@ export async function GET(request: NextRequest) {
       const productStock = stockMap.get(product.external_id);
 
       // Calcular média diária histórica
-      const totalHistorySales = productSales.reduce((sum, s) => sum + s.quantity, 0);
+      const totalHistorySales = productSales.reduce((sum: number, s: any) => sum + s.quantity, 0);
       const avgDailySales = validHistoryDays > 0 ? totalHistorySales / validHistoryDays : 0;
 
       // Calcular médias por dia da semana

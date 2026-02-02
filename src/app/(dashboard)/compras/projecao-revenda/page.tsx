@@ -104,7 +104,7 @@ export default function ProjecaoRevendaPage() {
   const productGroups = [...new Set(projection.map(p => p.productGroup).filter(Boolean))].sort();
 
   // Mapa de tags por produto
-  const tagsByProduct = tagAssignments.reduce((acc, assignment) => {
+  const tagsByProduct = tagAssignments.reduce((acc: any, assignment: any) => {
     if (!acc[assignment.external_product_id]) {
       acc[assignment.external_product_id] = [];
     }
@@ -291,7 +291,7 @@ export default function ProjecaoRevendaPage() {
       { name: 'Sexta', value: averages.sexta },
       { name: 'Sábado', value: averages.sabado },
     ];
-    return days.reduce((max, day) => day.value > max.value ? day : max, days[0]);
+    return days.reduce((max: any, day: any) => day.value > max.value ? day : max, days[0]);
   };
 
   // Calcular máximo para escala do gráfico

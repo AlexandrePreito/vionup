@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
       if (salesError) {
         console.error('Erro ao buscar vendas da materialized view:', salesError);
       } else if (salesSummary && salesSummary.length > 0) {
-        totalRevenue = salesSummary.reduce((sum, s) => sum + (s.total_revenue || 0), 0);
+        totalRevenue = salesSummary.reduce((sum: number, s: any) => sum + (s.total_revenue || 0), 0);
         console.log('Faturamento total (via MATERIALIZED VIEW):', totalRevenue);
       }
     }
@@ -288,7 +288,7 @@ export async function GET(request: NextRequest) {
 
     // 9. Calcular meta de faturamento consolidada
     const revenueGoal = revenueGoals && revenueGoals.length > 0 
-      ? revenueGoals.reduce((sum, g) => sum + (g.goal_value || 0), 0)
+      ? revenueGoals.reduce((sum: number, g: any) => sum + (g.goal_value || 0), 0)
       : 0;
 
     const revenueProgress = revenueGoal > 0 ? (totalRevenue / revenueGoal) * 100 : 0;

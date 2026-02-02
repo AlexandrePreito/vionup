@@ -501,7 +501,7 @@ export default function MetaProdutosPage() {
   const years = [2025, 2026, 2027, 2028, 2029, 2030];
 
   // Total de itens selecionados
-  const totalQuantity = selectedProducts.reduce((sum, p) => sum + p.quantity, 0);
+  const totalQuantity = selectedProducts.reduce((sum: number, p: any) => sum + p.quantity, 0);
 
   // Exportar para CSV
   const handleExport = () => {

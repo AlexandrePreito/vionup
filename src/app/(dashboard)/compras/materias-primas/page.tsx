@@ -184,7 +184,7 @@ export default function MateriasPrimasPage() {
     if (!item.raw_material_stock || item.raw_material_stock.length === 0) {
       return 0;
     }
-    return item.raw_material_stock.reduce((total, link) => {
+    return item.raw_material_stock.reduce((total: number, link: any) => {
       const qty = link.external_stock?.quantity || 0;
       return total + qty;
     }, 0);

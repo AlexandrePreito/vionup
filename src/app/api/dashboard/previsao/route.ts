@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
       .eq('month', monthNum);
 
     if (cashFlowSummaries && cashFlowSummaries.length > 0) {
-      realizadoTotal = cashFlowSummaries.reduce((sum, cf) => sum + (cf.total_amount || 0), 0);
+      realizadoTotal = cashFlowSummaries.reduce((sum: number, cf: any) => sum + (cf.total_amount || 0), 0);
     }
     console.log('Realizado total (materialized view):', realizadoTotal);
 
@@ -179,7 +179,7 @@ export async function GET(request: NextRequest) {
 
     // 8. Calcular médias e percentis por dia da semana
     const calcStats = (values: number[]) => ({
-      media: values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0,
+      media: values.length > 0 ? values.reduce((a: number, b: number) => a + b, 0) / values.length : 0,
       p25: calculatePercentile(values, 25),
       p75: calculatePercentile(values, 75)
     });
@@ -207,9 +207,9 @@ export async function GET(request: NextRequest) {
     // Manter compatibilidade com estrutura antiga (para os cards)
     const medias = {
       diasUteis: {
-        media: [1,2,3,4,5].reduce((sum, d) => sum + mediasPorDia[d].media, 0) / 5,
-        p25: [1,2,3,4,5].reduce((sum, d) => sum + mediasPorDia[d].p25, 0) / 5,
-        p75: [1,2,3,4,5].reduce((sum, d) => sum + mediasPorDia[d].p75, 0) / 5,
+        media: [1,2,3,4,5].reduce((sum: number, d: number) => sum + mediasPorDia[d].media, 0) / 5,
+        p25: [1,2,3,4,5].reduce((sum: number, d: number) => sum + mediasPorDia[d].p25, 0) / 5,
+        p75: [1,2,3,4,5].reduce((sum: number, d: number) => sum + mediasPorDia[d].p75, 0) / 5,
       },
       sabados: mediasPorDia[6],
       domingos: mediasPorDia[0],
@@ -451,7 +451,7 @@ export async function GET(request: NextRequest) {
 
     // 16. Calcular estatísticas
     const valoresDiarios = graficoRealizado.filter(d => d.valor > 0).map(d => d.valor);
-    const media = valoresDiarios.length > 0 ? valoresDiarios.reduce((a, b) => a + b, 0) / valoresDiarios.length : 0;
+    const media = valoresDiarios.length > 0 ? valoresDiarios.reduce((a: number, b: number) => a + b, 0) / valoresDiarios.length : 0;
     const sorted = [...valoresDiarios].sort((a, b) => a - b);
     const mediana = sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0;
 
@@ -462,10 +462,10 @@ export async function GET(request: NextRequest) {
 
     if (dadosComValor.length > 1) {
       const n = dadosComValor.length;
-      const sumX = dadosComValor.reduce((a, d) => a + d.dia, 0);
-      const sumY = dadosComValor.reduce((a, d) => a + d.valor, 0);
-      const sumXY = dadosComValor.reduce((a, d) => a + d.dia * d.valor, 0);
-      const sumX2 = dadosComValor.reduce((a, d) => a + d.dia * d.dia, 0);
+      const sumX = dadosComValor.reduce((a: number, d: any) => a + d.dia, 0);
+      const sumY = dadosComValor.reduce((a: number, d: any) => a + d.valor, 0);
+      const sumXY = dadosComValor.reduce((a: number, d: any) => a + d.dia * d.valor, 0);
+      const sumX2 = dadosComValor.reduce((a: number, d: any) => a + d.dia * d.dia, 0);
       const denom = n * sumX2 - sumX * sumX;
       if (denom !== 0) {
         slope = (n * sumXY - sumX * sumY) / denom;
@@ -489,7 +489,7 @@ export async function GET(request: NextRequest) {
         .eq('month', prevMonth);
 
       if (prevSummary && prevSummary.length > 0) {
-        const prevTotal = prevSummary.reduce((sum, cf) => sum + (cf.total_amount || 0), 0);
+        const prevTotal = prevSummary.reduce((sum: number, cf: any) => sum + (cf.total_amount || 0), 0);
         const prevMonthEnd = new Date(prevYear, prevMonth, 0);
         const prevMonthStartStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`;
         const prevMonthEndStr = prevMonthEnd.toISOString().split('T')[0];
