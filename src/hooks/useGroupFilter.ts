@@ -16,15 +16,42 @@ export function useGroupFilter() {
     console.log('useGroupFilter - Buscando grupos...');
     console.log('useGroupFilter - Usuário atual:', currentUser ? { id: currentUser.id, role: currentUser.role } : 'null');
     
-    fetch('/api/groups')
+    // Buscar grupos incluindo inativos temporariamente para debug
+    fetch('/api/groups?include_inactive=true')
       .then(res => {
         console.log('useGroupFilter - Status da resposta:', res.status);
+        if (!res.ok) {
+          console.error('useGroupFilter - Erro na resposta:', res.status, res.statusText);
+          return res.json().then(err => { throw new Error(err.error || 'Erro ao buscar grupos'); });
+        }
         return res.json();
       })
       .then(data => {
         console.log('useGroupFilter - Dados recebidos:', data);
         const groupsArray = data?.groups || [];
         console.log('useGroupFilter - Grupos encontrados:', groupsArray.length);
+        
+        // Mostrar informações de debug se não houver grupos
+        if (groupsArray.length === 0 && data?.debug) {
+          console.warn('useGroupFilter - DEBUG: Nenhum grupo encontrado');
+          console.warn('useGroupFilter - DEBUG:', {
+            userRole: data.debug.userRole,
+            includeInactive: data.debug.includeInactive,
+            totalGroupsInDb: data.debug.totalGroupsInDb,
+            groupsInDb: data.debug.groupsInDb,
+            error: data.debug.error
+          });
+          
+          if (data.debug.totalGroupsInDb === 0) {
+            console.warn('useGroupFilter - Não há grupos cadastrados no banco de dados. Acesse /grupos para criar um grupo.');
+          } else {
+            console.warn('useGroupFilter - Há grupos no banco, mas não foram retornados. Verifique os filtros aplicados.');
+          }
+        }
+        
+        if (groupsArray.length > 0) {
+          console.log('useGroupFilter - Primeiros grupos:', groupsArray.slice(0, 3).map((g: any) => ({ id: g.id, name: g.name, is_active: g.is_active })));
+        }
         setGroups(Array.isArray(groupsArray) ? groupsArray : []);
       })
       .catch(err => {

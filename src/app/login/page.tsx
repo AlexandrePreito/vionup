@@ -100,6 +100,42 @@ function FeatureItem({ icon: Icon, text, delay }: { icon: any; text: string; del
   );
 }
 
+// Componente Rocket com gradiente
+function RocketIcon({ className = "w-12 h-12", rotate = false }: { className?: string; rotate?: boolean }) {
+  // Gerar ID único para o gradiente para evitar conflitos
+  const gradientId = `rocketGradient-${Math.random().toString(36).substr(2, 9)}`;
+  
+  return (
+    <svg 
+      className={`${className} ${rotate ? 'transform -rotate-45' : ''}`} 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#3b82f6" />
+          <stop offset="100%" stopColor="#06b6d4" />
+        </linearGradient>
+      </defs>
+      <path 
+        d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09zM12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" 
+        stroke={`url(#${gradientId})`}
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+      <path 
+        d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" 
+        stroke={`url(#${gradientId})`}
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
@@ -155,9 +191,7 @@ export default function LoginPage() {
           <div className="relative z-10 flex flex-col justify-between p-12 w-full">
             {/* Logo */}
             <div className={`flex items-center gap-3 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/25">
-                <Rocket className="w-6 h-6 text-white transform -rotate-45" />
-              </div>
+              <RocketIcon className="w-12 h-12" rotate={true} />
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Vion Up!</h1>
                 <p className="text-sm text-gray-600">Inteligência em metas</p>
@@ -231,7 +265,7 @@ export default function LoginPage() {
             className="absolute bottom-20 right-12 opacity-5"
             style={{ animation: 'float 6s ease-in-out infinite' }}
           >
-            <Rocket className="w-32 h-32 text-blue-400 transform -rotate-45" />
+            <RocketIcon className="w-32 h-32" rotate={true} />
           </div>
         </div>
 
@@ -240,9 +274,7 @@ export default function LoginPage() {
           <div className={`w-full max-w-md transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
             {/* Logo mobile */}
             <div className="lg:hidden flex items-center gap-3 mb-8">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center">
-                <Rocket className="w-5 h-5 text-white transform -rotate-45" />
-              </div>
+              <RocketIcon className="w-10 h-10" rotate={true} />
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Vion Up!</h1>
                 <p className="text-xs text-gray-400">Inteligência em metas</p>
@@ -343,12 +375,10 @@ export default function LoginPage() {
 
       {/* Overlay de transição */}
       {transitioning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-blue-500 to-cyan-500 transition-overlay">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white transition-overlay">
           <div className="flex flex-col items-center gap-4 transition-spinner">
-            <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center animate-bounce">
-              <Rocket className="w-8 h-8 text-white transform -rotate-45" />
-            </div>
-            <p className="text-white font-medium">Carregando...</p>
+            <RocketIcon className="w-16 h-16 rocket-flying" rotate={true} />
+            <p className="text-gray-700 font-medium">Carregando...</p>
           </div>
         </div>
       )}
@@ -358,6 +388,28 @@ export default function LoginPage() {
         @keyframes float {
           0%, 100% { transform: translateY(0px) rotate(-45deg); }
           50% { transform: translateY(-20px) rotate(-45deg); }
+        }
+        
+        @keyframes rocketFly {
+          0% { 
+            transform: translateY(0px) translateX(0px) rotate(-45deg);
+          }
+          25% { 
+            transform: translateY(-15px) translateX(10px) rotate(-45deg);
+          }
+          50% { 
+            transform: translateY(-25px) translateX(20px) rotate(-45deg);
+          }
+          75% { 
+            transform: translateY(-15px) translateX(10px) rotate(-45deg);
+          }
+          100% { 
+            transform: translateY(0px) translateX(0px) rotate(-45deg);
+          }
+        }
+        
+        .rocket-flying {
+          animation: rocketFly 2s ease-in-out infinite;
         }
         
         .page-transition {

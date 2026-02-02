@@ -96,6 +96,60 @@ function AnimatedProgress({ progress, color = 'bg-amber-400', delay = 0 }) {
   );
 }
 
+// Componente Rocket com gradiente (stroke apenas)
+function RocketIcon({ className = "w-8 h-8", rotate = false }: { className?: string; rotate?: boolean }) {
+  // Gerar ID único para o gradiente para evitar conflitos
+  const gradientId = `rocketGradientHome-${Math.random().toString(36).substr(2, 9)}`;
+  
+  return (
+    <svg 
+      className={`${className} ${rotate ? 'transform -rotate-45' : ''}`} 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#3b82f6" />
+          <stop offset="100%" stopColor="#06b6d4" />
+        </linearGradient>
+      </defs>
+      <path 
+        d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" 
+        stroke={`url(#${gradientId})`} 
+        strokeWidth="1.5" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+        fill="none"
+      />
+      <path 
+        d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" 
+        stroke={`url(#${gradientId})`} 
+        strokeWidth="1.5" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+        fill="none"
+      />
+      <path 
+        d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" 
+        stroke={`url(#${gradientId})`} 
+        strokeWidth="1.5" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+        fill="none"
+      />
+      <path 
+        d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" 
+        stroke={`url(#${gradientId})`} 
+        strokeWidth="1.5" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+        fill="none"
+      />
+    </svg>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -294,9 +348,7 @@ export default function HomePage() {
           <nav className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {/* Rocket Logo - Ícone azul degradê */}
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/25">
-                <Rocket className="w-5 h-5 text-white transform -rotate-45" />
-              </div>
+              <RocketIcon className="w-10 h-10" rotate={true} />
               <div>
                 <h1 className="text-xl font-bold text-gray-900">
                   Vion Up!
@@ -480,9 +532,7 @@ export default function HomePage() {
       <footer className="border-t border-gray-100 py-6 mt-12 bg-white/50">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
-              <Rocket className="w-3.5 h-3.5 text-white transform -rotate-45" />
-            </div>
+            <RocketIcon className="w-6 h-6" rotate={true} />
             <span className="text-sm text-gray-500">Vion Up! © 2025 - Todos os direitos reservados</span>
           </div>
           <div className="flex items-center gap-4">

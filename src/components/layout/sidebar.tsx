@@ -24,7 +24,8 @@ import {
   User,
   Upload,
   Star,
-  Rocket
+  BarChart3,
+  Calendar
 } from 'lucide-react';
 
 interface SidebarItem {
@@ -135,6 +136,16 @@ const dashboardItems: SidebarItem[] = [
     tooltip: 'Previsão de Vendas'
   },
   {
+    href: '/dashboard/realizado',
+    icon: <BarChart3 size={20} />,
+    tooltip: 'Realizado'
+  },
+  {
+    href: '/dashboard/realizado-mes',
+    icon: <Calendar size={20} />,
+    tooltip: 'Realizado por Mês'
+  },
+  {
     href: '/dashboard/nps',
     icon: <Star size={20} />,
     tooltip: 'NPS'
@@ -206,13 +217,52 @@ export function Sidebar() {
       {/* Header */}
       <div className={`flex items-center ${isExpanded ? 'justify-start gap-3 px-4' : 'justify-center'} p-4 border-b border-gray-200 h-16 transition-all duration-300`}>
         <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-          <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-            <Rocket className="w-5 h-5 transform -rotate-45 text-white" style={{
-              fill: 'white',
-              stroke: 'white',
-              strokeWidth: 1.5
-            }} />
-          </div>
+          {/* Rocket Icon com gradiente e rotação baseada no estado */}
+          <svg 
+            className={`w-8 h-8 transition-transform duration-300 ${isExpanded ? 'rotate-45' : '-rotate-45'}`}
+            viewBox="0 0 24 24" 
+            fill="none" 
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <defs>
+              <linearGradient id="rocketGradientSidebar" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#3b82f6" />
+                <stop offset="100%" stopColor="#06b6d4" />
+              </linearGradient>
+            </defs>
+            <path 
+              d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" 
+              stroke="url(#rocketGradientSidebar)" 
+              strokeWidth="1.5" 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              fill="none"
+            />
+            <path 
+              d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" 
+              stroke="url(#rocketGradientSidebar)" 
+              strokeWidth="1.5" 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              fill="none"
+            />
+            <path 
+              d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" 
+              stroke="url(#rocketGradientSidebar)" 
+              strokeWidth="1.5" 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              fill="none"
+            />
+            <path 
+              d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" 
+              stroke="url(#rocketGradientSidebar)" 
+              strokeWidth="1.5" 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              fill="none"
+            />
+          </svg>
         </div>
         {isExpanded && (
           <div className="flex flex-col">
