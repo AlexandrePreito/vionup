@@ -198,7 +198,6 @@ export default function PermissoesPage() {
                       </div>
                       <div>
                         <p className="font-medium text-gray-900">{module.label}</p>
-                        <p className="text-sm text-gray-500">{module.route}</p>
                       </div>
                     </div>
                   </td>
