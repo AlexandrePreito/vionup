@@ -4,10 +4,10 @@ import { supabaseAdmin } from '@/lib/supabase';
 // GET - Buscar empresas vinculadas ao usuário
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const userId = params.id;
+    const { id: userId } = await params;
 
     const { data, error } = await supabaseAdmin
       .from('user_companies')
@@ -31,10 +31,10 @@ export async function GET(
 // PUT - Atualizar empresas vinculadas ao usuário
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const userId = params.id;
+    const { id: userId } = await params;
     const { company_ids } = await request.json();
 
     // Remover vínculos antigos
