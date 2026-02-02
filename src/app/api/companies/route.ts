@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
         if (groupId) {
           query = query.eq('company_group_id', groupId);
         }
-      } else if (user.role === 'group_admin' || user.role === 'admin') {
-        // Admin (group_admin) vê apenas empresas do seu grupo
+      } else if (user.role === 'group_admin') {
+        // Group Admin vê apenas empresas do seu grupo
         // Ignorar group_id da query, usar sempre o do usuário
         if (user.company_group_id) {
           console.log('API /companies - Filtrando por company_group_id do usuário:', user.company_group_id);
