@@ -374,7 +374,7 @@ export async function GET(request: NextRequest) {
         if (!externalId) continue;
         
         // Buscar o produto externo pelo external_id (código) usando o mapa
-        const ep = externalProductsMap.get(externalId);
+        const ep: any = externalProductsMap.get(externalId);
         
         const productSales = salesByProduct.get(externalId) || [];
         const quantityPerUnit = rmp.quantity_per_unit || 1;
