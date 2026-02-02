@@ -8,14 +8,14 @@ import { User, Company, CompanyGroup } from '@/types';
 import { toast } from '@/lib/toast';
 
 const roleLabels: Record<string, string> = {
-  master: 'Master',
-  admin: 'Admin Grupo',
+  group_admin: 'Admin Grupo',
+  company_admin: 'Admin Empresa',
   user: 'Usuário'
 };
 
 const roleOptions = [
-  { value: 'master', label: 'Master' },
-  { value: 'admin', label: 'Admin Grupo' },
+  { value: 'group_admin', label: 'Admin Grupo' },
+  { value: 'company_admin', label: 'Admin Empresa' },
   { value: 'user', label: 'Usuário' },
 ];
 
@@ -163,8 +163,8 @@ export default function UsuariosPage() {
     }
 
     // Validações de hierarquia
-    if (formData.role !== 'master' && !formData.company_group_id) {
-      toast.warning('Grupo é obrigatório para usuários não-master');
+    if ((formData.role === 'group_admin' || formData.role === 'company_admin') && !formData.company_group_id) {
+      toast.warning('Grupo é obrigatório para administradores');
       return;
     }
 
@@ -183,7 +183,7 @@ export default function UsuariosPage() {
         name: formData.name,
         email: formData.email,
         role: formData.role,
-        company_group_id: formData.role !== 'master' ? formData.company_group_id : null,
+        company_group_id: (formData.role === 'group_admin' || formData.role === 'company_admin') ? formData.company_group_id : null,
         company_ids: formData.role === 'user' ? selectedCompanies : []
       };
 
@@ -241,7 +241,7 @@ export default function UsuariosPage() {
 
   const groupOptions = groups.map(g => ({ value: g.id, label: g.name }));
 
-  const needsGroup = formData.role !== 'master';
+  const needsGroup = formData.role === 'group_admin' || formData.role === 'company_admin';
   const needsCompanies = formData.role === 'user'; // user precisa vincular empresas
 
   return (
@@ -311,9 +311,9 @@ export default function UsuariosPage() {
                 <TableCell className="text-gray-500">{user.email}</TableCell>
                 <TableCell>
                   <span className={`inline-flex items-center px-3 py-1 text-xs font-medium rounded-full ${
-                    user.role === 'master' 
+                    user.role === 'group_admin' 
                       ? 'bg-purple-100 text-purple-700' :
-                    user.role === 'admin' 
+                    user.role === 'company_admin' 
                       ? 'bg-blue-100 text-blue-700' :
                     'bg-emerald-100 text-emerald-700'
                   }`}>
@@ -410,7 +410,7 @@ export default function UsuariosPage() {
                 setFormData({ 
                   ...formData, 
                   role: newRole,
-                  company_group_id: newRole === 'master' ? '' : formData.company_group_id
+                  company_group_id: (newRole === 'group_admin' || newRole === 'company_admin') ? formData.company_group_id : ''
                 });
                 if (newRole !== 'user') {
                   setSelectedCompanies([]);
