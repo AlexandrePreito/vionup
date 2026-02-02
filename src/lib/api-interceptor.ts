@@ -72,3 +72,8 @@ if (typeof window !== 'undefined') {
     initializeInterceptor();
   }
 }
+
+// Exportar função para tornar o arquivo um módulo válido
+export function initializeApiInterceptor() {
+  initializeInterceptor();
+}
