@@ -28,8 +28,8 @@ export async function GET(request: NextRequest) {
       if (user.role === 'master') {
         // Master vê tudo (sem filtro adicional)
         console.log('API /groups - Master: retornando todos os grupos');
-      } else if (user.role === 'group_admin' || user.role === 'admin') {
-        // Admin só vê o próprio grupo
+      } else if (user.role === 'group_admin') {
+        // Group Admin só vê o próprio grupo
         if (user.company_group_id) {
           console.log('API /groups - group_admin: filtrando por company_group_id:', user.company_group_id);
           query = query.eq('id', user.company_group_id);

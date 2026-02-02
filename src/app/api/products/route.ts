@@ -24,8 +24,8 @@ export async function GET(request: NextRequest) {
       if (user.role === 'master') {
         // Master vê tudo - usar group_id se informado
         effectiveGroupId = groupId;
-      } else if (user.role === 'group_admin' || user.role === 'admin') {
-        // Admin (group_admin) vê apenas produtos do seu grupo
+      } else if (user.role === 'group_admin') {
+        // Group Admin vê apenas produtos do seu grupo
         // Ignorar group_id da query, usar sempre o do usuário
         if (user.company_group_id) {
           console.log('API /products - Filtrando por company_group_id do usuário:', user.company_group_id);

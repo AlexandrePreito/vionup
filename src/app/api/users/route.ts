@@ -42,8 +42,8 @@ export async function GET(request: NextRequest) {
         } else {
           console.log('API /users - Master sem filtro de grupo, retornando todos');
         }
-      } else if (user.role === 'group_admin' || user.role === 'admin') {
-        // Admin (group_admin) vê apenas usuários do seu grupo
+      } else if (user.role === 'group_admin') {
+        // Group Admin vê apenas usuários do seu grupo
         if (user.company_group_id) {
           console.log('API /users - group_admin filtrando por company_group_id:', user.company_group_id);
           query = query.eq('company_group_id', user.company_group_id);
