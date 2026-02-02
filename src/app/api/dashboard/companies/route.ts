@@ -41,11 +41,11 @@ export async function GET(request: NextRequest) {
     const { data: allMappings } = await supabaseAdmin
       .from('company_mappings')
       .select('company_id, external_company_id')
-      .in('company_id', companies.map(c => c.id))
+      .in('company_id', companies.map((c: { id: string }) => c.id))
       .eq('company_group_id', groupId);
 
     // 3. Buscar códigos externos
-    const externalUuids = [...new Set(allMappings?.map(m => m.external_company_id) || [])];
+    const externalUuids = [...new Set(allMappings?.map((m: { external_company_id: string }) => m.external_company_id) || [])];
     let uuidToCode: Record<string, string> = {};
     
     if (externalUuids.length > 0) {
@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
       .from('sales_goals')
       .select('company_id, goal_value')
       .eq('company_group_id', groupId)
-      .in('company_id', companies.map(c => c.id))
+      .in('company_id', companies.map((c: { id: string }) => c.id))
       .eq('goal_type', 'company_revenue')
       .eq('year', yearNum)
       .eq('month', monthNum)
@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
       .from('sales_goals')
       .select('company_id, shift_id, goal_value')
       .eq('company_group_id', groupId)
-      .in('company_id', companies.map(c => c.id))
+      .in('company_id', companies.map((c: { id: string }) => c.id))
       .eq('goal_type', 'shift')
       .eq('year', yearNum)
       .eq('month', monthNum)
@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
       // Por enquanto, considerar que se a empresa bateu a meta de faturamento, 
       // provavelmente bateu as metas de turno também (simplificado)
       const codes = companyCodes[goal.company_id] || [];
-      const companyRevenue = codes.reduce((sum, code) => sum + (revenueByCode[code] || 0), 0);
+      const companyRevenue = codes.reduce((sum: number, code: string) => sum + (revenueByCode[code] || 0), 0);
       const companyGoal = revenueGoalByCompany[goal.company_id] || 0;
       if (companyGoal > 0 && companyRevenue >= companyGoal) {
         shiftGoalsByCompany[goal.company_id].achieved++;
@@ -148,7 +148,7 @@ export async function GET(request: NextRequest) {
       .from('sales_goals')
       .select('company_id, sale_mode_id, goal_value')
       .eq('company_group_id', groupId)
-      .in('company_id', companies.map(c => c.id))
+      .in('company_id', companies.map((c: { id: string }) => c.id))
       .eq('goal_type', 'sale_mode')
       .eq('year', yearNum)
       .eq('month', monthNum)
@@ -165,7 +165,7 @@ export async function GET(request: NextRequest) {
       
       // Similar ao turno, usar lógica simplificada
       const codes = companyCodes[goal.company_id] || [];
-      const companyRevenue = codes.reduce((sum, code) => sum + (revenueByCode[code] || 0), 0);
+      const companyRevenue = codes.reduce((sum: number, code: string) => sum + (revenueByCode[code] || 0), 0);
       const companyGoal = revenueGoalByCompany[goal.company_id] || 0;
       if (companyGoal > 0 && companyRevenue >= companyGoal) {
         saleModeGoalsByCompany[goal.company_id].achieved++;
@@ -173,10 +173,10 @@ export async function GET(request: NextRequest) {
     }
 
     // 8. Montar dados das empresas
-    const companiesData = companies.map(company => {
+    const companiesData = companies.map((company: { id: string; name: string }) => {
       // Somar faturamento de todas as empresas externas vinculadas
       const codes = companyCodes[company.id] || [];
-      const totalRevenue = codes.reduce((sum, code) => {
+      const totalRevenue = codes.reduce((sum: number, code: string) => {
         return sum + (revenueByCode[code] || 0);
       }, 0);
       
@@ -214,10 +214,10 @@ export async function GET(request: NextRequest) {
     });
 
     // Ordenar por faturamento realizado (decrescente)
-    companiesData.sort((a, b) => b.revenue.realized - a.revenue.realized);
+    companiesData.sort((a: any, b: any) => b.revenue.realized - a.revenue.realized);
 
     // Adicionar ranking
-    const companiesWithRanking = companiesData.map((company, index) => ({
+    const companiesWithRanking = companiesData.map((company: any, index: number) => ({
       ...company,
       ranking: index + 1
     }));
@@ -225,15 +225,15 @@ export async function GET(request: NextRequest) {
     // 9. Calcular resumo
     const summary = {
       total: companies.length,
-      achievedRevenue: companiesData.filter(c => c.revenue.status === 'achieved').length,
-      onTrackRevenue: companiesData.filter(c => c.revenue.status === 'ontrack').length,
-      behindRevenue: companiesData.filter(c => c.revenue.status === 'behind').length,
-      totalRevenueGoal: Object.values(revenueGoalByCompany).reduce((a, b) => a + b, 0),
-      totalRevenueRealized: companiesData.reduce((sum, c) => sum + c.revenue.realized, 0),
+      achievedRevenue: companiesData.filter((c: any) => c.revenue.status === 'achieved').length,
+      onTrackRevenue: companiesData.filter((c: any) => c.revenue.status === 'ontrack').length,
+      behindRevenue: companiesData.filter((c: any) => c.revenue.status === 'behind').length,
+      totalRevenueGoal: Object.values(revenueGoalByCompany).reduce((a: number, b: number) => a + b, 0),
+      totalRevenueRealized: companiesData.reduce((sum: number, c: any) => sum + c.revenue.realized, 0),
       totalShiftGoals: (shiftGoals || []).length,
-      totalShiftsAchieved: Object.values(shiftGoalsByCompany).reduce((sum, s) => sum + s.achieved, 0),
+      totalShiftsAchieved: Object.values(shiftGoalsByCompany).reduce((sum: number, s: { achieved: number }) => sum + s.achieved, 0),
       totalSaleModeGoals: (saleModeGoals || []).length,
-      totalSaleModesAchieved: Object.values(saleModeGoalsByCompany).reduce((sum, s) => sum + s.achieved, 0)
+      totalSaleModesAchieved: Object.values(saleModeGoalsByCompany).reduce((sum: number, s: { achieved: number }) => sum + s.achieved, 0)
     };
 
     console.log('Resumo:', summary);
