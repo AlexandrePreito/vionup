@@ -389,7 +389,7 @@ export default function FuncionariosPage() {
 
       // Pular cabeçalho
       const rows = dataLines.slice(1);
-      const employees = [];
+      const employees: any[] = [];
 
       for (const row of rows) {
         const [companyName, name, code, email, phone, position] = row;
