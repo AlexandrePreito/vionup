@@ -45,6 +45,8 @@ export interface User {
   last_login_at?: string;
   created_at: string;
   updated_at: string;
+  // Campos calculados
+  companies_count?: number;
   // Relacionamentos
   company_group?: CompanyGroup;
   company?: Company;
