@@ -204,7 +204,7 @@ export function UserMenu() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closePasswordDialog} disabled={isLoading}>
+            <Button variant="secondary" onClick={closePasswordDialog} disabled={isLoading}>
               Cancelar
             </Button>
             <Button onClick={handleChangePassword} disabled={isLoading}>
