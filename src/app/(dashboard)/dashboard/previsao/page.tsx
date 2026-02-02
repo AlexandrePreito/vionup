@@ -534,7 +534,7 @@ export default function PrevisaoPage() {
                     tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
                   />
                   <Tooltip 
-                    formatter={(value: number) => value ? formatCurrency(value) : '-'}
+                    formatter={(value) => typeof value === 'number' ? formatCurrency(value) : '-'}
                     labelFormatter={(label) => `Dia ${label}`}
                     contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
                   />
@@ -613,7 +613,7 @@ export default function PrevisaoPage() {
                     tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
                   />
                   <Tooltip 
-                    formatter={(value: number) => value ? formatCurrency(value) : '-'}
+                    formatter={(value) => typeof value === 'number' ? formatCurrency(value) : '-'}
                     labelFormatter={(label) => `Dia ${label}`}
                     contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
                   />
@@ -648,9 +648,9 @@ export default function PrevisaoPage() {
                     <LabelList 
                       dataKey="otimista" 
                       position="top" 
-                      formatter={(value: number, entry: any, index: number) => {
+                      formatter={(value, entry: any, index: number) => {
                         // Mostrar apenas no último ponto não-null
-                        if (!value) return '';
+                        if (typeof value !== 'number' || !value) return '';
                         const lastIndex = graficoPrincipalData.findLastIndex((d: any) => d.otimista !== null);
                         return index === lastIndex ? formatCurrency(value) : '';
                       }}
@@ -670,9 +670,9 @@ export default function PrevisaoPage() {
                     <LabelList 
                       dataKey="realista" 
                       position="top" 
-                      formatter={(value: number, entry: any, index: number) => {
+                      formatter={(value, entry: any, index: number) => {
                         // Mostrar apenas no último ponto não-null
-                        if (!value) return '';
+                        if (typeof value !== 'number' || !value) return '';
                         const lastIndex = graficoPrincipalData.findLastIndex((d: any) => d.realista !== null);
                         return index === lastIndex ? formatCurrency(value) : '';
                       }}
@@ -692,9 +692,9 @@ export default function PrevisaoPage() {
                     <LabelList 
                       dataKey="pessimista" 
                       position="top" 
-                      formatter={(value: number, entry: any, index: number) => {
+                      formatter={(value, entry: any, index: number) => {
                         // Mostrar apenas no último ponto não-null
-                        if (!value) return '';
+                        if (typeof value !== 'number' || !value) return '';
                         const lastIndex = graficoPrincipalData.findLastIndex((d: any) => d.pessimista !== null);
                         return index === lastIndex ? formatCurrency(value) : '';
                       }}
@@ -758,7 +758,7 @@ export default function PrevisaoPage() {
                       tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
                     />
                     <Tooltip 
-                      formatter={(value: number) => value ? formatCurrency(value) : '-'}
+                      formatter={(value) => typeof value === 'number' ? formatCurrency(value) : '-'}
                       labelFormatter={(label) => `Dia ${label}`}
                       contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: 12 }}
                     />
