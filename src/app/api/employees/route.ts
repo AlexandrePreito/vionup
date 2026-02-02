@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     // Filtrar por grupo se necessário (filtro adicional pós-query)
     let filteredData = data;
     if (groupId) {
-      filteredData = data?.filter(emp => emp.company?.company_group_id === groupId) || [];
+      filteredData = data?.filter((emp: any) => emp.company?.company_group_id === groupId) || [];
     }
 
     return NextResponse.json({ employees: filteredData });
