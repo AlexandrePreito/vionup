@@ -57,11 +57,11 @@ export async function GET(request: NextRequest) {
     const { data: allMappings } = await supabaseAdmin
       .from('employee_mappings')
       .select('employee_id, external_employee_id')
-      .in('employee_id', employees.map(e => e.id))
+      .in('employee_id', employees.map((e: any) => e.id))
       .eq('company_group_id', companyGroupId);
 
     // 4. Buscar códigos externos
-    const externalUuids = allMappings?.map(m => m.external_employee_id) || [];
+    const externalUuids = allMappings?.map((m: any) => m.external_employee_id) || [];
     let uuidToCode: Record<string, string> = {};
     
     if (externalUuids.length > 0) {
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
       .from('sales_goals')
       .select('employee_id, goal_value')
       .eq('company_group_id', companyGroupId)
-      .in('employee_id', employees.map(e => e.id))
+      .in('employee_id', employees.map((e: any) => e.id))
       .eq('goal_type', 'employee_revenue')
       .eq('year', yearNum)
       .eq('month', monthNum)
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
       .from('sales_goals')
       .select('id, employee_id, product_id, goal_value')
       .eq('company_group_id', companyGroupId)
-      .in('employee_id', employees.map(e => e.id))
+      .in('employee_id', employees.map((e: any) => e.id))
       .eq('goal_type', 'employee_product')
       .eq('year', yearNum)
       .eq('month', monthNum)
@@ -163,7 +163,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Buscar mapeamentos de produtos
-    const productIds = [...new Set((productGoals || []).map(g => g.product_id).filter(Boolean))];
+    const productIds = [...new Set((productGoals || []).map((g: any) => g.product_id).filter(Boolean))];
     let productIdToExternalCodes: Record<string, string[]> = {};
     
     if (productIds.length > 0) {
@@ -174,7 +174,7 @@ export async function GET(request: NextRequest) {
         .eq('company_group_id', companyGroupId);
 
       if (productMappings) {
-        const externalProductUuids = productMappings.map(pm => pm.external_product_id);
+        const externalProductUuids = productMappings.map((pm: any) => pm.external_product_id);
         const { data: externalProducts } = await supabaseAdmin
           .from('external_products')
           .select('id, external_id')
@@ -224,7 +224,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 8. Montar dados dos funcionários
-    const employeesData = employees.map(emp => {
+    const employeesData = employees.map((emp: any) => {
       const codes = employeeCodes[emp.id] || [];
       let totalRevenue = 0;
       for (const code of codes) {

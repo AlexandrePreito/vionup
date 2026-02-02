@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       .eq('employee_id', employeeId)
       .eq('company_group_id', companyGroupId);
 
-    const mappedExternalEmployeeUuids = mappings?.map(m => m.external_employee_id) || [];
+    const mappedExternalEmployeeUuids = mappings?.map((m: any) => m.external_employee_id) || [];
 
     let externalEmployeeCodes: string[] = [];
     if (mappedExternalEmployeeUuids.length > 0) {
@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
         .select('id, external_id, name')
         .in('id', mappedExternalEmployeeUuids);
       
-      externalEmployeeCodes = externalEmployees?.map(e => e.external_id) || [];
+      externalEmployeeCodes = externalEmployees?.map((e: any) => e.external_id) || [];
     }
 
     console.log('Códigos externos:', externalEmployeeCodes);
@@ -162,7 +162,7 @@ export async function GET(request: NextRequest) {
         const { data: allMappings } = await supabaseAdmin
           .from('employee_mappings')
           .select('employee_id, external_employee_id')
-          .in('employee_id', companyEmployees.map(e => e.id))
+          .in('employee_id', companyEmployees.map((e: any) => e.id))
           .eq('company_group_id', companyGroupId);
 
         if (allMappings && allMappings.length > 0) {
@@ -170,7 +170,7 @@ export async function GET(request: NextRequest) {
           const { data: allExternalEmployees } = await supabaseAdmin
             .from('external_employees')
             .select('id, external_id')
-            .in('id', allMappings.map(m => m.external_employee_id));
+            .in('id', allMappings.map((m: any) => m.external_employee_id));
 
           // Mapear UUID -> código externo
           const uuidToCode: Record<string, string> = {};
@@ -223,7 +223,7 @@ export async function GET(request: NextRequest) {
 
             // Ordenar e encontrar posição
             employeeSales.sort((a, b) => b.total - a.total);
-            const position = employeeSales.findIndex(e => e.employeeId === employeeId) + 1;
+            const position = employeeSales.findIndex((e: any) => e.employeeId === employeeId) + 1;
             ranking = { position, total: employeeSales.length };
           }
         }
@@ -259,9 +259,9 @@ export async function GET(request: NextRequest) {
             const { data: externalProducts } = await supabaseAdmin
               .from('external_products')
               .select('external_id')
-              .in('id', productMappings.map(pm => pm.external_product_id));
+              .in('id', productMappings.map((pm: any) => pm.external_product_id));
 
-            const externalProductCodes = externalProducts?.map(ep => ep.external_id) || [];
+            const externalProductCodes = externalProducts?.map((ep: any) => ep.external_id) || [];
             
             for (const code of externalProductCodes) {
               if (salesByProduct[code]) {
@@ -435,9 +435,9 @@ export async function GET(request: NextRequest) {
       products: productGoalsWithRealized,
       summary: {
         totalProductGoals: productGoalsWithRealized.length,
-        productsAchieved: productGoalsWithRealized.filter(p => p.status === 'achieved').length,
-        productsOnTrack: productGoalsWithRealized.filter(p => p.status === 'ontrack').length,
-        productsBehind: productGoalsWithRealized.filter(p => p.status === 'behind').length
+        productsAchieved: productGoalsWithRealized.filter((p: any) => p.status === 'achieved').length,
+        productsOnTrack: productGoalsWithRealized.filter((p: any) => p.status === 'ontrack').length,
+        productsBehind: productGoalsWithRealized.filter((p: any) => p.status === 'behind').length
       }
     };
 

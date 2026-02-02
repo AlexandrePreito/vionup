@@ -99,7 +99,7 @@ export default function ProjecaoMPPage() {
   const ITEMS_PER_PAGE = 20;
 
   // Obter categorias únicas
-  const categories = [...new Set(projection.map(p => p.category).filter(Boolean))].sort();
+  const categories = [...new Set(projection.map((p: any) => p.category).filter(Boolean))].sort();
 
   // Buscar grupos
   const fetchGroups = async () => {
@@ -145,20 +145,20 @@ export default function ProjecaoMPPage() {
     if (selectedProducts.size === filteredProjection.length) {
       setSelectedProducts(new Set());
     } else {
-      setSelectedProducts(new Set(filteredProjection.map(p => p.rawMaterialId)));
+      setSelectedProducts(new Set(filteredProjection.map((p: any) => p.rawMaterialId)));
     }
   };
 
   // Gerar lista de compras
   const generatePurchaseList = () => {
-    const selectedItems = filteredProjection.filter(p => selectedProducts.has(p.rawMaterialId));
+    const selectedItems = filteredProjection.filter((p: any) => selectedProducts.has(p.rawMaterialId));
     if (selectedItems.length === 0) {
       alert('Selecione pelo menos uma matéria-prima');
       return;
     }
 
     const headers = ['Matéria-Prima', 'Unidade', 'Necessidade', 'Qtd. Compra', 'UN Compra'];
-    const rows = selectedItems.map(item => [
+    const rows = selectedItems.map((item: any) => [
       item.name,
       item.unit,
       item.purchaseNeed.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
@@ -168,7 +168,7 @@ export default function ProjecaoMPPage() {
 
     const csvContent = [
       headers.join(';'),
-      ...rows.map(row => row.join(';'))
+      ...rows.map((row: any) => row.join(';'))
     ].join('\n');
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' });
@@ -255,7 +255,7 @@ export default function ProjecaoMPPage() {
   }, [selectedGroup]);
 
   // Filtrar matérias-primas
-  const filteredProjection = projection.filter(item => {
+  const filteredProjection = projection.filter((item: any) => {
     // Filtro de busca
     const matchesSearch = search === '' || 
       item.name.toLowerCase().includes(search.toLowerCase());
@@ -304,7 +304,7 @@ export default function ProjecaoMPPage() {
   // Exportar para CSV
   const exportToCSV = () => {
     const companyName = selectedCompany 
-      ? companies.find(c => c.id === selectedCompany)?.name || ''
+      ? companies.find((c: any) => c.id === selectedCompany)?.name || ''
       : 'Todas';
     
     const headers = [
@@ -318,7 +318,7 @@ export default function ProjecaoMPPage() {
       'Empresa'
     ];
 
-    const rows = filteredProjection.map(item => [
+    const rows = filteredProjection.map((item: any) => [
       item.name,
       formatNumber(item.avgDailySales),
       item.lossFactor,
@@ -331,7 +331,7 @@ export default function ProjecaoMPPage() {
 
     const csvContent = [
       headers.join(';'),
-      ...rows.map(row => row.join(';'))
+      ...rows.map((row: any) => row.join(';'))
     ].join('\n');
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -675,7 +675,7 @@ export default function ProjecaoMPPage() {
             <span className="text-sm text-gray-600">
               Mostrando {((currentPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, filteredProjection.length)} de {filteredProjection.length} matérias-primas
               <span className="text-red-600 ml-2">
-                ({filteredProjection.filter(p => p.needsPurchase).length} precisam de compra)
+                ({filteredProjection.filter((p: any) => p.needsPurchase).length} precisam de compra)
               </span>
             </span>
             <div className="flex items-center gap-2">
@@ -877,7 +877,7 @@ export default function ProjecaoMPPage() {
                   {/* Gráfico de linha */}
                   {(() => {
                     const data = selectedMPDetail.dailyProjection;
-                    const values = data.map(d => d.projected);
+                    const values = data.map((d: any) => d.projected);
                     const maxVal = Math.max(...values, 1);
                     const minVal = Math.min(...values, 0);
                     const range = maxVal - minVal || 1;
@@ -933,7 +933,7 @@ export default function ProjecaoMPPage() {
                     };
                     
                     // Labels do eixo Y
-                    const yLabels = [0, 0.5, 1].map(ratio => ({
+                    const yLabels = [0, 0.5, 1].map((ratio: any) => ({
                       value: minVal + ratio * range,
                       y: paddingY + graphHeight - ratio * graphHeight
                     }));

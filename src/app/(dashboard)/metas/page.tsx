@@ -117,14 +117,14 @@ export default function MetasPage() {
 
   // Funcionários filtrados pela filial selecionada no formulário (apenas ativos)
   const filteredEmployeesForForm = employees
-    .filter(emp => emp.is_active !== false) // Garantir apenas ativos
-    .filter(emp => !formData.company_id || emp.company_id === formData.company_id);
+    .filter((emp: any) => emp.is_active !== false) // Garantir apenas ativos
+    .filter((emp: any) => !formData.company_id || emp.company_id === formData.company_id);
 
   // Turnos filtrados (apenas ativos)
-  const filteredShiftsForForm = shifts.filter(shift => shift.is_active !== false);
+  const filteredShiftsForForm = shifts.filter((shift: any) => shift.is_active !== false);
 
   // Modos de venda filtrados (apenas ativos)
-  const filteredSaleModesForForm = saleModes.filter(mode => mode.is_active !== false);
+  const filteredSaleModesForForm = saleModes.filter((mode: any) => mode.is_active !== false);
 
   // Buscar grupos
   const fetchGroups = async () => {
@@ -229,7 +229,7 @@ export default function MetasPage() {
   }, [filterGroup, filterYear, filterMonth, filterType]);
 
   // Filtrar metas
-  const filteredItems = goals.filter(item => {
+  const filteredItems = goals.filter((item: any) => {
     // Excluir metas de produtos (aparecem em /metas/produtos)
     if (item.goal_type === 'employee_product') return false;
     
@@ -315,7 +315,7 @@ export default function MetasPage() {
     // Para employee_revenue com múltiplos funcionários
     if (formData.goal_type === 'employee_revenue' && !editingItem && selectedEmployees.length > 0) {
       // Verificar se todos têm valor
-      const hasInvalidValue = selectedEmployees.some(emp => !emp.value || emp.value <= 0);
+      const hasInvalidValue = selectedEmployees.some((emp: any) => !emp.value || emp.value <= 0);
       if (hasInvalidValue) {
         alert('Todos os funcionários devem ter um valor de meta válido');
         return;
@@ -370,7 +370,7 @@ export default function MetasPage() {
       }
       
       // Verificar se todos têm valor
-      const hasInvalidValue = selectedShifts.some(shift => !shift.value || shift.value <= 0);
+      const hasInvalidValue = selectedShifts.some((shift: any) => !shift.value || shift.value <= 0);
       if (hasInvalidValue) {
         alert('Todos os turnos devem ter um valor de meta válido');
         return;
@@ -425,7 +425,7 @@ export default function MetasPage() {
       }
       
       // Verificar se todos têm valor
-      const hasInvalidValue = selectedSaleModes.some(mode => !mode.value || mode.value <= 0);
+      const hasInvalidValue = selectedSaleModes.some((mode: any) => !mode.value || mode.value <= 0);
       if (hasInvalidValue) {
         alert('Todos os modos de venda devem ter um valor de meta válido');
         return;
@@ -624,7 +624,7 @@ export default function MetasPage() {
 
   // Aplicar valor derivado
   const handleApplyDerivedValue = () => {
-    const sourceGoal = availableGoalsForDerive.find(g => g.id === deriveFromGoalId);
+    const sourceGoal = availableGoalsForDerive.find((g: any) => g.id === deriveFromGoalId);
     if (sourceGoal) {
       setFormData({ ...formData, goal_value: sourceGoal.goal_value });
       setInputDisplayValue(formatInputValue(sourceGoal.goal_value, formData.goal_unit));
@@ -632,7 +632,7 @@ export default function MetasPage() {
       // Se for employee_revenue, distribuir o valor entre os funcionários selecionados
       if (formData.goal_type === 'employee_revenue' && selectedEmployees.length > 0) {
         const valuePerEmployee = sourceGoal.goal_value / selectedEmployees.length;
-        setSelectedEmployees(selectedEmployees.map(emp => ({
+        setSelectedEmployees(selectedEmployees.map((emp: any) => ({
           ...emp,
           value: valuePerEmployee
         })));
@@ -641,13 +641,13 @@ export default function MetasPage() {
       // Se for shift, distribuir o valor entre os turnos selecionados
       if (formData.goal_type === 'shift' && selectedShifts.length > 0) {
         const valuePerShift = sourceGoal.goal_value / selectedShifts.length;
-        setSelectedShifts(selectedShifts.map(shift => ({
+        setSelectedShifts(selectedShifts.map((shift: any) => ({
           ...shift,
           value: valuePerShift
         })));
         // Atualizar valores de display
         const newDisplayValues: Record<string, string> = {};
-        selectedShifts.forEach(shift => {
+        selectedShifts.forEach((shift: any) => {
           newDisplayValues[shift.id] = formatInputValue(valuePerShift, formData.goal_unit);
         });
         setShiftDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
@@ -656,13 +656,13 @@ export default function MetasPage() {
       // Se for sale_mode, distribuir o valor entre os modos de venda selecionados
       if (formData.goal_type === 'sale_mode' && selectedSaleModes.length > 0) {
         const valuePerMode = sourceGoal.goal_value / selectedSaleModes.length;
-        setSelectedSaleModes(selectedSaleModes.map(mode => ({
+        setSelectedSaleModes(selectedSaleModes.map((mode: any) => ({
           ...mode,
           value: valuePerMode
         })));
         // Atualizar valores de display
         const newDisplayValues: Record<string, string> = {};
-        selectedSaleModes.forEach(mode => {
+        selectedSaleModes.forEach((mode: any) => {
           newDisplayValues[mode.id] = formatInputValue(valuePerMode, formData.goal_unit);
         });
         setSaleModeDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
@@ -672,7 +672,7 @@ export default function MetasPage() {
 
   // Obter info do tipo de meta
   const getGoalTypeInfo = (type: string) => {
-    return GOAL_TYPES.find(t => t.value === type) || { 
+    return GOAL_TYPES.find((t: any) => t.value === type) || { 
       value: type, 
       label: type, 
       icon: Building, 
@@ -783,7 +783,7 @@ export default function MetasPage() {
     if (filteredItems.length === 0) return;
 
     const headers = ['Tipo', 'Descrição', 'Filial', 'Mês', 'Ano', 'Valor'];
-    const rows = filteredItems.map(item => [
+    const rows = filteredItems.map((item: any) => [
       getGoalTypeInfo(item.goal_type).label,
       getGoalDescription(item),
       item.company?.name || '-',
@@ -796,7 +796,7 @@ export default function MetasPage() {
 
     const csvContent = [
       headers.join(';'),
-      ...rows.map(row => row.join(';'))
+      ...rows.map((row: any) => row.join(';'))
     ].join('\n');
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1013,16 +1013,16 @@ export default function MetasPage() {
                     <th className="w-12 px-4 py-3">
                       <input
                         type="checkbox"
-                        checked={paginatedItems.length > 0 && paginatedItems.every(item => selectedIds.includes(item.id))}
+                        checked={paginatedItems.length > 0 && paginatedItems.every((item: any) => selectedIds.includes(item.id))}
                         onChange={(e) => {
                           if (e.target.checked) {
                             // Selecionar todos da página atual
-                            const pageIds = paginatedItems.map(item => item.id);
+                            const pageIds = paginatedItems.map((item: any) => item.id);
                             setSelectedIds(prev => [...new Set([...prev, ...pageIds])]);
                           } else {
                             // Desmarcar todos da página atual
-                            const pageIds = paginatedItems.map(item => item.id);
-                            setSelectedIds(prev => prev.filter(id => !pageIds.includes(id)));
+                            const pageIds = paginatedItems.map((item: any) => item.id);
+                            setSelectedIds(prev => prev.filter((id: any) => !pageIds.includes(id)));
                           }
                         }}
                         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
@@ -1060,7 +1060,7 @@ export default function MetasPage() {
                                 if (e.target.checked) {
                                   setSelectedIds(prev => [...prev, item.id]);
                                 } else {
-                                  setSelectedIds(prev => prev.filter(id => id !== item.id));
+                                  setSelectedIds(prev => prev.filter((id: any) => id !== item.id));
                                 }
                               }}
                               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
@@ -1372,7 +1372,7 @@ export default function MetasPage() {
                         onClick={() => {
                           // Adicionar todos os modos de venda ativos
                           const availableModes = filteredSaleModesForForm
-                            .filter(mode => !selectedSaleModes.find(sm => sm.id === mode.id));
+                            .filter((mode: any) => !selectedSaleModes.find((sm: any) => sm.id === mode.id));
                           
                           if (availableModes.length === 0) return;
                           
@@ -1381,13 +1381,13 @@ export default function MetasPage() {
                           const valuePerMode = formData.goal_value > 0 ? formData.goal_value / totalModes : 0;
                           
                           // Atualizar os já selecionados com o novo valor
-                          const updatedExisting = selectedSaleModes.map(mode => ({
+                          const updatedExisting = selectedSaleModes.map((mode: any) => ({
                             ...mode,
                             value: valuePerMode
                           }));
                           
                           // Adicionar os novos com o valor dividido
-                          const newModes = availableModes.map(mode => ({
+                          const newModes = availableModes.map((mode: any) => ({
                             id: mode.id,
                             name: mode.name,
                             value: valuePerMode
@@ -1397,7 +1397,7 @@ export default function MetasPage() {
                           
                           // Atualizar valores de display
                           const newDisplayValues: Record<string, string> = {};
-                          [...updatedExisting, ...newModes].forEach(mode => {
+                          [...updatedExisting, ...newModes].forEach((mode: any) => {
                             newDisplayValues[mode.id] = formatInputValue(valuePerMode, formData.goal_unit);
                           });
                           setSaleModeDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
@@ -1415,13 +1415,13 @@ export default function MetasPage() {
                               // Recalcular - redistribuir o valor base entre os modos de venda
                               if (formData.goal_value > 0 && selectedSaleModes.length > 0) {
                                 const valuePerMode = formData.goal_value / selectedSaleModes.length;
-                                setSelectedSaleModes(selectedSaleModes.map(mode => ({
+                                setSelectedSaleModes(selectedSaleModes.map((mode: any) => ({
                                   ...mode,
                                   value: valuePerMode
                                 })));
                                 // Atualizar valores de display
                                 const newDisplayValues: Record<string, string> = {};
-                                selectedSaleModes.forEach(mode => {
+                                selectedSaleModes.forEach((mode: any) => {
                                   newDisplayValues[mode.id] = formatInputValue(valuePerMode, formData.goal_unit);
                                 });
                                 setSaleModeDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
@@ -1450,14 +1450,14 @@ export default function MetasPage() {
                       onChange={(e) => {
                         const modeId = e.target.value;
                         if (!modeId) return;
-                        const mode = filteredSaleModesForForm.find(m => m.id === modeId);
-                        if (mode && !selectedSaleModes.find(sm => sm.id === modeId)) {
+                        const mode = filteredSaleModesForForm.find((m: any) => m.id === modeId);
+                        if (mode && !selectedSaleModes.find((sm: any) => sm.id === modeId)) {
                           // Recalcular valor dividido para todos (incluindo o novo)
                           const totalModes = selectedSaleModes.length + 1;
                           const valuePerMode = formData.goal_value > 0 ? formData.goal_value / totalModes : 0;
                           
                           // Atualizar os já selecionados
-                          const updatedExisting = selectedSaleModes.map(existing => ({
+                          const updatedExisting = selectedSaleModes.map((existing: any) => ({
                             ...existing,
                             value: valuePerMode
                           }));
@@ -1472,7 +1472,7 @@ export default function MetasPage() {
                           
                           // Atualizar valores de display
                           const newDisplayValues: Record<string, string> = {};
-                          [...updatedExisting, newMode].forEach(m => {
+                          [...updatedExisting, newMode].forEach((m: any) => {
                             newDisplayValues[m.id] = formatInputValue(valuePerMode, formData.goal_unit);
                           });
                           setSaleModeDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
@@ -1482,7 +1482,7 @@ export default function MetasPage() {
                     >
                       <option value="">+ Adicionar modo de venda...</option>
                       {filteredSaleModesForForm
-                        .filter(mode => !selectedSaleModes.find(sm => sm.id === mode.id))
+                        .filter((mode: any) => !selectedSaleModes.find((sm: any) => sm.id === mode.id))
                         .map((mode) => (
                           <option key={mode.id} value={mode.id}>{mode.name}</option>
                         ))}
@@ -1530,7 +1530,7 @@ export default function MetasPage() {
                             />
                             <button
                               onClick={() => {
-                                setSelectedSaleModes(selectedSaleModes.filter(sm => sm.id !== mode.id));
+                                setSelectedSaleModes(selectedSaleModes.filter((sm: any) => sm.id !== mode.id));
                                 setSaleModeDisplayValues(prev => {
                                   const newValues = { ...prev };
                                   delete newValues[mode.id];
@@ -1630,7 +1630,7 @@ export default function MetasPage() {
                         onClick={() => {
                           // Adicionar todos os funcionários (filtrados pela filial)
                           const availableEmployees = filteredEmployeesForForm
-                            .filter(emp => !selectedEmployees.find(se => se.id === emp.id));
+                            .filter((emp: any) => !selectedEmployees.find((se: any) => se.id === emp.id));
                           
                           if (availableEmployees.length === 0) return;
                           
@@ -1639,13 +1639,13 @@ export default function MetasPage() {
                           const valuePerEmployee = formData.goal_value > 0 ? formData.goal_value / totalEmployees : 0;
                           
                           // Atualizar os já selecionados com o novo valor
-                          const updatedExisting = selectedEmployees.map(emp => ({
+                          const updatedExisting = selectedEmployees.map((emp: any) => ({
                             ...emp,
                             value: valuePerEmployee
                           }));
                           
                           // Adicionar os novos com o valor dividido
-                          const newEmployees = availableEmployees.map(emp => ({
+                          const newEmployees = availableEmployees.map((emp: any) => ({
                             id: emp.id,
                             name: emp.name,
                             value: valuePerEmployee
@@ -1666,7 +1666,7 @@ export default function MetasPage() {
                               // Recalcular - redistribuir o valor base entre os funcionários
                               if (formData.goal_value > 0 && selectedEmployees.length > 0) {
                                 const valuePerEmployee = formData.goal_value / selectedEmployees.length;
-                                setSelectedEmployees(selectedEmployees.map(emp => ({
+                                setSelectedEmployees(selectedEmployees.map((emp: any) => ({
                                   ...emp,
                                   value: valuePerEmployee
                                 })));
@@ -1695,14 +1695,14 @@ export default function MetasPage() {
                       onChange={(e) => {
                         const empId = e.target.value;
                         if (!empId) return;
-                        const emp = filteredEmployeesForForm.find(em => em.id === empId);
-                        if (emp && !selectedEmployees.find(se => se.id === empId)) {
+                        const emp = filteredEmployeesForForm.find((em: any) => em.id === empId);
+                        if (emp && !selectedEmployees.find((se: any) => se.id === empId)) {
                           // Recalcular valor dividido para todos (incluindo o novo)
                           const totalEmployees = selectedEmployees.length + 1;
                           const valuePerEmployee = formData.goal_value > 0 ? formData.goal_value / totalEmployees : 0;
                           
                           // Atualizar os já selecionados
-                          const updatedExisting = selectedEmployees.map(existing => ({
+                          const updatedExisting = selectedEmployees.map((existing: any) => ({
                             ...existing,
                             value: valuePerEmployee
                           }));
@@ -1718,7 +1718,7 @@ export default function MetasPage() {
                     >
                       <option value="">+ Adicionar funcionário...</option>
                       {filteredEmployeesForForm
-                        .filter(emp => !selectedEmployees.find(se => se.id === emp.id))
+                        .filter((emp: any) => !selectedEmployees.find((se: any) => se.id === emp.id))
                         .map((employee) => (
                           <option key={employee.id} value={employee.id}>{employee.name}</option>
                         ))}
@@ -1749,7 +1749,7 @@ export default function MetasPage() {
                             />
                             <button
                               onClick={() => {
-                                setSelectedEmployees(selectedEmployees.filter(se => se.id !== emp.id));
+                                setSelectedEmployees(selectedEmployees.filter((se: any) => se.id !== emp.id));
                               }}
                               className="p-1 text-gray-400 hover:text-red-500"
                             >
@@ -1876,7 +1876,7 @@ export default function MetasPage() {
                         onClick={() => {
                           // Adicionar todos os turnos ativos
                           const availableShifts = filteredShiftsForForm
-                            .filter(shift => !selectedShifts.find(ss => ss.id === shift.id));
+                            .filter((shift: any) => !selectedShifts.find((ss: any) => ss.id === shift.id));
                           
                           if (availableShifts.length === 0) return;
                           
@@ -1885,13 +1885,13 @@ export default function MetasPage() {
                           const valuePerShift = formData.goal_value > 0 ? formData.goal_value / totalShifts : 0;
                           
                           // Atualizar os já selecionados com o novo valor
-                          const updatedExisting = selectedShifts.map(shift => ({
+                          const updatedExisting = selectedShifts.map((shift: any) => ({
                             ...shift,
                             value: valuePerShift
                           }));
                           
                           // Adicionar os novos com o valor dividido
-                          const newShifts = availableShifts.map(shift => ({
+                          const newShifts = availableShifts.map((shift: any) => ({
                             id: shift.id,
                             name: shift.name,
                             value: valuePerShift
@@ -1901,7 +1901,7 @@ export default function MetasPage() {
                           
                           // Atualizar valores de display
                           const newDisplayValues: Record<string, string> = {};
-                          [...updatedExisting, ...newShifts].forEach(shift => {
+                          [...updatedExisting, ...newShifts].forEach((shift: any) => {
                             newDisplayValues[shift.id] = formatInputValue(valuePerShift, formData.goal_unit);
                           });
                           setShiftDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
@@ -1919,13 +1919,13 @@ export default function MetasPage() {
                               // Recalcular - redistribuir o valor base entre os turnos
                               if (formData.goal_value > 0 && selectedShifts.length > 0) {
                                 const valuePerShift = formData.goal_value / selectedShifts.length;
-                                setSelectedShifts(selectedShifts.map(shift => ({
+                                setSelectedShifts(selectedShifts.map((shift: any) => ({
                                   ...shift,
                                   value: valuePerShift
                                 })));
                                 // Atualizar valores de display
                                 const newDisplayValues: Record<string, string> = {};
-                                selectedShifts.forEach(shift => {
+                                selectedShifts.forEach((shift: any) => {
                                   newDisplayValues[shift.id] = formatInputValue(valuePerShift, formData.goal_unit);
                                 });
                                 setShiftDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
@@ -1954,14 +1954,14 @@ export default function MetasPage() {
                       onChange={(e) => {
                         const shiftId = e.target.value;
                         if (!shiftId) return;
-                        const shift = filteredShiftsForForm.find(s => s.id === shiftId);
-                        if (shift && !selectedShifts.find(ss => ss.id === shiftId)) {
+                        const shift = filteredShiftsForForm.find((s: any) => s.id === shiftId);
+                        if (shift && !selectedShifts.find((ss: any) => ss.id === shiftId)) {
                           // Recalcular valor dividido para todos (incluindo o novo)
                           const totalShifts = selectedShifts.length + 1;
                           const valuePerShift = formData.goal_value > 0 ? formData.goal_value / totalShifts : 0;
                           
                           // Atualizar os já selecionados
-                          const updatedExisting = selectedShifts.map(existing => ({
+                          const updatedExisting = selectedShifts.map((existing: any) => ({
                             ...existing,
                             value: valuePerShift
                           }));
@@ -1976,7 +1976,7 @@ export default function MetasPage() {
                           
                           // Atualizar valores de display
                           const newDisplayValues: Record<string, string> = {};
-                          [...updatedExisting, newShift].forEach(s => {
+                          [...updatedExisting, newShift].forEach((s: any) => {
                             newDisplayValues[s.id] = formatInputValue(valuePerShift, formData.goal_unit);
                           });
                           setShiftDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
@@ -1986,7 +1986,7 @@ export default function MetasPage() {
                     >
                       <option value="">+ Adicionar turno...</option>
                       {filteredShiftsForForm
-                        .filter(shift => !selectedShifts.find(ss => ss.id === shift.id))
+                        .filter((shift: any) => !selectedShifts.find((ss: any) => ss.id === shift.id))
                         .map((shift) => (
                           <option key={shift.id} value={shift.id}>{shift.name}</option>
                         ))}
@@ -2034,7 +2034,7 @@ export default function MetasPage() {
                             />
                             <button
                               onClick={() => {
-                                setSelectedShifts(selectedShifts.filter(ss => ss.id !== shift.id));
+                                setSelectedShifts(selectedShifts.filter((ss: any) => ss.id !== shift.id));
                                 setShiftDisplayValues(prev => {
                                   const newValues = { ...prev };
                                   delete newValues[shift.id];

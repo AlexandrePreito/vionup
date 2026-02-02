@@ -209,13 +209,13 @@ export default function PrevisaoPage() {
   };
 
   // Preparar dados do gráfico principal
-  const graficoPrincipalData = previsaoData?.grafico.map(item => ({
+  const graficoPrincipalData = previsaoData?.grafico.map((item: any) => ({
     ...item,
-    mesAnterior: previsaoData.mesAnterior?.grafico.find(g => g.dia === item.dia)?.acumulado || null
+    mesAnterior: previsaoData.mesAnterior?.grafico.find((g: any) => g.dia === item.dia)?.acumulado || null
   })) || [];
 
   // Preparar dados do gráfico de análise
-  const graficoAnaliseData = previsaoData?.graficoRealizado.map(item => ({
+  const graficoAnaliseData = previsaoData?.graficoRealizado.map((item: any) => ({
     ...item,
     tendencia: previsaoData.estatisticas.intercept + previsaoData.estatisticas.slope * item.dia,
     mediana: previsaoData.estatisticas.mediana,
@@ -223,8 +223,8 @@ export default function PrevisaoPage() {
   })) || [];
 
   // Preparar dados do gráfico de realizado diário COM projeções
-  const graficoRealizadoDiarioData = previsaoData?.graficoRealizado.map(item => {
-    const projecao = previsaoData.projecaoDiaria.find(p => p.dia === item.dia);
+  const graficoRealizadoDiarioData = previsaoData?.graficoRealizado.map((item: any) => {
+    const projecao = previsaoData.projecaoDiaria.find((p: any) => p.dia === item.dia);
     return {
       ...item,
       otimista: projecao?.otimista || null,
@@ -266,7 +266,7 @@ export default function PrevisaoPage() {
             className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">Selecione...</option>
-            {groups.map(g => (
+            {groups.map((g: any) => (
               <option key={g.id} value={g.id}>{g.name}</option>
             ))}
           </select>
@@ -284,7 +284,7 @@ export default function PrevisaoPage() {
             required
           >
             <option value="">Selecione uma empresa...</option>
-            {companies.map(c => (
+            {companies.map((c: any) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
@@ -298,7 +298,7 @@ export default function PrevisaoPage() {
             onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
             className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
           >
-            {MONTHS.map(m => (
+            {MONTHS.map((m: any) => (
               <option key={m.value} value={m.value}>{m.label}</option>
             ))}
           </select>
@@ -312,7 +312,7 @@ export default function PrevisaoPage() {
             onChange={(e) => setSelectedYear(parseInt(e.target.value))}
             className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
           >
-            {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
+            {[2025, 2026, 2027, 2028, 2029, 2030].map((year: any) => (
               <option key={year} value={year}>{year}</option>
             ))}
           </select>
@@ -389,7 +389,7 @@ export default function PrevisaoPage() {
                     </div>
                   </div>
                   <p className="text-sm text-gray-500">
-                    {MONTHS.find(m => m.value === previsaoData.periodo.month)?.label} {previsaoData.periodo.year}
+                    {MONTHS.find((m: any) => m.value === previsaoData.periodo.month)?.label} {previsaoData.periodo.year}
                   </p>
                 </div>
               </div>

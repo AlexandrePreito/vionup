@@ -193,7 +193,7 @@ export async function GET(request: NextRequest) {
         .in('id', externalCompanyIds);
 
       if (externalCompaniesForTendency && externalCompaniesForTendency.length > 0) {
-        const externalCodesForTendency = externalCompaniesForTendency.map(ec => ec.external_id);
+        const externalCodesForTendency = externalCompaniesForTendency.map((ec: any) => ec.external_id);
         
         const startDate = new Date(yearNum, monthNum - 1, 1);
         const endDate = new Date(yearNum, monthNum, 0);
@@ -343,7 +343,7 @@ export async function GET(request: NextRequest) {
             .in('id', externalCompanyIds);
 
           if (externalCompaniesForShift && externalCompaniesForShift.length > 0) {
-            const externalCodesForShift = externalCompaniesForShift.map(ec => ec.external_id);
+            const externalCodesForShift = externalCompaniesForShift.map((ec: any) => ec.external_id);
             
             // Buscar vendas do turno (precisa mapear turno interno para externo)
             // Por enquanto, vamos buscar todas as vendas da empresa e filtrar por turno se houver campo
@@ -445,7 +445,7 @@ export async function GET(request: NextRequest) {
           .in('id', externalCompanyIds);
 
         if (externalCompaniesForMode && externalCompaniesForMode.length > 0) {
-          const externalCodesForMode = externalCompaniesForMode.map(ec => ec.external_id);
+          const externalCodesForMode = externalCompaniesForMode.map((ec: any) => ec.external_id);
           const startDate = new Date(yearNum, monthNum - 1, 1);
           const endDate = new Date(yearNum, monthNum, 0);
           const startDateStr = startDate.toISOString().split('T')[0];

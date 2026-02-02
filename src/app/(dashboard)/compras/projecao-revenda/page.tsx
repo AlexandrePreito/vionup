@@ -101,7 +101,7 @@ export default function ProjecaoRevendaPage() {
   const ITEMS_PER_PAGE = 20;
 
   // Obter grupos de produtos únicos
-  const productGroups = [...new Set(projection.map(p => p.productGroup).filter(Boolean))].sort();
+  const productGroups = [...new Set(projection.map((p: any) => p.productGroup).filter(Boolean))].sort();
 
   // Mapa de tags por produto
   const tagsByProduct = tagAssignments.reduce((acc: any, assignment: any) => {
@@ -240,20 +240,20 @@ export default function ProjecaoRevendaPage() {
     if (selectedProducts.size === filteredProjection.length) {
       setSelectedProducts(new Set());
     } else {
-      setSelectedProducts(new Set(filteredProjection.map(p => p.externalId)));
+      setSelectedProducts(new Set(filteredProjection.map((p: any) => p.externalId)));
     }
   };
 
   // Gerar lista de compras
   const generatePurchaseList = () => {
-    const selectedItems = filteredProjection.filter(p => selectedProducts.has(p.externalId));
+    const selectedItems = filteredProjection.filter((p: any) => selectedProducts.has(p.externalId));
     if (selectedItems.length === 0) {
       alert('Selecione pelo menos um produto');
       return;
     }
 
     const headers = ['Produto', 'Código', 'Unidade', 'Necessidade de Compra'];
-    const rows = selectedItems.map(item => [
+    const rows = selectedItems.map((item: any) => [
       item.name,
       item.externalId,
       item.unit,
@@ -262,7 +262,7 @@ export default function ProjecaoRevendaPage() {
 
     const csvContent = [
       headers.join(';'),
-      ...rows.map(row => row.join(';'))
+      ...rows.map((row: any) => row.join(';'))
     ].join('\n');
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' });
@@ -345,7 +345,7 @@ export default function ProjecaoRevendaPage() {
   }, [selectedGroup]);
 
   // Filtrar produtos
-  const filteredProjection = projection.filter(item => {
+  const filteredProjection = projection.filter((item: any) => {
     // Filtro de busca
     const matchesSearch = search === '' || 
       item.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -366,7 +366,7 @@ export default function ProjecaoRevendaPage() {
     // Filtro de tag
     if (filterTag) {
       const productTags = tagsByProduct[item.externalId] || [];
-      if (!productTags.some(t => t.id === filterTag)) return false;
+      if (!productTags.some((t: any) => t.id === filterTag)) return false;
     }
 
     return true;
@@ -401,7 +401,7 @@ export default function ProjecaoRevendaPage() {
   // Exportar para CSV
   const exportToCSV = () => {
     const companyName = selectedCompany 
-      ? companies.find(c => c.id === selectedCompany)?.name || ''
+      ? companies.find((c: any) => c.id === selectedCompany)?.name || ''
       : 'Todas';
     
     const headers = [
@@ -418,7 +418,7 @@ export default function ProjecaoRevendaPage() {
       'UN'
     ];
 
-    const rows = filteredProjection.map(item => [
+    const rows = filteredProjection.map((item: any) => [
       companyName,
       item.name,
       item.externalId,
@@ -434,7 +434,7 @@ export default function ProjecaoRevendaPage() {
 
     const csvContent = [
       headers.join(';'),
-      ...rows.map(row => row.join(';'))
+      ...rows.map((row: any) => row.join(';'))
     ].join('\n');
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -749,7 +749,7 @@ export default function ProjecaoRevendaPage() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs text-gray-500">{item.externalId}</span>
                             {/* Tags do produto */}
-                            {tagsByProduct[item.externalId]?.map(tag => (
+                            {tagsByProduct[item.externalId]?.map((tag: any) => (
                               <span 
                                 key={tag.id} 
                                 className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700"
@@ -815,7 +815,7 @@ export default function ProjecaoRevendaPage() {
             <span className="text-sm text-gray-600">
               Mostrando {((currentPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, filteredProjection.length)} de {filteredProjection.length} produtos
               <span className="text-red-600 ml-2">
-                ({filteredProjection.filter(p => p.needsPurchase).length} precisam de compra)
+                ({filteredProjection.filter((p: any) => p.needsPurchase).length} precisam de compra)
               </span>
             </span>
             <div className="flex items-center gap-2">
@@ -1016,7 +1016,7 @@ export default function ProjecaoRevendaPage() {
                   {/* Gráfico de linha */}
                   {(() => {
                     const data = selectedProductDetail.dailyProjection;
-                    const values = data.map(d => d.projected);
+                    const values = data.map((d: any) => d.projected);
                     const maxVal = Math.max(...values, 1);
                     const minVal = Math.min(...values, 0);
                     const range = maxVal - minVal || 1;
@@ -1072,7 +1072,7 @@ export default function ProjecaoRevendaPage() {
                     };
                     
                     // Labels do eixo Y
-                    const yLabels = [0, 0.5, 1].map(ratio => ({
+                    const yLabels = [0, 0.5, 1].map((ratio: any) => ({
                       value: minVal + ratio * range,
                       y: paddingY + graphHeight - ratio * graphHeight
                     }));

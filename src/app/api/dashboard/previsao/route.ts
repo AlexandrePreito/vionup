@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Buscar external_id (código TEXTO) das empresas externas
-    const externalCompanyIds = companyMappings.map(m => m.external_company_id);
+    const externalCompanyIds = companyMappings.map((m: any) => m.external_company_id);
     const { data: externalCompanies } = await supabaseAdmin
       .from('external_companies')
       .select('id, external_id')
@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
     }
 
     // IMPORTANTE: usar external_id (código texto), igual ao dashboard de empresas
-    const externalCodes = externalCompanies.map(ec => ec.external_id);
+    const externalCodes = externalCompanies.map((ec: any) => ec.external_id);
     console.log('Códigos externos:', externalCodes);
 
     // Usar externalCodes diretamente (sem formatação)
@@ -450,13 +450,13 @@ export async function GET(request: NextRequest) {
     }
 
     // 16. Calcular estatísticas
-    const valoresDiarios = graficoRealizado.filter(d => d.valor > 0).map(d => d.valor);
+    const valoresDiarios = graficoRealizado.filter((d: any) => d.valor > 0).map((d: any) => d.valor);
     const media = valoresDiarios.length > 0 ? valoresDiarios.reduce((a: number, b: number) => a + b, 0) / valoresDiarios.length : 0;
     const sorted = [...valoresDiarios].sort((a, b) => a - b);
     const mediana = sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0;
 
     // Regressão linear
-    const dadosComValor = graficoRealizado.filter(d => d.valor > 0);
+    const dadosComValor = graficoRealizado.filter((d: any) => d.valor > 0);
     let slope = 0, intercept = 0;
     let tendencia: 'crescente' | 'decrescente' | 'estável' = 'estável';
 
@@ -504,7 +504,7 @@ export async function GET(request: NextRequest) {
           .limit(100000);
 
         const prevPorDia: Record<number, number> = {};
-        (prevData || []).forEach(item => {
+        (prevData || []).forEach((item: any) => {
           const day = new Date(item.transaction_date).getDate();
           if (!prevPorDia[day]) prevPorDia[day] = 0;
           prevPorDia[day] += item.amount || 0;

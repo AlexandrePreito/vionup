@@ -88,13 +88,13 @@ export default function MetaProdutosPage() {
 
   // Funcionários filtrados pelas filiais selecionadas (apenas ativos)
   const filteredEmployees = employees
-    .filter(emp => emp.is_active !== false)
-    .filter(emp => selectedCompanyIds.length === 0 || selectedCompanyIds.includes(emp.company_id));
+    .filter((emp: any) => emp.is_active !== false)
+    .filter((emp: any) => selectedCompanyIds.length === 0 || selectedCompanyIds.includes(emp.company_id));
 
   // Produtos disponíveis filtrados pela busca
   const filteredAvailableProducts = products
-    .filter(p => !selectedProducts.find(sp => sp.id === p.id))
-    .filter(p => productSearch === '' || p.name.toLowerCase().includes(productSearch.toLowerCase()));
+    .filter((p: any) => !selectedProducts.find((sp: any) => sp.id === p.id))
+    .filter((p: any) => productSearch === '' || p.name.toLowerCase().includes(productSearch.toLowerCase()));
 
   // Buscar grupos
   const fetchGroups = async () => {
@@ -166,7 +166,7 @@ export default function MetaProdutosPage() {
       const goalsWithProducts = await Promise.all(
         (data.goals || []).map(async (goal: any) => {
           if (goal.product_id) {
-            const product = products.find(p => p.id === goal.product_id);
+            const product = products.find((p: any) => p.id === goal.product_id);
             return { ...goal, product: product ? { id: product.id, name: product.name } : null };
           }
           return goal;
@@ -200,7 +200,7 @@ export default function MetaProdutosPage() {
   }, [filterGroup, filterYear, filterMonth, products]);
 
   // Filtrar metas
-  const filteredItems = goals.filter(item => {
+  const filteredItems = goals.filter((item: any) => {
     const searchLower = search.toLowerCase();
     const matchesSearch = 
       item.employee?.name?.toLowerCase().includes(searchLower) ||
@@ -239,8 +239,8 @@ export default function MetaProdutosPage() {
   // Adicionar produto
   const handleAddProduct = (productId: string) => {
     if (!productId) return;
-    const product = products.find(p => p.id === productId);
-    if (product && !selectedProducts.find(sp => sp.id === productId)) {
+    const product = products.find((p: any) => p.id === productId);
+    if (product && !selectedProducts.find((sp: any) => sp.id === productId)) {
       setSelectedProducts([...selectedProducts, {
         id: product.id,
         name: product.name,
@@ -254,14 +254,14 @@ export default function MetaProdutosPage() {
 
   // Remover produto
   const handleRemoveProduct = (productId: string) => {
-    setSelectedProducts(selectedProducts.filter(sp => sp.id !== productId));
+    setSelectedProducts(selectedProducts.filter((sp: any) => sp.id !== productId));
     setShowDistribution(false);
     setSelectedEmployeesForDist([]);
   };
 
   // Atualizar quantidade do produto
   const handleUpdateQuantity = (productId: string, quantity: number) => {
-    setSelectedProducts(selectedProducts.map(sp => 
+    setSelectedProducts(selectedProducts.map((sp: any) => 
       sp.id === productId ? { ...sp, quantity: Math.max(1, quantity) } : sp
     ));
     setShowDistribution(false);
@@ -284,7 +284,7 @@ export default function MetaProdutosPage() {
     }
 
     // Adiciona todos os funcionários ativos das filiais selecionadas
-    setSelectedEmployeesForDist(filteredEmployees.map(emp => ({
+    setSelectedEmployeesForDist(filteredEmployees.map((emp: any) => ({
       id: emp.id,
       name: emp.name,
       company_id: emp.company_id
@@ -294,7 +294,7 @@ export default function MetaProdutosPage() {
 
   // Remover funcionário da distribuição
   const handleRemoveEmployeeFromDist = (employeeId: string) => {
-    setSelectedEmployeesForDist(selectedEmployeesForDist.filter(emp => emp.id !== employeeId));
+    setSelectedEmployeesForDist(selectedEmployeesForDist.filter((emp: any) => emp.id !== employeeId));
   };
 
   // Salvar metas
@@ -508,7 +508,7 @@ export default function MetaProdutosPage() {
     if (filteredItems.length === 0) return;
 
     const headers = ['Funcionário', 'Produto', 'Filial', 'Mês', 'Ano', 'Quantidade'];
-    const rows = filteredItems.map(item => [
+    const rows = filteredItems.map((item: any) => [
       item.employee?.name || '-',
       item.product?.name || '-',
       item.company?.name || '-',
@@ -519,7 +519,7 @@ export default function MetaProdutosPage() {
 
     const csvContent = [
       headers.join(';'),
-      ...rows.map(row => row.join(';'))
+      ...rows.map((row: any) => row.join(';'))
     ].join('\n');
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -666,14 +666,14 @@ export default function MetaProdutosPage() {
                     <th className="w-12 px-4 py-3">
                       <input
                         type="checkbox"
-                        checked={paginatedItems.length > 0 && paginatedItems.every(item => selectedIds.includes(item.id))}
+                        checked={paginatedItems.length > 0 && paginatedItems.every((item: any) => selectedIds.includes(item.id))}
                         onChange={(e) => {
                           if (e.target.checked) {
-                            const pageIds = paginatedItems.map(item => item.id);
+                            const pageIds = paginatedItems.map((item: any) => item.id);
                             setSelectedIds(prev => [...new Set([...prev, ...pageIds])]);
                           } else {
-                            const pageIds = paginatedItems.map(item => item.id);
-                            setSelectedIds(prev => prev.filter(id => !pageIds.includes(id)));
+                            const pageIds = paginatedItems.map((item: any) => item.id);
+                            setSelectedIds(prev => prev.filter((id: any) => !pageIds.includes(id)));
                           }
                         }}
                         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
@@ -709,7 +709,7 @@ export default function MetaProdutosPage() {
                                 if (e.target.checked) {
                                   setSelectedIds(prev => [...prev, item.id]);
                                 } else {
-                                  setSelectedIds(prev => prev.filter(id => id !== item.id));
+                                  setSelectedIds(prev => prev.filter((id: any) => id !== item.id));
                                 }
                               }}
                               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
@@ -853,7 +853,7 @@ export default function MetaProdutosPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        setSelectedCompanyIds(companies.map(c => c.id));
+                        setSelectedCompanyIds(companies.map((c: any) => c.id));
                         setShowDistribution(false);
                         setSelectedEmployeesForDist([]);
                       }}
@@ -886,7 +886,7 @@ export default function MetaProdutosPage() {
                             if (e.target.checked) {
                               setSelectedCompanyIds([...selectedCompanyIds, company.id]);
                             } else {
-                              setSelectedCompanyIds(selectedCompanyIds.filter(id => id !== company.id));
+                              setSelectedCompanyIds(selectedCompanyIds.filter((id: any) => id !== company.id));
                             }
                             setShowDistribution(false);
                             setSelectedEmployeesForDist([]);
@@ -1035,7 +1035,7 @@ export default function MetaProdutosPage() {
                 {showDistribution && selectedEmployeesForDist.length > 0 ? (
                   <div className="border border-gray-200 rounded-lg bg-white divide-y divide-gray-100 max-h-60 overflow-y-auto">
                     {selectedEmployeesForDist.map((emp) => {
-                      const companyName = companies.find(c => c.id === emp.company_id)?.name || '';
+                      const companyName = companies.find((c: any) => c.id === emp.company_id)?.name || '';
                       return (
                         <div key={emp.id} className="flex items-center justify-between px-4 py-2 hover:bg-gray-50">
                           <div className="flex items-center gap-2">
@@ -1070,7 +1070,7 @@ export default function MetaProdutosPage() {
                 {showDistribution && selectedEmployeesForDist.length > 0 && (
                   <div className="p-3 bg-blue-50 rounded-lg">
                     <p className="text-sm text-blue-700">
-                      <strong>{selectedEmployeesForDist.length}</strong> funcionário(s) receberão os produtos: {selectedProducts.map(p => `${p.quantity}x ${p.name}`).join(', ')}
+                      <strong>{selectedEmployeesForDist.length}</strong> funcionário(s) receberão os produtos: {selectedProducts.map((p: any) => `${p.quantity}x ${p.name}`).join(', ')}
                     </p>
                     <p className="text-xs text-blue-600 mt-1">
                       Total de metas a criar: {selectedEmployeesForDist.length * selectedProducts.length}
