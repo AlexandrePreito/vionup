@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
       .eq('is_active', true);
 
     const companyRevenueGoal = companyRevenueGoals && companyRevenueGoals.length > 0
-      ? companyRevenueGoals.reduce((sum, g) => sum + (g.goal_value || 0), 0)
+      ? companyRevenueGoals.reduce((sum: number, g: any) => sum + (g.goal_value || 0), 0)
       : 0;
 
     // 3. Buscar faturamento realizado da empresa usando cash_flow (MATERIALIZED VIEW)
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
     if (companyMappings && companyMappings.length > 0) {
       console.log(`Encontrados ${companyMappings.length} mapeamento(s)`);
       // Buscar todos os códigos externos vinculados
-      const externalCompanyIds = companyMappings.map(m => m.external_company_id);
+      const externalCompanyIds = companyMappings.map((m: any) => m.external_company_id);
       const { data: externalCompanies, error: externalCompaniesError } = await supabaseAdmin
         .from('external_companies')
         .select('id, external_id')
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
 
       if (externalCompanies && externalCompanies.length > 0) {
         console.log(`Encontradas ${externalCompanies.length} empresa(s) externa(s)`);
-        const externalCodes = externalCompanies.map(ec => ec.external_id);
+        const externalCodes = externalCompanies.map((ec: any) => ec.external_id);
         console.log('Códigos externos:', externalCodes);
         
         // Buscar faturamento total usando MATERIALIZED VIEW de cash_flow
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
         }
 
         if (cashFlowSummaries) {
-          totalRevenue = cashFlowSummaries.reduce((sum, cf) => sum + (cf.total_amount || 0), 0);
+          totalRevenue = cashFlowSummaries.reduce((sum: number, cf: any) => sum + (cf.total_amount || 0), 0);
           console.log('Faturamento total:', totalRevenue);
         }
 
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
             distinctSalesCount = 0;
           } else if (allSales && allSales.length > 0) {
             // Contar external_ids únicos
-            const uniqueIds = new Set(allSales.map(s => s.external_id));
+            const uniqueIds = new Set(allSales.map((s: any) => s.external_id));
             distinctSalesCount = uniqueIds.size;
             console.log(`Vendas distintas encontradas: ${distinctSalesCount} (de ${allSales.length} registros)`);
           } else {
@@ -186,7 +186,7 @@ export async function GET(request: NextRequest) {
 
     if (companyRevenueGoal > 0 && companyMappings && companyMappings.length > 0) {
       // Buscar todos os códigos externos vinculados
-      const externalCompanyIds = companyMappings.map(m => m.external_company_id);
+      const externalCompanyIds = companyMappings.map((m: any) => m.external_company_id);
       const { data: externalCompaniesForTendency } = await supabaseAdmin
         .from('external_companies')
         .select('id, external_id')
@@ -336,7 +336,7 @@ export async function GET(request: NextRequest) {
 
         // Buscar código externo da empresa (pode ter múltiplos)
         if (companyMappings && companyMappings.length > 0) {
-          const externalCompanyIds = companyMappings.map(m => m.external_company_id);
+          const externalCompanyIds = companyMappings.map((m: any) => m.external_company_id);
           const { data: externalCompaniesForShift } = await supabaseAdmin
             .from('external_companies')
             .select('id, external_id')
@@ -365,7 +365,7 @@ export async function GET(request: NextRequest) {
             if (allCashFlow && allCashFlow.length > 0) {
               // Distribuir proporcionalmente entre turnos (simplificado)
               // Em produção, você usaria o campo de turno do cash_flow se existir
-              const totalAmount = allCashFlow.reduce((sum, cf) => sum + (cf.amount || 0), 0);
+              const totalAmount = allCashFlow.reduce((sum: number, cf: any) => sum + (cf.amount || 0), 0);
               const shiftCount = (shiftGoals || []).length;
               realized = shiftCount > 0 ? totalAmount / shiftCount : 0;
             }
@@ -438,7 +438,7 @@ export async function GET(request: NextRequest) {
       };
 
       if (companyMappings && companyMappings.length > 0) {
-        const externalCompanyIds = companyMappings.map(m => m.external_company_id);
+        const externalCompanyIds = companyMappings.map((m: any) => m.external_company_id);
         const { data: externalCompaniesForMode } = await supabaseAdmin
           .from('external_companies')
           .select('id, external_id')
@@ -539,9 +539,9 @@ export async function GET(request: NextRequest) {
       saleModes: saleModesWithRealized || [],
       summary: {
         totalShifts: (shiftsWithRealized || []).length,
-        shiftsAchieved: (shiftsWithRealized || []).filter(s => s.status === 'achieved').length,
+        shiftsAchieved: (shiftsWithRealized || []).filter((s: any) => s.status === 'achieved').length,
         totalSaleModes: (saleModesWithRealized || []).length,
-        saleModesAchieved: (saleModesWithRealized || []).filter(s => s.status === 'achieved').length
+        saleModesAchieved: (saleModesWithRealized || []).filter((s: any) => s.status === 'achieved').length
       }
     });
 
