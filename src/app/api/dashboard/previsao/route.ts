@@ -28,7 +28,7 @@ function getDayType(date: Date): 'weekday' | 'saturday' | 'sunday' | 'holiday' {
 
 function calculatePercentile(values: number[], percentile: number): number {
   if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
+  const sorted = [...values].sort((a: any, b: any) => a - b);
   const index = Math.ceil((percentile / 100) * sorted.length) - 1;
   return sorted[Math.max(0, index)];
 }
@@ -290,7 +290,7 @@ export async function GET(request: NextRequest) {
     console.log(`Soma diária: ${somaVerificacao.toFixed(2)}, Total MV: ${realizadoTotal.toFixed(2)}`);
 
     // Encontrar o último dia com dados reais
-    const diasComDados = Object.keys(realizadoPorDia).map(Number).sort((a, b) => a - b);
+    const diasComDados = Object.keys(realizadoPorDia).map(Number).sort((a: any, b: any) => a - b);
     const ultimoDiaComDados = diasComDados.length > 0 ? Math.max(...diasComDados) : 0;
     console.log('Último dia com dados:', ultimoDiaComDados);
 
@@ -452,7 +452,7 @@ export async function GET(request: NextRequest) {
     // 16. Calcular estatísticas
     const valoresDiarios = graficoRealizado.filter((d: any) => d.valor > 0).map((d: any) => d.valor);
     const media = valoresDiarios.length > 0 ? valoresDiarios.reduce((a: number, b: number) => a + b, 0) / valoresDiarios.length : 0;
-    const sorted = [...valoresDiarios].sort((a, b) => a - b);
+    const sorted = [...valoresDiarios].sort((a: any, b: any) => a - b);
     const mediana = sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0;
 
     // Regressão linear

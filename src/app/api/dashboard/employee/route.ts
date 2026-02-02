@@ -222,7 +222,7 @@ export async function GET(request: NextRequest) {
             }
 
             // Ordenar e encontrar posição
-            employeeSales.sort((a, b) => b.total - a.total);
+            employeeSales.sort((a: any, b: any) => b.total - a.total);
             const position = employeeSales.findIndex((e: any) => e.employeeId === employeeId) + 1;
             ranking = { position, total: employeeSales.length };
           }

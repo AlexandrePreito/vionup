@@ -260,7 +260,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Ordenar por faturamento realizado (decrescente)
-    employeesData.sort((a, b) => b.revenue.realized - a.revenue.realized);
+    employeesData.sort((a: any, b: any) => b.revenue.realized - a.revenue.realized);
 
     // Adicionar ranking
     const employeesWithRanking = employeesData.map((emp: any, index: number) => ({

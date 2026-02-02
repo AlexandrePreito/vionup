@@ -207,7 +207,7 @@ export default function DashboardEmpresasPage() {
   };
 
   // Ordenar empresas
-  const sortedCompanies = companiesData?.companies ? [...companiesData.companies].sort((a, b) => {
+  const sortedCompanies = companiesData?.companies ? [...companiesData.companies].sort((a: any, b: any) => {
     let comparison = 0;
     
     switch (sortField) {

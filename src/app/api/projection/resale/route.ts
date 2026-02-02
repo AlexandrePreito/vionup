@@ -411,7 +411,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Ordenar: primeiro os que precisam comprar, depois por nome
-    projectionResults.sort((a, b) => {
+    projectionResults.sort((a: any, b: any) => {
       if (a.needsPurchase && !b.needsPurchase) return -1;
       if (!a.needsPurchase && b.needsPurchase) return 1;
       return a.name.localeCompare(b.name);

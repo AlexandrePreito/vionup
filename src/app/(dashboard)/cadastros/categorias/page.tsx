@@ -124,7 +124,7 @@ export default function CategoriasPage() {
     });
 
     // Ordenar: Entradas primeiro, depois Saídas
-    roots.sort((a, b) => {
+    roots.sort((a: any, b: any) => {
       if (a.type === 'entrada' && b.type === 'saida') return -1;
       if (a.type === 'saida' && b.type === 'entrada') return 1;
       return a.name.localeCompare(b.name);
@@ -132,7 +132,7 @@ export default function CategoriasPage() {
 
     // Ordenar filhos por nome
     const sortChildren = (nodes: CategoryNode[]) => {
-      nodes.sort((a, b) => a.name.localeCompare(b.name));
+      nodes.sort((a: any, b: any) => a.name.localeCompare(b.name));
       nodes.forEach(node => sortChildren(node.children));
     };
     roots.forEach(root => sortChildren(root.children));

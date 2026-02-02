@@ -231,7 +231,7 @@ export default function DashboardEquipePage() {
   };
 
   // Ordenar funcionários
-  const sortedEmployees = teamData?.employees ? [...teamData.employees].sort((a, b) => {
+  const sortedEmployees = teamData?.employees ? [...teamData.employees].sort((a: any, b: any) => {
     let comparison = 0;
     
     switch (sortField) {
