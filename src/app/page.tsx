@@ -123,6 +123,7 @@ export default function HomePage() {
       decimals: 2,
       icon: DollarSign, 
       color: 'bg-amber-400',
+      bgLight: 'bg-amber-50',
       status: 'on-track'
     },
     { 
@@ -133,6 +134,7 @@ export default function HomePage() {
       decimals: 2,
       icon: TrendingUp, 
       color: 'bg-emerald-400',
+      bgLight: 'bg-emerald-50',
       status: 'success'
     },
     { 
@@ -143,6 +145,7 @@ export default function HomePage() {
       decimals: 0,
       icon: Package, 
       color: 'bg-blue-400',
+      bgLight: 'bg-blue-50',
       status: 'on-track'
     },
     { 
@@ -154,6 +157,7 @@ export default function HomePage() {
       decimals: 0,
       icon: MessageSquare, 
       color: 'bg-purple-400',
+      bgLight: 'bg-purple-50',
       status: 'success'
     }
   ];
