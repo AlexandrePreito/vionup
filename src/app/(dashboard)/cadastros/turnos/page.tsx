@@ -4,15 +4,17 @@ import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Search, Clock, Loader2, CheckCircle, XCircle, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { Shift, CompanyGroup } from '@/types';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
+import { useAuth } from '@/contexts/AuthContext';
 
 const ITEMS_PER_PAGE = 20;
 
 export default function TurnosPage() {
+  const { user: currentUser } = useAuth();
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName, fixedGroupId } = useGroupFilter();
   const [shifts, setShifts] = useState<Shift[]>([]);
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterGroup, setFilterGroup] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
@@ -30,8 +32,8 @@ export default function TurnosPage() {
   const fetchShifts = async () => {
     try {
       setLoading(true);
-      const url = filterGroup
-        ? `/api/shifts?group_id=${filterGroup}&include_inactive=true`
+      const url = selectedGroupId
+        ? `/api/shifts?group_id=${selectedGroupId}&include_inactive=true`
         : '/api/shifts?include_inactive=true';
       const res = await fetch(url);
       const data = await res.json();
@@ -43,25 +45,10 @@ export default function TurnosPage() {
     }
   };
 
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      const data = await res.json();
-      setGroups(data.groups || []);
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
-    }
-  };
-
-  useEffect(() => {
-    fetchGroups();
-  }, []);
-
   useEffect(() => {
     fetchShifts();
     setCurrentPage(1); // Reset para primeira página quando filtro muda
-  }, [filterGroup]);
+  }, [selectedGroupId]);
 
   // Filtrar turnos
   const filteredShifts = shifts.filter(shift =>
@@ -85,7 +72,7 @@ export default function TurnosPage() {
   const handleCreate = () => {
     setEditingShift(null);
     setFormData({
-      company_group_id: filterGroup || '',
+      company_group_id: fixedGroupId || selectedGroupId || '',
       name: '',
       code: '',
       start_time: '',
@@ -190,7 +177,32 @@ export default function TurnosPage() {
 
       {/* Filtros */}
       <div className="flex gap-4 mb-6">
+        {/* Grupo */}
+        <div className="w-64">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Todos os grupos</option>
+              {groups.map((group: any) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        {/* Buscar */}
         <div className="flex-1 max-w-md">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
           <div className="relative">
             <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
@@ -201,18 +213,6 @@ export default function TurnosPage() {
               className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
-        </div>
-        <div className="w-64">
-          <select
-            value={filterGroup}
-            onChange={(e) => setFilterGroup(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Todos os grupos</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>{group.name}</option>
-            ))}
-          </select>
         </div>
       </div>
 
@@ -227,12 +227,12 @@ export default function TurnosPage() {
           <Clock size={48} className="mx-auto text-gray-300 mb-4" />
           <h2 className="text-lg font-medium text-gray-900 mb-2">Nenhum turno</h2>
           <p className="text-gray-500 mb-4">
-            {search || filterGroup 
-              ? `Nenhum turno encontrado para "${search || groups.find(g => g.id === filterGroup)?.name}"`
+            {search || selectedGroupId 
+              ? `Nenhum turno encontrado para "${search || groupName}"`
               : 'Crie seu primeiro turno no sistema'
             }
           </p>
-          {!search && !filterGroup && (
+          {!search && !selectedGroupId && (
             <Button onClick={handleCreate}>
               Criar Turno
             </Button>
@@ -384,16 +384,25 @@ export default function TurnosPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Grupo <span className="text-red-500">*</span>
                 </label>
-                <select
-                  value={formData.company_group_id}
-                  onChange={(e) => setFormData({ ...formData, company_group_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Selecione um grupo</option>
-                  {groups.map((group) => (
-                    <option key={group.id} value={group.id}>{group.name}</option>
-                  ))}
-                </select>
+                {isGroupReadOnly && fixedGroupId ? (
+                  <input
+                    type="text"
+                    value={groups.find(g => g.id === fixedGroupId)?.name || currentUser?.company_group?.name || ''}
+                    disabled
+                    className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+                  />
+                ) : (
+                  <select
+                    value={formData.company_group_id}
+                    onChange={(e) => setFormData({ ...formData, company_group_id: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Selecione um grupo</option>
+                    {groups.map((group: any) => (
+                      <option key={group.id} value={group.id}>{group.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

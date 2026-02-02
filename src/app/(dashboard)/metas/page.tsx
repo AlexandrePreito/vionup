@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { CompanyGroup, Company } from '@/types';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 interface SalesGoal {
   id: string;
@@ -50,15 +51,14 @@ const MONTHS = [
 ];
 
 export default function MetasPage() {
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [goals, setGoals] = useState<SalesGoal[]>([]);
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [shifts, setShifts] = useState<any[]>([]);
   const [saleModes, setSaleModes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterGroup, setFilterGroup] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState<number | null>(null); // null = todos
@@ -126,20 +126,6 @@ export default function MetasPage() {
   // Modos de venda filtrados (apenas ativos)
   const filteredSaleModesForForm = saleModes.filter((mode: any) => mode.is_active !== false);
 
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      const data = await res.json();
-      setGroups(data.groups || []);
-      if (data.groups?.length > 0 && !filterGroup) {
-        setFilterGroup(data.groups[0].id);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
-    }
-  };
-
   // Buscar empresas
   const fetchCompanies = async (groupId: string) => {
     try {
@@ -192,11 +178,11 @@ export default function MetasPage() {
 
   // Buscar metas
   const fetchGoals = async () => {
-    if (!filterGroup) return;
+    if (!selectedGroupId) return;
     try {
       setLoading(true);
       const params = new URLSearchParams({
-        group_id: filterGroup,
+        group_id: selectedGroupId,
         year: filterYear.toString()
       });
       if (filterMonth !== null) {
@@ -215,18 +201,14 @@ export default function MetasPage() {
   };
 
   useEffect(() => {
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
-    if (filterGroup) {
-      fetchCompanies(filterGroup);
-      fetchEmployees(filterGroup);
-      fetchShifts(filterGroup);
-      fetchSaleModes(filterGroup);
+    if (selectedGroupId) {
+      fetchCompanies(selectedGroupId);
+      fetchEmployees(selectedGroupId);
+      fetchShifts(selectedGroupId);
+      fetchSaleModes(selectedGroupId);
       fetchGoals();
     }
-  }, [filterGroup, filterYear, filterMonth, filterType]);
+  }, [selectedGroupId, filterYear, filterMonth, filterType]);
 
   // Filtrar metas
   const filteredItems = goals.filter((item: any) => {
@@ -257,13 +239,13 @@ export default function MetasPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterGroup, filterType, filterYear, filterMonth]);
+  }, [search, selectedGroupId, filterType, filterYear, filterMonth]);
 
   // Abrir modal de nova meta
   const handleNew = () => {
     setEditingItem(null);
     setFormData({
-      company_group_id: filterGroup,
+      company_group_id: selectedGroupId,
       goal_type: 'company_revenue',
       year: filterYear,
       month: filterMonth ?? new Date().getMonth() + 1, // Se filtro "Todos", usa mês atual
@@ -598,15 +580,15 @@ export default function MetasPage() {
   // Limpar seleção ao mudar filtros
   useEffect(() => {
     setSelectedIds([]);
-  }, [filterGroup, filterYear, filterMonth, filterType, filterCompany, search]);
+  }, [selectedGroupId, filterYear, filterMonth, filterType, filterCompany, search]);
 
 
   // Buscar metas disponíveis para derivar (filtrado pela filial quando selecionada)
   useEffect(() => {
-    if (showDeriveOption && filterGroup) {
+    if (showDeriveOption && selectedGroupId) {
       const fetchAvailableGoals = async () => {
         try {
-          const res = await fetch(`/api/goals?group_id=${filterGroup}&year=${formData.year}&month=${formData.month}`);
+          const res = await fetch(`/api/goals?group_id=${selectedGroupId}&year=${formData.year}&month=${formData.month}`);
           const data = await res.json();
           // Filtrar pela filial selecionada se houver
           let goals = data.goals || [];
@@ -620,7 +602,7 @@ export default function MetasPage() {
       };
       fetchAvailableGoals();
     }
-  }, [showDeriveOption, filterGroup, formData.year, formData.month, formData.company_id]);
+  }, [showDeriveOption, selectedGroupId, formData.year, formData.month, formData.company_id]);
 
   // Aplicar valor derivado
   const handleApplyDerivedValue = () => {
@@ -829,7 +811,7 @@ export default function MetasPage() {
 
   // Importar planilha
   const handleImport = async () => {
-    if (!importFile || !importCompany || !filterGroup) {
+    if (!importFile || !importCompany || !selectedGroupId) {
       alert('Selecione o arquivo e a empresa');
       return;
     }
@@ -839,7 +821,7 @@ export default function MetasPage() {
       const formData = new FormData();
       formData.append('file', importFile);
       formData.append('company_id', importCompany);
-      formData.append('company_group_id', filterGroup);
+      formData.append('company_group_id', selectedGroupId);
       formData.append('year', importYear.toString());
       formData.append('month', importMonth.toString());
 
@@ -909,43 +891,38 @@ export default function MetasPage() {
             {/* Grupo */}
             <div className="w-48">
               <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
-              <select
-                value={filterGroup}
-                onChange={(e) => setFilterGroup(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Selecione...</option>
-                {groups.map((group) => (
-                  <option key={group.id} value={group.id}>{group.name}</option>
-                ))}
-              </select>
+              {isGroupReadOnly ? (
+                <input
+                  type="text"
+                  value={groupName}
+                  disabled
+                  className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+                />
+              ) : (
+                <select
+                  value={selectedGroupId}
+                  onChange={(e) => setSelectedGroupId(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Selecione...</option>
+                  {groups.map((group: any) => (
+                    <option key={group.id} value={group.id}>{group.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
 
-            {/* Ano */}
-            <div className="w-32">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
+            {/* Filial */}
+            <div className="w-44">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Filial</label>
               <select
-                value={filterYear}
-                onChange={(e) => setFilterYear(Number(e.target.value))}
+                value={filterCompany}
+                onChange={(e) => setFilterCompany(e.target.value)}
                 className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
-                {years.map((year) => (
-                  <option key={year} value={year}>{year}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Mês */}
-            <div className="w-40">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
-              <select
-                value={filterMonth ?? ''}
-                onChange={(e) => setFilterMonth(e.target.value === '' ? null : Number(e.target.value))}
-                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Todos</option>
-                {MONTHS.map((month, index) => (
-                  <option key={index} value={index + 1}>{month}</option>
+                <option value="">Todas</option>
+                {companies.map((company) => (
+                  <option key={company.id} value={company.id}>{company.name}</option>
                 ))}
               </select>
             </div>
@@ -965,17 +942,31 @@ export default function MetasPage() {
               </select>
             </div>
 
-            {/* Filial */}
-            <div className="w-44">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Filial</label>
+            {/* Mês */}
+            <div className="w-40">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
               <select
-                value={filterCompany}
-                onChange={(e) => setFilterCompany(e.target.value)}
+                value={filterMonth ?? ''}
+                onChange={(e) => setFilterMonth(e.target.value === '' ? null : Number(e.target.value))}
                 className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Todas</option>
-                {companies.map((company) => (
-                  <option key={company.id} value={company.id}>{company.name}</option>
+                <option value="">Todos</option>
+                {MONTHS.map((month, index) => (
+                  <option key={index} value={index + 1}>{month}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Ano */}
+            <div className="w-32">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
+              <select
+                value={filterYear}
+                onChange={(e) => setFilterYear(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                {years.map((year) => (
+                  <option key={year} value={year}>{year}</option>
                 ))}
               </select>
             </div>

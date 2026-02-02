@@ -102,10 +102,33 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const result = await executeDaxQuery(connection, config.dataset_id, daxQuery);
+      // Logs específicos para produtos
+      if (config.entity_type === 'products') {
+        console.log('=== DEBUG PRODUTOS ===');
+        console.log('Query DAX completa:', daxQuery);
+        console.log('Dataset ID:', config.dataset_id);
+        console.log('Workspace ID:', connection.workspace_id);
+        
+        // Extrair informações da query
+        const tableMatch = daxQuery.match(/(\w+)\[/);
+        const tableName = tableMatch ? tableMatch[1] : 'não encontrado';
+        console.log('Tabela detectada na query:', tableName);
+        
+        // Extrair colunas mencionadas na query
+        const columnMatches = daxQuery.match(/\[([^\]]+)\]/g);
+        const columns = columnMatches ? [...new Set(columnMatches.map(m => m.replace(/[\[\]]/g, '')))] : [];
+        console.log('Colunas detectadas na query:', columns);
+      }
+
+      const result = await executeDaxQuery(connection, config.dataset_id, daxQuery, config.entity_type === 'products');
 
       if (!result.success) {
         console.error('Erro na query DAX:', result.error);
+        if (config.entity_type === 'products') {
+          console.error('=== ERRO DETALHADO PRODUTOS ===');
+          console.error('Mensagem de erro:', result.error);
+          console.error('Detalhes completos:', result.errorDetails || 'Não disponível');
+        }
         throw new Error(result.error || 'Erro ao executar query DAX');
       }
 

@@ -5,17 +5,17 @@ import { FolderTree, Leaf, Search, Loader2, Link2, ArrowLeft, ChevronLeft, Chevr
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui';
 import { Category, ExternalCategory, CategoryMapping, CompanyGroup } from '@/types';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 const ITEMS_PER_PAGE = 20;
 
 export default function ConciliacaoCategoriasPage() {
   const router = useRouter();
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [externalCategories, setExternalCategories] = useState<ExternalCategory[]>([]);
   const [mappings, setMappings] = useState<CategoryMapping[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterGroup, setFilterGroup] = useState('');
   const [searchInternal, setSearchInternal] = useState('');
   const [searchExternal, setSearchExternal] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'entrada' | 'saida'>('all');
@@ -27,26 +27,12 @@ export default function ConciliacaoCategoriasPage() {
   // Drag and drop
   const [draggingCategory, setDraggingCategory] = useState<Category | null>(null);
 
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      const data = await res.json();
-      setGroups(data.groups || []);
-      if (data.groups?.length > 0 && !filterGroup) {
-        setFilterGroup(data.groups[0].id);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
-    }
-  };
-
   // Buscar categorias internas (apenas analíticas)
   const fetchCategories = async () => {
-    if (!filterGroup) return;
+    if (!selectedGroupId) return;
     
     try {
-      const res = await fetch(`/api/categories?group_id=${filterGroup}&analytical_only=true&include_inactive=true`);
+      const res = await fetch(`/api/categories?group_id=${selectedGroupId}&analytical_only=true&include_inactive=true`);
       const data = await res.json();
       setCategories(data.categories || []);
     } catch (error) {
@@ -56,10 +42,10 @@ export default function ConciliacaoCategoriasPage() {
 
   // Buscar categorias externas
   const fetchExternalCategories = async () => {
-    if (!filterGroup) return;
+    if (!selectedGroupId) return;
     
     try {
-      const res = await fetch(`/api/external-categories?group_id=${filterGroup}`);
+      const res = await fetch(`/api/external-categories?group_id=${selectedGroupId}`);
       const data = await res.json();
       setExternalCategories(data.externalCategories || []);
     } catch (error) {
@@ -69,10 +55,10 @@ export default function ConciliacaoCategoriasPage() {
 
   // Buscar mapeamentos
   const fetchMappings = async () => {
-    if (!filterGroup) return;
+    if (!selectedGroupId) return;
     
     try {
-      const res = await fetch(`/api/mappings/categories?group_id=${filterGroup}`);
+      const res = await fetch(`/api/mappings/categories?group_id=${selectedGroupId}`);
       const data = await res.json();
       setMappings(data.mappings || []);
     } catch (error) {
@@ -82,7 +68,7 @@ export default function ConciliacaoCategoriasPage() {
 
   // Carregar dados
   const loadData = async () => {
-    if (!filterGroup) return;
+    if (!selectedGroupId) return;
     
     setLoading(true);
     await Promise.all([
@@ -94,14 +80,10 @@ export default function ConciliacaoCategoriasPage() {
   };
 
   useEffect(() => {
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
-    if (filterGroup) {
+    if (selectedGroupId) {
       loadData();
     }
-  }, [filterGroup]);
+  }, [selectedGroupId]);
 
   // Filtrar categorias internas
   const filteredCategories = categories.filter(cat => {
@@ -154,7 +136,7 @@ export default function ConciliacaoCategoriasPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          company_group_id: filterGroup,
+          company_group_id: selectedGroupId,
           category_id: draggingCategory.id,
           external_category_id: externalCategory.id
         })
@@ -223,20 +205,33 @@ export default function ConciliacaoCategoriasPage() {
 
       {/* Filtros */}
       <div className="flex gap-4 items-center">
+        {/* Grupo */}
         <div className="w-64">
-          <select
-            value={filterGroup}
-            onChange={(e) => setFilterGroup(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Selecione um grupo</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>{group.name}</option>
-            ))}
-          </select>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Selecione um grupo</option>
+              {groups.map((group: any) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
+        {/* Tipo */}
         <div className="w-48">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value as 'all' | 'entrada' | 'saida')}
@@ -250,7 +245,7 @@ export default function ConciliacaoCategoriasPage() {
       </div>
 
       {/* Estatísticas */}
-      {filterGroup && !loading && (
+      {selectedGroupId && !loading && (
         <div className="grid grid-cols-4 gap-4">
           <div className="bg-white rounded-xl border border-gray-100 p-4">
             <div className="text-2xl font-bold text-gray-900">{totalInternal}</div>
@@ -277,12 +272,12 @@ export default function ConciliacaoCategoriasPage() {
           <Loader2 size={48} className="mx-auto text-gray-300 mb-4 animate-spin" />
           <p className="text-gray-500">Carregando categorias...</p>
         </div>
-      ) : !filterGroup ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
-          <FolderTree size={48} className="mx-auto text-gray-300 mb-4" />
-          <h2 className="text-lg font-medium text-gray-900 mb-2">Selecione um grupo</h2>
-          <p className="text-gray-500">Escolha um grupo para iniciar a conciliação</p>
-        </div>
+      ) : !selectedGroupId ? (
+          <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
+            <FolderTree size={48} className="mx-auto text-gray-300 mb-4" />
+            <h2 className="text-lg font-medium text-gray-900 mb-2">Selecione um grupo</h2>
+            <p className="text-gray-500">Escolha um grupo para iniciar a conciliação</p>
+          </div>
       ) : (
         <div className="grid grid-cols-2 gap-6">
           {/* Coluna Esquerda - Categorias Internas */}
@@ -514,7 +509,7 @@ export default function ConciliacaoCategoriasPage() {
       )}
 
       {/* Instrução de uso */}
-      {filterGroup && !loading && categories.length > 0 && externalCategories.length > 0 && (
+      {selectedGroupId && !loading && categories.length > 0 && externalCategories.length > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-700">
           <strong>Dica:</strong> Arraste uma categoria analítica da esquerda e solte sobre uma categoria externa da direita para criar o vínculo.
         </div>

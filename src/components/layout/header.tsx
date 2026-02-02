@@ -143,7 +143,12 @@ export function Header() {
           <button
             onClick={() => {
               setActiveSection('config');
-              router.push('/grupos');
+              // Master vai para grupos, outros vão para empresas
+              if (user?.role === 'master') {
+                router.push('/grupos');
+              } else {
+                router.push('/empresas');
+              }
             }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
               activeSection === 'config' || isConfigActive

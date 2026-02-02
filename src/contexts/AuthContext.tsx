@@ -7,7 +7,7 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'master' | 'admin' | 'user';
+  role: 'master' | 'group_admin' | 'company_admin' | 'user';
   company_group_id?: string;
   company_group?: {
     id: string;

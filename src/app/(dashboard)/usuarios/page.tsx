@@ -2,18 +2,22 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Pencil, Trash2, Search, Shield } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Shield, Key } from 'lucide-react';
 import { Button, Input, Select, Modal, Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui';
 import { User, Company, CompanyGroup } from '@/types';
 import { toast } from '@/lib/toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 const roleLabels: Record<string, string> = {
+  master: 'Master',
   group_admin: 'Admin Grupo',
   company_admin: 'Admin Empresa',
   user: 'Usuário'
 };
 
 const roleOptions = [
+  { value: 'master', label: 'Master' },
   { value: 'group_admin', label: 'Admin Grupo' },
   { value: 'company_admin', label: 'Admin Empresa' },
   { value: 'user', label: 'Usuário' },
@@ -21,12 +25,12 @@ const roleOptions = [
 
 export default function UsuariosPage() {
   const router = useRouter();
+  const { user: currentUser } = useAuth();
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [users, setUsers] = useState<User[]>([]);
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterGroup, setFilterGroup] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
@@ -38,32 +42,35 @@ export default function UsuariosPage() {
     role: 'user'
   });
   const [saving, setSaving] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [passwordUser, setPasswordUser] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
 
   // Buscar usuários
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const url = filterGroup
-        ? `/api/users?group_id=${filterGroup}&include_inactive=true`
-        : '/api/users?include_inactive=true';
+      // A API já filtra por grupo baseado no usuário logado
+      const url = '/api/users?include_inactive=true';
+      console.log('fetchUsers - Buscando usuários:', url);
+      console.log('fetchUsers - Usuário atual do AuthContext:', currentUser ? { id: currentUser.id, role: currentUser.role } : 'null');
+      console.log('fetchUsers - localStorage meta10_user:', localStorage.getItem('meta10_user') ? 'presente' : 'ausente');
+      
       const res = await fetch(url);
+      console.log('fetchUsers - Status da resposta:', res.status);
       const data = await res.json();
+      console.log('fetchUsers - Usuários retornados:', data.users?.length || 0, data);
+      if (data.error) {
+        console.error('fetchUsers - Erro da API:', data.error);
+      }
       setUsers(data.users || []);
     } catch (error) {
       console.error('Erro ao buscar usuários:', error);
+      setUsers([]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      const data = await res.json();
-      setGroups(data.groups || []);
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
     }
   };
 
@@ -83,12 +90,15 @@ export default function UsuariosPage() {
   };
 
   useEffect(() => {
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
     fetchUsers();
-  }, [filterGroup]);
+  }, [selectedGroupId]);
+
+  // Garantir que o grupo está definido quando for readonly
+  useEffect(() => {
+    if (isGroupReadOnly && selectedGroupId && formData.company_group_id !== selectedGroupId) {
+      setFormData(prev => ({ ...prev, company_group_id: selectedGroupId }));
+    }
+  }, [isGroupReadOnly, selectedGroupId, formData.company_group_id]);
 
   useEffect(() => {
     if (formData.company_group_id) {
@@ -108,13 +118,24 @@ export default function UsuariosPage() {
   const handleCreate = () => {
     setEditingUser(null);
     setSelectedCompanies([]);
+    // Se não for master, usar o grupo do usuário logado
+    const defaultGroupId = currentUser && currentUser.role !== 'master' 
+      ? (currentUser.company_group_id || '')
+      : (selectedGroupId || '');
+    
     setFormData({
-      company_group_id: filterGroup || '',
+      company_group_id: defaultGroupId,
       name: '',
       email: '',
       password: '123456',
       role: 'user'
     });
+    
+    // Se não for master, buscar empresas do grupo automaticamente
+    if (defaultGroupId && currentUser && currentUser.role !== 'master') {
+      fetchCompanies(defaultGroupId);
+    }
+    
     setIsModalOpen(true);
   };
 
@@ -163,8 +184,8 @@ export default function UsuariosPage() {
     }
 
     // Validações de hierarquia
-    if ((formData.role === 'group_admin' || formData.role === 'company_admin') && !formData.company_group_id) {
-      toast.warning('Grupo é obrigatório para administradores');
+    if (formData.role !== 'master' && !formData.company_group_id) {
+      toast.warning('Grupo é obrigatório para usuários não-master');
       return;
     }
 
@@ -183,9 +204,11 @@ export default function UsuariosPage() {
         name: formData.name,
         email: formData.email,
         role: formData.role,
-        company_group_id: (formData.role === 'group_admin' || formData.role === 'company_admin') ? formData.company_group_id : null,
+        company_group_id: formData.role !== 'master' ? formData.company_group_id : null,
         company_ids: formData.role === 'user' ? selectedCompanies : []
       };
+      
+      console.log('Enviando para API:', body);
 
       if (formData.password) {
         body.password = formData.password;
@@ -215,6 +238,74 @@ export default function UsuariosPage() {
     }
   };
 
+  // Verificar se pode mudar senha do usuário
+  const canChangePassword = (targetUser: User) => {
+    if (!currentUser) return false;
+    // Master e Admin podem mudar senha de qualquer usuário
+    if (currentUser.role === 'master' || currentUser.role === 'group_admin') {
+      return true;
+    }
+    // Usuário comum só pode mudar a própria senha
+    if (currentUser.role === 'user' && currentUser.id === targetUser.id) {
+      return true;
+    }
+    return false;
+  };
+
+  // Abrir modal de mudança de senha
+  const handleChangePassword = (user: User) => {
+    if (!canChangePassword(user)) {
+      toast.warning('Você não tem permissão para alterar a senha deste usuário');
+      return;
+    }
+    setPasswordUser(user);
+    setNewPassword('');
+    setConfirmPassword('');
+    setIsPasswordModalOpen(true);
+  };
+
+  // Salvar nova senha
+  const handleSavePassword = async () => {
+    if (!passwordUser) return;
+
+    if (!newPassword || newPassword.length < 6) {
+      toast.warning('A senha deve ter pelo menos 6 caracteres');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast.warning('As senhas não coincidem');
+      return;
+    }
+
+    try {
+      setChangingPassword(true);
+      
+      const res = await fetch(`/api/users/${passwordUser.id}/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Erro ao alterar senha');
+        return;
+      }
+
+      toast.success('Senha alterada com sucesso!');
+      setIsPasswordModalOpen(false);
+      setPasswordUser(null);
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error) {
+      console.error('Erro ao alterar senha:', error);
+      toast.error('Erro ao alterar senha');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   // Excluir
   const handleDelete = async (user: User) => {
     if (!confirm(`Deseja excluir o usuário "${user.name}"?`)) return;
@@ -239,9 +330,9 @@ export default function UsuariosPage() {
     }
   };
 
-  const groupOptions = groups.map(g => ({ value: g.id, label: g.name }));
+  const groupOptions = groups.map((g: any) => ({ value: g.id, label: g.name }));
 
-  const needsGroup = formData.role === 'group_admin' || formData.role === 'company_admin';
+  const needsGroup = formData.role !== 'master';
   const needsCompanies = formData.role === 'user'; // user precisa vincular empresas
 
   return (
@@ -260,7 +351,32 @@ export default function UsuariosPage() {
 
       {/* Filtros */}
       <div className="flex gap-4 mb-6">
+        {/* Grupo */}
+        <div className="w-64">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Todos os grupos</option>
+              {groups.map((group: any) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        {/* Buscar */}
         <div className="flex-1 max-w-md">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
           <div className="relative">
             <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
@@ -268,17 +384,9 @@ export default function UsuariosPage() {
               placeholder="Buscar usuários..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
-        </div>
-        <div className="w-64">
-          <Select
-            options={groupOptions}
-            value={filterGroup}
-            onChange={(e) => setFilterGroup(e.target.value)}
-            placeholder="Todos os grupos"
-          />
         </div>
       </div>
 
@@ -311,10 +419,12 @@ export default function UsuariosPage() {
                 <TableCell className="text-gray-500">{user.email}</TableCell>
                 <TableCell>
                   <span className={`inline-flex items-center px-3 py-1 text-xs font-medium rounded-full ${
-                    user.role === 'group_admin' 
+                    user.role === 'master' 
                       ? 'bg-purple-100 text-purple-700' :
-                    user.role === 'company_admin' 
+                    user.role === 'group_admin' 
                       ? 'bg-blue-100 text-blue-700' :
+                    user.role === 'company_admin'
+                      ? 'bg-indigo-100 text-indigo-700' :
                     'bg-emerald-100 text-emerald-700'
                   }`}>
                     {roleLabels[user.role] || 'Usuário'}
@@ -346,6 +456,15 @@ export default function UsuariosPage() {
                     >
                       <Shield size={18} />
                     </button>
+                    {canChangePassword(user) && (
+                      <button
+                        onClick={() => handleChangePassword(user)}
+                        className="p-2 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                        title="Alterar Senha"
+                      >
+                        <Key size={18} />
+                      </button>
+                    )}
                     <button
                       onClick={() => handleEdit(user)}
                       className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -410,7 +529,7 @@ export default function UsuariosPage() {
                 setFormData({ 
                   ...formData, 
                   role: newRole,
-                  company_group_id: (newRole === 'group_admin' || newRole === 'company_admin') ? formData.company_group_id : ''
+                  company_group_id: newRole !== 'master' ? formData.company_group_id : ''
                 });
                 if (newRole !== 'user') {
                   setSelectedCompanies([]);
@@ -420,19 +539,31 @@ export default function UsuariosPage() {
           </div>
 
           {needsGroup && (
-            <Select
-              label="Grupo"
-              options={groupOptions}
-              value={formData.company_group_id}
-              onChange={(e) => {
-                setFormData({ 
-                  ...formData, 
-                  company_group_id: e.target.value
-                });
-                setSelectedCompanies([]);
-              }}
-              placeholder="Selecione um grupo"
-            />
+            isGroupReadOnly && selectedGroupId ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Grupo</label>
+                <input
+                  type="text"
+                  value={groupName || groups.find((g: any) => g.id === selectedGroupId)?.name || currentUser?.company_group?.name || ''}
+                  disabled
+                  className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+                />
+              </div>
+            ) : (
+              <Select
+                label="Grupo"
+                options={groupOptions}
+                value={formData.company_group_id}
+                onChange={(e) => {
+                  setFormData({ 
+                    ...formData, 
+                    company_group_id: e.target.value
+                  });
+                  setSelectedCompanies([]);
+                }}
+                placeholder="Selecione um grupo"
+              />
+            )
           )}
 
           {needsCompanies && formData.company_group_id && (
@@ -481,6 +612,71 @@ export default function UsuariosPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Modal de Mudança de Senha */}
+      {isPasswordModalOpen && passwordUser && (
+        <Modal
+          isOpen={isPasswordModalOpen}
+          onClose={() => {
+            setIsPasswordModalOpen(false);
+            setPasswordUser(null);
+            setNewPassword('');
+            setConfirmPassword('');
+          }}
+          title={`Alterar Senha - ${passwordUser.name}`}
+          size="md"
+        >
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nova Senha
+              </label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Digite a nova senha"
+                disabled={changingPassword}
+              />
+              <p className="text-xs text-gray-500 mt-1">Mínimo de 6 caracteres</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Confirmar Nova Senha
+              </label>
+              <Input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirme a nova senha"
+                disabled={changingPassword}
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setIsPasswordModalOpen(false);
+                  setPasswordUser(null);
+                  setNewPassword('');
+                  setConfirmPassword('');
+                }}
+                disabled={changingPassword}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleSavePassword}
+                disabled={changingPassword || !newPassword || !confirmPassword}
+              >
+                {changingPassword ? 'Alterando...' : 'Alterar Senha'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

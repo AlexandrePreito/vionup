@@ -178,7 +178,13 @@ export function Sidebar() {
   if (activeSection === 'cadastros') {
     sidebarItems = cadastrosItems;
   } else if (activeSection === 'config') {
-    sidebarItems = configItems;
+    // Filtrar itens de configuração: apenas master pode ver "Grupos"
+    sidebarItems = configItems.filter(item => {
+      if (item.href === '/grupos') {
+        return user?.role === 'master';
+      }
+      return true;
+    });
   } else if (activeSection === 'powerbi') {
     // Filtrar itens do Power BI: apenas master pode ver "Importar"
     sidebarItems = powerbiItems.filter(item => {
@@ -199,8 +205,14 @@ export function Sidebar() {
     <aside className={`bg-white border-r border-gray-200 min-h-screen flex flex-col fixed left-0 top-0 z-40 transition-all duration-300 ${isExpanded ? 'w-64' : 'w-16'}`}>
       {/* Header */}
       <div className={`flex items-center ${isExpanded ? 'justify-start gap-3 px-4' : 'justify-center'} p-4 border-b border-gray-200 h-16 transition-all duration-300`}>
-        <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/25 flex-shrink-0">
-          <Rocket className="w-4 h-4 text-white transform -rotate-45" />
+        <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+          <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+            <Rocket className="w-5 h-5 transform -rotate-45 text-white" style={{
+              fill: 'white',
+              stroke: 'white',
+              strokeWidth: 1.5
+            }} />
+          </div>
         </div>
         {isExpanded && (
           <div className="flex flex-col">

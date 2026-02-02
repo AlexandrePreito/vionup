@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getAuthenticatedUser } from '@/lib/auth/get-user';
 
 // GET - Listar usuários
 export async function GET(request: NextRequest) {
@@ -10,6 +11,13 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get('role');
     const includeInactive = searchParams.get('include_inactive') === 'true';
 
+    // Obter usuário logado
+    const user = await getAuthenticatedUser(request);
+    
+    // Debug: verificar se usuário foi identificado
+    console.log('API /users - Usuário identificado:', user ? { id: user.id, role: user.role, company_group_id: user.company_group_id } : 'null');
+    console.log('API /users - Headers x-user-id:', request.headers.get('x-user-id'));
+
     let query = supabaseAdmin
       .from('users')
       .select(`
@@ -18,15 +26,63 @@ export async function GET(request: NextRequest) {
       `)
       .order('name', { ascending: true });
 
-    // Filtros
-    if (groupId) {
-      query = query.eq('company_group_id', groupId);
+    // Aplicar filtros de permissão baseados no role
+    if (user) {
+      console.log('API /users - Aplicando filtros para usuário:', { 
+        id: user.id, 
+        role: user.role, 
+        company_group_id: user.company_group_id 
+      });
+      
+      if (user.role === 'master') {
+        // Master vê tudo - usar group_id se informado
+        if (groupId) {
+          console.log('API /users - Master filtrando por group_id:', groupId);
+          query = query.eq('company_group_id', groupId);
+        } else {
+          console.log('API /users - Master sem filtro de grupo, retornando todos');
+        }
+      } else if (user.role === 'group_admin' || user.role === 'admin') {
+        // Admin (group_admin) vê apenas usuários do seu grupo
+        if (user.company_group_id) {
+          console.log('API /users - group_admin filtrando por company_group_id:', user.company_group_id);
+          query = query.eq('company_group_id', user.company_group_id);
+        } else {
+          // Se não tem grupo, não retorna nada
+          console.log('API /users - group_admin sem company_group_id, retornando vazio');
+          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+        }
+      } else if (user.role === 'company_admin') {
+        // Company Admin vê apenas usuários do seu grupo (por enquanto)
+        if (user.company_group_id) {
+          console.log('API /users - company_admin filtrando por company_group_id:', user.company_group_id);
+          query = query.eq('company_group_id', user.company_group_id);
+        } else {
+          console.log('API /users - company_admin sem company_group_id, retornando vazio');
+          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+        }
+      } else if (user.role === 'user') {
+        // User comum só vê a si mesmo
+        console.log('API /users - user comum, retornando apenas o próprio usuário');
+        query = query.eq('id', user.id);
+      }
+    } else {
+      // Se não tem usuário identificado, retornar vazio
+      console.warn('API /users - Nenhum usuário identificado, retornando vazio.');
+      console.warn('API /users - Headers recebidos:', {
+        'x-user-id': request.headers.get('x-user-id'),
+        'authorization': request.headers.get('authorization') ? 'present' : 'missing',
+        'cookie': request.headers.get('cookie') ? 'present' : 'missing'
+      });
+      query = query.eq('id', '00000000-0000-0000-0000-000000000000');
     }
 
+    // Filtros adicionais (após aplicar permissões)
     if (role) {
       query = query.eq('role', role);
     }
 
+    // Filtrar por is_active apenas se includeInactive não for true
     if (!includeInactive) {
       query = query.eq('is_active', true);
     }
@@ -39,6 +95,33 @@ export async function GET(request: NextRequest) {
         { error: 'Erro ao buscar usuários' },
         { status: 500 }
       );
+    }
+
+    console.log('API /users - Query executada. Usuários retornados:', users?.length || 0);
+    if (error) {
+      console.error('API /users - Erro na query:', error);
+      console.error('API /users - Detalhes do erro:', JSON.stringify(error, null, 2));
+    }
+    if (users && users.length > 0) {
+      console.log('API /users - Primeiros usuários:', users.slice(0, 3).map((u: any) => ({ 
+        name: u.name, 
+        email: u.email, 
+        role: u.role, 
+        company_group_id: u.company_group_id 
+      })));
+    } else {
+      console.warn('API /users - Nenhum usuário retornado.');
+      console.warn('API /users - Verificando se há usuários no banco sem filtros...');
+      // Teste: buscar todos os usuários sem filtros para debug
+      const { data: allUsers, error: allError } = await supabaseAdmin
+        .from('users')
+        .select('id, name, email, role, company_group_id, is_active')
+        .limit(5);
+      console.log('API /users - Teste sem filtros:', { 
+        count: allUsers?.length || 0, 
+        error: allError,
+        users: allUsers 
+      });
     }
 
     // Adicionar contagem de empresas para cada usuário
@@ -67,6 +150,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    console.log('Request body:', body);
+    
     const { 
       company_group_id, 
       company_ids,
@@ -76,6 +161,8 @@ export async function POST(request: NextRequest) {
       role, 
       avatar_url 
     } = body;
+    
+    console.log('Campos extraídos:', { name, email, role, company_group_id, company_ids, hasPassword: !!password });
 
     // Validações básicas
     if (!name || !email || !role) {
@@ -86,10 +173,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Validar role
-    const validRoles = ['master', 'admin', 'user'];
+    const validRoles = ['master', 'group_admin', 'company_admin', 'user'];
     if (!validRoles.includes(role)) {
       return NextResponse.json(
-        { error: 'Role inválido' },
+        { error: 'Role inválido. Valores válidos: master, group_admin, company_admin, user' },
         { status: 400 }
       );
     }

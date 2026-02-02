@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getAuthenticatedUser } from '@/lib/auth/get-user';
 
 // GET - Listar funcionários
 export async function GET(request: NextRequest) {
@@ -9,6 +10,9 @@ export async function GET(request: NextRequest) {
     const groupId = searchParams.get('group_id');
     const includeInactive = searchParams.get('include_inactive') === 'true';
 
+    // Obter usuário logado
+    const user = await getAuthenticatedUser(request);
+
     let query = supabaseAdmin
       .from('employees')
       .select(`
@@ -17,12 +21,44 @@ export async function GET(request: NextRequest) {
       `)
       .order('name', { ascending: true });
 
-    if (companyId) {
-      query = query.eq('company_id', companyId);
-    }
-
-    if (groupId) {
-      query = query.eq('company.company_group_id', groupId);
+    // Aplicar filtros de permissão baseados no role
+    if (user) {
+      if (user.role === 'master') {
+        // Master vê tudo - usar filtros informados
+        if (companyId) {
+          query = query.eq('company_id', companyId);
+        }
+        if (groupId) {
+          // Filtrar por grupo via relacionamento
+          query = query.eq('company.company_group_id', groupId);
+        }
+      } else if (user.role === 'group_admin') {
+        // Admin (group_admin) vê apenas funcionários de empresas do seu grupo
+        if (user.company_group_id) {
+          query = query.eq('company.company_group_id', user.company_group_id);
+        } else {
+          // Se não tem grupo, não retorna nada
+          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+        }
+      } else if (user.role === 'company_admin') {
+        // Company Admin vê apenas funcionários de empresas do seu grupo (por enquanto)
+        if (user.company_group_id) {
+          query = query.eq('company.company_group_id', user.company_group_id);
+        } else {
+          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+        }
+      } else if (user.role === 'user') {
+        // User vê apenas funcionários de empresas vinculadas a ele
+        if (user.company_ids && user.company_ids.length > 0) {
+          query = query.in('company_id', user.company_ids);
+        } else {
+          // Se não tem empresas, não retorna nada
+          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+        }
+      }
+    } else {
+      // Se não tem usuário, não retorna nada
+      query = query.eq('id', '00000000-0000-0000-0000-000000000000');
     }
 
     if (!includeInactive) {
@@ -39,9 +75,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Filtrar por grupo se necessário (filtro adicional pós-query)
+    // Filtrar por grupo se necessário (filtro adicional pós-query para master)
     let filteredData = data;
-    if (groupId) {
+    if (groupId && user?.role === 'master') {
       filteredData = data?.filter((emp: any) => emp.company?.company_group_id === groupId) || [];
     }
 

@@ -4,17 +4,17 @@ import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Search, Package, Loader2, CheckCircle, XCircle, ChevronLeft, ChevronRight, Link2, Percent, Boxes } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { RawMaterial, CompanyGroup, Company, ExternalProduct } from '@/types';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 const ITEMS_PER_PAGE = 20;
 
 export default function MateriasPrimasPage() {
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [externalProducts, setExternalProducts] = useState<ExternalProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterGroup, setFilterGroup] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   
@@ -49,20 +49,6 @@ export default function MateriasPrimasPage() {
   const [searchProduct, setSearchProduct] = useState('');
   const [linkingProduct, setLinkingProduct] = useState(false);
 
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      const data = await res.json();
-      setGroups(data.groups || []);
-      if (data.groups?.length > 0 && !filterGroup) {
-        setFilterGroup(data.groups[0].id);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
-    }
-  };
-
   // Buscar empresas
   const fetchCompanies = async (groupId: string) => {
     try {
@@ -76,10 +62,10 @@ export default function MateriasPrimasPage() {
 
   // Buscar matérias-primas
   const fetchRawMaterials = async () => {
-    if (!filterGroup) return;
+    if (!selectedGroupId) return;
     try {
       setLoading(true);
-      const res = await fetch(`/api/raw-materials?group_id=${filterGroup}&include_products=true`);
+      const res = await fetch(`/api/raw-materials?group_id=${selectedGroupId}&include_products=true`);
       const data = await res.json();
       setRawMaterials(data.rawMaterials || []);
     } catch (error) {
@@ -145,17 +131,13 @@ export default function MateriasPrimasPage() {
   };
 
   useEffect(() => {
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
-    if (filterGroup) {
-      fetchCompanies(filterGroup);
+    if (selectedGroupId) {
+      fetchCompanies(selectedGroupId);
       fetchRawMaterials();
-      fetchExternalProducts(filterGroup);
-      fetchExternalStock(filterGroup);
+      fetchExternalProducts(selectedGroupId);
+      fetchExternalStock(selectedGroupId);
     }
-  }, [filterGroup]);
+  }, [selectedGroupId]);
 
   // Filtrar matérias-primas
   const filteredItems = rawMaterials.filter(item => {
@@ -174,7 +156,7 @@ export default function MateriasPrimasPage() {
   // Resetar página quando filtrar
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterGroup, filterCategory]);
+  }, [search, selectedGroupId, filterCategory]);
 
   // Categorias únicas
   const categories = [...new Set(rawMaterials.map(r => r.category).filter(Boolean))];
@@ -194,7 +176,7 @@ export default function MateriasPrimasPage() {
   const handleCreate = () => {
     setEditingItem(null);
     setFormData({
-      company_group_id: filterGroup,
+      company_group_id: selectedGroupId,
       company_id: '',
       name: '',
       unit: 'kg',
@@ -553,16 +535,25 @@ export default function MateriasPrimasPage() {
             />
           </div>
 
-          <select
-            value={filterGroup}
-            onChange={(e) => setFilterGroup(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Todos os grupos</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>{group.name}</option>
-            ))}
-          </select>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Todos os grupos</option>
+              {groups.map((group: any) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          )}
 
           <select
             value={filterCategory}

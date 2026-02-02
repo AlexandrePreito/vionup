@@ -118,10 +118,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Validações de hierarquia se role está sendo alterado
     if (role) {
-      const validRoles = ['master', 'admin', 'user'];
+      const validRoles = ['master', 'group_admin', 'company_admin', 'user'];
       if (!validRoles.includes(role)) {
         return NextResponse.json(
-          { error: 'Role inválido' },
+          { error: 'Role inválido. Valores válidos: master, group_admin, company_admin, user' },
           { status: 400 }
         );
       }

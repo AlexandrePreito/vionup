@@ -77,8 +77,9 @@ export async function getPowerBIToken(connection: PowerBIConnection): Promise<st
 export async function executeDaxQuery(
   connection: PowerBIConnection,
   datasetId: string,
-  query: string
-): Promise<{ success: boolean; data?: any[]; error?: string }> {
+  query: string,
+  captureFullError: boolean = false
+): Promise<{ success: boolean; data?: any[]; error?: string; errorDetails?: any }> {
   const token = await getPowerBIToken(connection);
   
   if (!token) {
@@ -103,11 +104,30 @@ export async function executeDaxQuery(
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      return { 
-        success: false, 
-        error: errorData.error?.message || `Erro HTTP ${response.status}` 
-      };
+      // Para produtos, capturar o body completo do erro
+      if (captureFullError) {
+        const errorText = await response.text();
+        console.error('Erro detalhado Power BI:', errorText);
+        
+        let errorData: any = {};
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { raw: errorText };
+        }
+        
+        return { 
+          success: false, 
+          error: errorData.error?.message || `Erro HTTP ${response.status}`,
+          errorDetails: errorData
+        };
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        return { 
+          success: false, 
+          error: errorData.error?.message || `Erro HTTP ${response.status}` 
+        };
+      }
     }
 
     const result = await response.json();

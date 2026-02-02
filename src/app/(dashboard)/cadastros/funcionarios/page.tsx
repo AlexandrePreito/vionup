@@ -7,17 +7,17 @@ import { Employee, Company, CompanyGroup, EmployeeMapping } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 const ITEMS_PER_PAGE = 20;
 
 export default function FuncionariosPage() {
   const router = useRouter();
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterGroup, setFilterGroup] = useState('');
   const [filterCompany, setFilterCompany] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -47,8 +47,8 @@ export default function FuncionariosPage() {
       let url = '/api/employees?include_inactive=true';
       if (filterCompany) {
         url += `&company_id=${filterCompany}`;
-      } else if (filterGroup) {
-        url += `&group_id=${filterGroup}`;
+      } else if (selectedGroupId) {
+        url += `&group_id=${selectedGroupId}`;
       }
       const res = await fetch(url);
       const data = await res.json();
@@ -57,17 +57,6 @@ export default function FuncionariosPage() {
       console.error('Erro ao buscar funcionários:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      const data = await res.json();
-      setGroups(data.groups || []);
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
     }
   };
 
@@ -84,22 +73,17 @@ export default function FuncionariosPage() {
   };
 
   useEffect(() => {
-    fetchGroups();
-    fetchCompanies();
-  }, []);
-
-  useEffect(() => {
-    if (filterGroup) {
-      fetchCompanies(filterGroup);
+    if (selectedGroupId) {
+      fetchCompanies(selectedGroupId);
       setFilterCompany('');
     } else {
       fetchCompanies();
     }
-  }, [filterGroup]);
+  }, [selectedGroupId]);
 
   useEffect(() => {
     fetchEmployees();
-  }, [filterGroup, filterCompany]);
+  }, [selectedGroupId, filterCompany]);
 
   // Filtrar funcionários
   const filteredEmployees = employees.filter(employee =>
@@ -117,7 +101,7 @@ export default function FuncionariosPage() {
   // Resetar página quando filtrar
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterGroup, filterCompany]);
+  }, [search, selectedGroupId, filterCompany]);
 
   // Upload de foto
   const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -451,7 +435,6 @@ export default function FuncionariosPage() {
     }
   };
 
-  const groupOptions = groups.map(g => ({ value: g.id, label: g.name }));
   const companyOptions = companies.map(c => ({ value: c.id, label: c.name }));
 
   if (loading) {
@@ -484,7 +467,47 @@ export default function FuncionariosPage() {
 
         {/* Filtros */}
         <div className="flex gap-4">
+          {/* Grupo */}
+          <div className="w-48">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
+            {isGroupReadOnly ? (
+              <input
+                type="text"
+                value={groupName}
+                disabled
+                className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+              />
+            ) : (
+              <select
+                value={selectedGroupId}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Todos os grupos</option>
+                {groups.map((group: any) => (
+                  <option key={group.id} value={group.id}>{group.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          {/* Empresa */}
+          <div className="w-48">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
+            <select
+              value={filterCompany}
+              onChange={(e) => setFilterCompany(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              disabled={!selectedGroupId && groups.length > 0}
+            >
+              <option value="">Todas as empresas</option>
+              {companies.map((company) => (
+                <option key={company.id} value={company.id}>{company.name}</option>
+              ))}
+            </select>
+          </div>
+          {/* Buscar */}
           <div className="flex-1 max-w-md">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
             <div className="relative">
               <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
@@ -496,31 +519,6 @@ export default function FuncionariosPage() {
               />
             </div>
           </div>
-          <div className="w-48">
-            <select
-              value={filterGroup}
-              onChange={(e) => setFilterGroup(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Todos os grupos</option>
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>{group.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="w-48">
-            <select
-              value={filterCompany}
-              onChange={(e) => setFilterCompany(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              disabled={!filterGroup && groups.length > 0}
-            >
-              <option value="">Todas as empresas</option>
-              {companies.map((company) => (
-                <option key={company.id} value={company.id}>{company.name}</option>
-              ))}
-            </select>
-          </div>
         </div>
 
         {filteredEmployees.length === 0 ? (
@@ -528,12 +526,12 @@ export default function FuncionariosPage() {
             <User size={48} className="mx-auto text-gray-300 mb-4" />
             <h2 className="text-lg font-medium text-gray-900 mb-2">Nenhum funcionário</h2>
             <p className="text-gray-500 mb-4">
-              {search || filterGroup || filterCompany
-                ? `Nenhum funcionário encontrado para "${search || groups.find(g => g.id === filterGroup)?.name || companies.find(c => c.id === filterCompany)?.name}"`
+              {search || selectedGroupId || filterCompany
+                ? `Nenhum funcionário encontrado para "${search || groupName || companies.find(c => c.id === filterCompany)?.name}"`
                 : 'Crie seu primeiro funcionário no sistema'
               }
             </p>
-            {!search && !filterGroup && !filterCompany && (
+            {!search && !selectedGroupId && !filterCompany && (
               <Button onClick={handleCreate}>
                 Criar Funcionário
               </Button>

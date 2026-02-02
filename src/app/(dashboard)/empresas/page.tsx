@@ -5,16 +5,16 @@ import { Plus, Pencil, Trash2, Search, Building2, Loader2, CheckCircle, XCircle,
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui';
 import { Company, CompanyGroup, CompanyMapping } from '@/types';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 const ITEMS_PER_PAGE = 20;
 
 export default function EmpresasPage() {
   const router = useRouter();
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterGroup, setFilterGroup] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
@@ -32,8 +32,8 @@ export default function EmpresasPage() {
   const fetchCompanies = async () => {
     try {
       setLoading(true);
-      const url = filterGroup 
-        ? `/api/companies?group_id=${filterGroup}&include_inactive=true`
+      const url = selectedGroupId 
+        ? `/api/companies?group_id=${selectedGroupId}&include_inactive=true`
         : '/api/companies?include_inactive=true';
       const res = await fetch(url);
       const data = await res.json();
@@ -45,24 +45,13 @@ export default function EmpresasPage() {
     }
   };
 
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      const data = await res.json();
-      setGroups(data.groups || []);
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
+  useEffect(() => {
+    if (selectedGroupId) {
+      fetchCompanies();
+    } else {
+      setCompanies([]);
     }
-  };
-
-  useEffect(() => {
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
-    fetchCompanies();
-  }, [filterGroup]);
+  }, [selectedGroupId]);
 
   // Filtrar empresas
   const filteredCompanies = companies.filter(company =>
@@ -80,7 +69,7 @@ export default function EmpresasPage() {
   // Resetar página quando filtrar
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterGroup]);
+  }, [search, selectedGroupId]);
 
   // Buscar mapeamentos de uma empresa
   const fetchCompanyMappings = async (companyId: string) => {
@@ -121,7 +110,12 @@ export default function EmpresasPage() {
   const handleCreate = () => {
     setEditingCompany(null);
     setCompanyMappings([]);
-    setFormData({ company_group_id: filterGroup || '', name: '', slug: '', cnpj: '' });
+    setFormData({ 
+      company_group_id: selectedGroupId || '', 
+      name: '', 
+      slug: '', 
+      cnpj: '' 
+    });
     setIsModalOpen(true);
   };
 
@@ -162,7 +156,12 @@ export default function EmpresasPage() {
 
   // Salvar (criar ou editar)
   const handleSave = async () => {
-    if (!formData.company_group_id || !formData.name || !formData.slug) {
+    // Se o grupo está fixo (read-only), usar o selectedGroupId
+    const finalCompanyGroupId = isGroupReadOnly && selectedGroupId 
+      ? selectedGroupId 
+      : formData.company_group_id;
+
+    if (!finalCompanyGroupId || !formData.name || !formData.slug) {
       alert('Grupo, nome e slug são obrigatórios');
       return;
     }
@@ -178,6 +177,7 @@ export default function EmpresasPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
+          company_group_id: finalCompanyGroupId,
           cnpj: formData.cnpj.replace(/\D/g, '') || null
         })
       });
@@ -222,7 +222,6 @@ export default function EmpresasPage() {
     }
   };
 
-  const groupOptions = groups.map(g => ({ value: g.id, label: g.name }));
 
   if (loading) {
     return (
@@ -254,29 +253,42 @@ export default function EmpresasPage() {
 
         {/* Filtros */}
         <div className="flex gap-4">
+          {/* Grupo */}
+          <div className="w-64">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
+            {isGroupReadOnly ? (
+              <input
+                type="text"
+                value={groupName}
+                disabled
+                className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+              />
+            ) : (
+              <select
+                value={selectedGroupId}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Todos os grupos</option>
+                {groups.map((group: any) => (
+                  <option key={group.id} value={group.id}>{group.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          {/* Buscar */}
           <div className="flex-1 max-w-md">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
             <div className="relative">
               <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Buscar por nome, slug, CNPJ ou grupo..."
+                placeholder="Buscar por nome, slug ou CNPJ..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
-          </div>
-          <div className="w-64">
-            <select
-              value={filterGroup}
-              onChange={(e) => setFilterGroup(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Todos os grupos</option>
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>{group.name}</option>
-              ))}
-            </select>
           </div>
         </div>
 
@@ -285,12 +297,12 @@ export default function EmpresasPage() {
             <Building2 size={48} className="mx-auto text-gray-300 mb-4" />
             <h2 className="text-lg font-medium text-gray-900 mb-2">Nenhuma empresa</h2>
             <p className="text-gray-500 mb-4">
-              {search || filterGroup 
-                ? `Nenhuma empresa encontrada para "${search || groups.find(g => g.id === filterGroup)?.name}"`
+              {search || selectedGroupId 
+                ? `Nenhuma empresa encontrada para "${search || groupName}"`
                 : 'Crie sua primeira empresa no sistema'
               }
             </p>
-            {!search && !filterGroup && (
+            {!search && !selectedGroupId && (
               <Button onClick={handleCreate}>
                 Criar Empresa
               </Button>
@@ -433,17 +445,29 @@ export default function EmpresasPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
-                  <select
-                    value={formData.company_group_id}
-                    onChange={(e) => setFormData({ ...formData, company_group_id: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  >
-                    <option value="">Selecione um grupo</option>
-                    {groups.map((group) => (
-                      <option key={group.id} value={group.id}>{group.name}</option>
-                    ))}
-                  </select>
+                  {isGroupReadOnly && selectedGroupId ? (
+                    <input
+                      type="text"
+                      value={groupName}
+                      disabled
+                      className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+                    />
+                  ) : (
+                    <select
+                      value={formData.company_group_id}
+                      onChange={(e) => setFormData({ ...formData, company_group_id: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      required
+                    >
+                      <option value="">Selecione um grupo</option>
+                      {groups.map((group: any) => (
+                        <option key={group.id} value={group.id}>{group.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  {isGroupReadOnly && selectedGroupId && (
+                    <input type="hidden" value={selectedGroupId} />
+                  )}
                 </div>
               </div>
 

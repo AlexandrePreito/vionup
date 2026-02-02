@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { CompanyGroup, Company, Product } from '@/types';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 interface ProductGoal {
   id: string;
@@ -41,14 +42,13 @@ const MONTHS = [
 ];
 
 export default function MetaProdutosPage() {
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [goals, setGoals] = useState<ProductGoal[]>([]);
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterGroup, setFilterGroup] = useState('');
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState<number | null>(null);
   const [filterCompany, setFilterCompany] = useState('');
@@ -96,20 +96,6 @@ export default function MetaProdutosPage() {
     .filter((p: any) => !selectedProducts.find((sp: any) => sp.id === p.id))
     .filter((p: any) => productSearch === '' || p.name.toLowerCase().includes(productSearch.toLowerCase()));
 
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      const data = await res.json();
-      setGroups(data.groups || []);
-      if (data.groups?.length > 0 && !filterGroup) {
-        setFilterGroup(data.groups[0].id);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
-    }
-  };
-
   // Buscar empresas
   const fetchCompanies = async (groupId: string) => {
     try {
@@ -147,11 +133,11 @@ export default function MetaProdutosPage() {
 
   // Buscar metas de produtos
   const fetchGoals = async () => {
-    if (!filterGroup) return;
+    if (!selectedGroupId) return;
     try {
       setLoading(true);
       const params = new URLSearchParams({
-        group_id: filterGroup,
+        group_id: selectedGroupId,
         year: filterYear.toString(),
         type: 'employee_product'
       });
@@ -182,22 +168,18 @@ export default function MetaProdutosPage() {
   };
 
   useEffect(() => {
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
-    if (filterGroup) {
-      fetchCompanies(filterGroup);
-      fetchEmployees(filterGroup);
-      fetchProducts(filterGroup);
+    if (selectedGroupId) {
+      fetchCompanies(selectedGroupId);
+      fetchEmployees(selectedGroupId);
+      fetchProducts(selectedGroupId);
     }
-  }, [filterGroup]);
+  }, [selectedGroupId]);
 
   useEffect(() => {
-    if (filterGroup && products.length > 0) {
+    if (selectedGroupId && products.length > 0) {
       fetchGoals();
     }
-  }, [filterGroup, filterYear, filterMonth, products]);
+  }, [selectedGroupId, filterYear, filterMonth, products]);
 
   // Filtrar metas
   const filteredItems = goals.filter((item: any) => {
@@ -219,12 +201,16 @@ export default function MetaProdutosPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterGroup, filterYear, filterMonth, filterCompany]);
+  }, [search, selectedGroupId, filterYear, filterMonth, filterCompany]);
 
   // Abrir modal
   const handleNew = () => {
+    if (!selectedGroupId) {
+      alert('Selecione um grupo primeiro');
+      return;
+    }
     setFormData({
-      company_group_id: filterGroup,
+      company_group_id: selectedGroupId,
       year: filterYear,
       month: filterMonth ?? new Date().getMonth() + 1
     });
@@ -409,7 +395,7 @@ export default function MetaProdutosPage() {
 
   useEffect(() => {
     setSelectedIds([]);
-  }, [filterGroup, filterYear, filterMonth, filterCompany, search]);
+  }, [selectedGroupId, filterYear, filterMonth, filterCompany, search]);
 
   // Abrir modal de edição individual
   const handleEdit = (goal: ProductGoal) => {
@@ -579,47 +565,31 @@ export default function MetaProdutosPage() {
 
         {/* Filtros */}
         <div className="flex flex-wrap gap-4">
+          {/* Grupo */}
           <div className="w-48">
             <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
-            <select
-              value={filterGroup}
-              onChange={(e) => setFilterGroup(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Selecione...</option>
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>{group.name}</option>
-              ))}
-            </select>
+            {isGroupReadOnly ? (
+              <input
+                type="text"
+                value={groupName}
+                disabled
+                className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+              />
+            ) : (
+              <select
+                value={selectedGroupId}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Selecione...</option>
+                {groups.map((group: any) => (
+                  <option key={group.id} value={group.id}>{group.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
-          <div className="w-32">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
-            <select
-              value={filterYear}
-              onChange={(e) => setFilterYear(Number(e.target.value))}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              {years.map((year) => (
-                <option key={year} value={year}>{year}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="w-40">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
-            <select
-              value={filterMonth ?? ''}
-              onChange={(e) => setFilterMonth(e.target.value === '' ? null : Number(e.target.value))}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Todos</option>
-              {MONTHS.map((month, index) => (
-                <option key={index} value={index + 1}>{month}</option>
-              ))}
-            </select>
-          </div>
-
+          {/* Filial */}
           <div className="w-44">
             <label className="block text-sm font-medium text-gray-700 mb-1">Filial</label>
             <select
@@ -634,6 +604,36 @@ export default function MetaProdutosPage() {
             </select>
           </div>
 
+          {/* Mês */}
+          <div className="w-40">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
+            <select
+              value={filterMonth ?? ''}
+              onChange={(e) => setFilterMonth(e.target.value === '' ? null : Number(e.target.value))}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Todos</option>
+              {MONTHS.map((month, index) => (
+                <option key={index} value={index + 1}>{month}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Ano */}
+          <div className="w-32">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
+            <select
+              value={filterYear}
+              onChange={(e) => setFilterYear(Number(e.target.value))}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              {years.map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Busca */}
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
             <div className="relative">

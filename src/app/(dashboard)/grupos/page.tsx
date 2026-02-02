@@ -1,11 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Plus, Pencil, Trash2, Search, AlertCircle } from 'lucide-react';
 import { Button, Input, Modal, Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui';
 import { CompanyGroup } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function GruposPage() {
+  const router = useRouter();
+  const { user } = useAuth();
   const [groups, setGroups] = useState<CompanyGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -29,8 +33,32 @@ export default function GruposPage() {
   };
 
   useEffect(() => {
+    // Verificar se o usuário é master
+    if (user && user.role !== 'master') {
+      // Redirecionar para a página inicial se não for master
+      router.push('/');
+      return;
+    }
     fetchGroups();
-  }, []);
+  }, [user, router]);
+
+  // Se não for master, mostrar mensagem de acesso negado
+  if (user && user.role !== 'master') {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="bg-white rounded-2xl p-12 text-center border border-gray-100 max-w-md">
+          <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Acesso Negado</h2>
+          <p className="text-gray-500 mb-4">
+            Você não tem permissão para acessar esta página. Apenas usuários Master podem gerenciar grupos.
+          </p>
+          <Button onClick={() => router.push('/')}>
+            Voltar ao Início
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // Filtrar grupos
   const filteredGroups = groups.filter(group =>

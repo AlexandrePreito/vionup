@@ -19,6 +19,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import Link from 'next/link';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 interface CompanyGroup {
   id: string;
@@ -86,9 +87,8 @@ type SortField = 'ranking' | 'name' | 'revenue' | 'products';
 type SortOrder = 'asc' | 'desc';
 
 export default function DashboardEquipePage() {
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -97,31 +97,12 @@ export default function DashboardEquipePage() {
   const [sortField, setSortField] = useState<SortField>('ranking');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
-  // Buscar grupos
-  useEffect(() => {
-    const fetchGroups = async () => {
-      try {
-        const res = await fetch('/api/groups');
-        if (res.ok) {
-          const data = await res.json();
-          setGroups(data.groups || []);
-          if (data.groups?.length > 0) {
-            setSelectedGroup(data.groups[0].id);
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao buscar grupos:', error);
-      }
-    };
-    fetchGroups();
-  }, []);
-
   // Buscar empresas quando grupo mudar
   useEffect(() => {
-    if (!selectedGroup) return;
+    if (!selectedGroupId) return;
     const fetchCompanies = async () => {
       try {
-        const res = await fetch(`/api/companies?group_id=${selectedGroup}`);
+        const res = await fetch(`/api/companies?group_id=${selectedGroupId}`);
         if (res.ok) {
           const data = await res.json();
           setCompanies(data.companies || []);
@@ -133,7 +114,7 @@ export default function DashboardEquipePage() {
       }
     };
     fetchCompanies();
-  }, [selectedGroup]);
+  }, [selectedGroupId]);
 
   // Buscar dados da equipe
   const fetchTeamData = async () => {
@@ -142,7 +123,7 @@ export default function DashboardEquipePage() {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/dashboard/team?company_id=${selectedCompany}&year=${selectedYear}&month=${selectedMonth}&group_id=${selectedGroup}`
+        `/api/dashboard/team?company_id=${selectedCompany}&year=${selectedYear}&month=${selectedMonth}&group_id=${selectedGroupId}`
       );
       if (res.ok) {
         const data = await res.json();
@@ -169,7 +150,10 @@ export default function DashboardEquipePage() {
   }, [selectedCompany, selectedYear, selectedMonth]);
 
   // Formatar valor em R$
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: number | null | undefined) => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return 'R$ 0,00';
+    }
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
@@ -281,16 +265,25 @@ export default function DashboardEquipePage() {
         {/* Grupo */}
         <div className="w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
-          <select
-            value={selectedGroup}
-            onChange={(e) => setSelectedGroup(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">Selecione...</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>{group.name}</option>
-            ))}
-          </select>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">Selecione...</option>
+              {groups.map((group: any) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Filial (Obrigatório) */}
@@ -431,7 +424,9 @@ export default function DashboardEquipePage() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-900">Ranking de Vendedores</h3>
-                  <p className="text-sm text-gray-500">{teamData.company.name} - {MONTHS[teamData.period.month - 1]?.label} {teamData.period.year}</p>
+                  <p className="text-sm text-gray-500">
+                    {teamData.company?.name || 'Empresa'} - {teamData.period ? `${MONTHS[teamData.period.month - 1]?.label || ''} ${teamData.period.year || ''}` : ''}
+                  </p>
                 </div>
               </div>
             </div>
@@ -567,7 +562,7 @@ export default function DashboardEquipePage() {
                         {/* Ações */}
                         <td className="px-6 py-4 text-center">
                           <Link
-                            href={`/dashboard/funcionario?employee=${emp.id}&year=${teamData.period.year}&month=${teamData.period.month}`}
+                            href={`/dashboard/funcionario?employee=${emp.id}&year=${teamData.period?.year || selectedYear}&month=${teamData.period?.month || selectedMonth}`}
                             className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"
                           >
                             <Eye size={16} />

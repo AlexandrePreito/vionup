@@ -19,6 +19,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import Link from 'next/link';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 interface CompanyGroup {
   id: string;
@@ -83,8 +84,7 @@ type SortField = 'ranking' | 'name' | 'revenue' | 'shifts' | 'saleModes';
 type SortOrder = 'asc' | 'desc';
 
 export default function DashboardEmpresasPage() {
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState('');
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [loading, setLoading] = useState(false);
@@ -92,33 +92,14 @@ export default function DashboardEmpresasPage() {
   const [sortField, setSortField] = useState<SortField>('ranking');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
-  // Buscar grupos
-  useEffect(() => {
-    const fetchGroups = async () => {
-      try {
-        const res = await fetch('/api/groups');
-        if (res.ok) {
-          const data = await res.json();
-          setGroups(data.groups || []);
-          if (data.groups?.length > 0) {
-            setSelectedGroup(data.groups[0].id);
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao buscar grupos:', error);
-      }
-    };
-    fetchGroups();
-  }, []);
-
   // Buscar dados das empresas
   const fetchCompaniesData = async () => {
-    if (!selectedGroup) return;
+    if (!selectedGroupId) return;
     
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/dashboard/companies?group_id=${selectedGroup}&year=${selectedYear}&month=${selectedMonth}`
+        `/api/dashboard/companies?group_id=${selectedGroupId}&year=${selectedYear}&month=${selectedMonth}`
       );
       if (res.ok) {
         const data = await res.json();
@@ -137,15 +118,18 @@ export default function DashboardEmpresasPage() {
 
   // Buscar automaticamente quando grupo ou período mudar
   useEffect(() => {
-    if (selectedGroup) {
+    if (selectedGroupId) {
       fetchCompaniesData();
     } else {
       setCompaniesData(null);
     }
-  }, [selectedGroup, selectedYear, selectedMonth]);
+  }, [selectedGroupId, selectedYear, selectedMonth]);
 
   // Formatar valor em R$
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: number | null | undefined) => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return 'R$ 0,00';
+    }
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
@@ -258,16 +242,25 @@ export default function DashboardEmpresasPage() {
         {/* Grupo */}
         <div className="w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
-          <select
-            value={selectedGroup}
-            onChange={(e) => setSelectedGroup(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">Selecione...</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>{group.name}</option>
-            ))}
-          </select>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">Selecione...</option>
+              {groups.map((group: any) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Mês */}
@@ -300,7 +293,7 @@ export default function DashboardEmpresasPage() {
       </div>
 
       {/* Mensagem se não selecionou grupo */}
-      {!selectedGroup && (
+      {!selectedGroupId && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-8 text-center">
           <Building2 size={48} className="mx-auto text-indigo-400 mb-4" />
           <h3 className="text-lg font-medium text-indigo-900">Selecione um grupo</h3>

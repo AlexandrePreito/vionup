@@ -5,11 +5,11 @@ import { useRouter } from 'next/navigation';
 import { Search, Link2, Package, GripVertical, Check, X, Plus, ChevronDown } from 'lucide-react';
 import { Button, Modal, Input } from '@/components/ui';
 import { Product, ExternalProduct, ProductMapping, CompanyGroup, Company, CompanyMapping, ExternalCompany } from '@/types';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 export default function ConciliacaoProdutosPage() {
   const router = useRouter();
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState('');
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [externalProducts, setExternalProducts] = useState<ExternalProduct[]>([]);
@@ -50,24 +50,6 @@ export default function ConciliacaoProdutosPage() {
     description: ''
   });
   const [creatingProduct, setCreatingProduct] = useState(false);
-
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      if (!res.ok) {
-        console.error('Erro ao buscar grupos:', res.status, res.statusText);
-        return;
-      }
-      const data = await res.json();
-      setGroups(data.groups || []);
-      if (data.groups?.length > 0) {
-        setSelectedGroup(data.groups[0].id);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
-    }
-  };
 
   // Buscar empresas
   const fetchCompanies = async (groupId: string) => {
@@ -178,14 +160,10 @@ export default function ConciliacaoProdutosPage() {
   };
 
   useEffect(() => {
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
-    if (selectedGroup) {
-      loadData(selectedGroup);
+    if (selectedGroupId) {
+      loadData(selectedGroupId);
     }
-  }, [selectedGroup]);
+  }, [selectedGroupId]);
 
   // Verificar se produto externo está mapeado
   const isExternalMapped = (externalId: string) => {
@@ -219,14 +197,14 @@ export default function ConciliacaoProdutosPage() {
 
   // Criar mapeamento via drag and drop
   const handleCreateMapping = async (productId: string, externalProductId: string) => {
-    if (!selectedGroup) return;
+    if (!selectedGroupId) return;
 
     try {
       const res = await fetch('/api/mappings/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          company_group_id: selectedGroup,
+          company_group_id: selectedGroupId,
           product_id: productId,
           external_product_id: externalProductId
         })
@@ -239,7 +217,7 @@ export default function ConciliacaoProdutosPage() {
         return;
       }
 
-      await fetchMappings(selectedGroup);
+      await fetchMappings(selectedGroupId);
     } catch (error) {
       console.error('Erro ao criar mapeamento:', error);
       alert('Erro ao criar mapeamento');
@@ -258,7 +236,7 @@ export default function ConciliacaoProdutosPage() {
         return;
       }
 
-      await fetchMappings(selectedGroup);
+      await fetchMappings(selectedGroupId);
     } catch (error) {
       console.error('Erro ao remover mapeamento:', error);
       alert('Erro ao remover mapeamento');
@@ -429,7 +407,7 @@ export default function ConciliacaoProdutosPage() {
   const handleOpenAddProduct = (externalProduct: ExternalProduct) => {
     setSelectedExternalProduct(externalProduct);
     setNewProductForm({
-      company_group_id: selectedGroup,
+      company_group_id: selectedGroupId || '',
       name: externalProduct.name || '',
       code: externalProduct.external_code || externalProduct.external_id || '',
       category: externalProduct.product_group || externalProduct.category || '',
@@ -461,13 +439,13 @@ export default function ConciliacaoProdutosPage() {
       }
 
       // Criar mapeamento automaticamente
-      if (selectedGroup && selectedExternalProduct) {
+      if (selectedGroupId && selectedExternalProduct) {
         try {
           await fetch('/api/mappings/products', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              company_group_id: selectedGroup,
+              company_group_id: selectedGroupId,
               product_id: data.product.id,
               external_product_id: selectedExternalProduct.id
             })
@@ -482,8 +460,8 @@ export default function ConciliacaoProdutosPage() {
       setSelectedExternalProduct(null);
       
       // Recarregar dados
-      if (selectedGroup) {
-        await loadData(selectedGroup);
+      if (selectedGroupId) {
+        await loadData(selectedGroupId);
       }
     } catch (error) {
       console.error('Erro ao criar produto:', error);
@@ -520,16 +498,26 @@ export default function ConciliacaoProdutosPage() {
       {/* Filtros */}
       <div className="flex gap-4 mb-4">
         <div className="w-48">
-          <select
-            value={selectedGroup}
-            onChange={(e) => setSelectedGroup(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Selecione o grupo</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>{group.name}</option>
-            ))}
-          </select>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Selecione o grupo</option>
+              {groups.map((group: any) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 

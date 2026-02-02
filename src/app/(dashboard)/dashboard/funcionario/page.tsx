@@ -18,6 +18,7 @@ import {
   Trophy
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 interface CompanyGroup {
   id: string;
@@ -106,10 +107,9 @@ const MONTHS = [
 ];
 
 export default function DashboardFuncionarioPage() {
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -118,31 +118,12 @@ export default function DashboardFuncionarioPage() {
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
 
-  // Buscar grupos
-  useEffect(() => {
-    const fetchGroups = async () => {
-      try {
-        const res = await fetch('/api/groups');
-        if (res.ok) {
-          const data = await res.json();
-          setGroups(data.groups || []);
-          if (data.groups?.length > 0) {
-            setSelectedGroup(data.groups[0].id);
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao buscar grupos:', error);
-      }
-    };
-    fetchGroups();
-  }, []);
-
   // Buscar empresas quando grupo mudar
   useEffect(() => {
-    if (!selectedGroup) return;
+    if (!selectedGroupId) return;
     const fetchCompanies = async () => {
       try {
-        const res = await fetch(`/api/companies?group_id=${selectedGroup}`);
+        const res = await fetch(`/api/companies?group_id=${selectedGroupId}`);
         if (res.ok) {
           const data = await res.json();
           setCompanies(data.companies || []);
@@ -155,7 +136,7 @@ export default function DashboardFuncionarioPage() {
       }
     };
     fetchCompanies();
-  }, [selectedGroup]);
+  }, [selectedGroupId]);
 
   // Buscar funcionários quando empresa mudar
   useEffect(() => {
@@ -184,12 +165,12 @@ export default function DashboardFuncionarioPage() {
 
   // Buscar dados do dashboard
   const fetchDashboard = async () => {
-    if (!selectedEmployee || !selectedGroup) return;
+    if (!selectedEmployee || !selectedGroupId) return;
     
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/dashboard/employee?employee_id=${selectedEmployee}&year=${selectedYear}&month=${selectedMonth}&group_id=${selectedGroup}`
+        `/api/dashboard/employee?employee_id=${selectedEmployee}&year=${selectedYear}&month=${selectedMonth}&group_id=${selectedGroupId}`
       );
       if (res.ok) {
         const data = await res.json();
@@ -358,16 +339,25 @@ export default function DashboardFuncionarioPage() {
         {/* Grupo */}
         <div className="w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
-          <select
-            value={selectedGroup}
-            onChange={(e) => setSelectedGroup(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Selecione...</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>{group.name}</option>
-            ))}
-          </select>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Selecione...</option>
+              {groups.map((group: any) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Filial */}
@@ -377,7 +367,7 @@ export default function DashboardFuncionarioPage() {
             value={selectedCompany}
             onChange={(e) => setSelectedCompany(e.target.value)}
             className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            disabled={!selectedGroup}
+            disabled={!selectedGroupId}
           >
             <option value="">Selecione...</option>
             {companies.map((company) => (
@@ -877,7 +867,7 @@ export default function DashboardFuncionarioPage() {
       )}
 
       {/* Estado inicial - Nenhum funcionário selecionado */}
-      {!loading && !dashboardData && selectedGroup && !selectedEmployee && (
+      {!loading && !dashboardData && selectedGroupId && !selectedEmployee && (
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-12 text-center">
           <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <User size={40} className="text-blue-600" />

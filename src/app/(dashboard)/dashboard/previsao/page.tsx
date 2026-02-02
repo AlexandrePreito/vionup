@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 import { 
   Building, 
   Calendar,
@@ -102,9 +104,10 @@ const formatCurrency = (value: number) => {
 };
 
 export default function PrevisaoPage() {
-  const [groups, setGroups] = useState<any[]>([]);
+  const { user: currentUser } = useAuth();
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
+  
   const [companies, setCompanies] = useState<any[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -115,29 +118,19 @@ export default function PrevisaoPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
 
-  // Buscar grupos
-  useEffect(() => {
-    fetch('/api/groups')
-      .then(res => res.json())
-      .then(data => {
-        // A API retorna { groups: [...] }
-        const groupsArray = data?.groups || [];
-        setGroups(Array.isArray(groupsArray) ? groupsArray : []);
-      })
-      .catch(err => {
-        console.error('Erro ao buscar grupos:', err);
-        setGroups([]);
-      });
-  }, []);
-
   // Buscar empresas quando grupo selecionado
   useEffect(() => {
     if (selectedGroupId) {
+      console.log('PrevisaoPage - Buscando empresas para grupo:', selectedGroupId);
       fetch(`/api/companies?group_id=${selectedGroupId}`)
-        .then(res => res.json())
+        .then(res => {
+          console.log('PrevisaoPage - Resposta da API empresas:', res.status);
+          return res.json();
+        })
         .then(data => {
           // A API retorna { companies: [...] }
           const companiesArray = data?.companies || [];
+          console.log('PrevisaoPage - Empresas recebidas:', companiesArray.length);
           setCompanies(Array.isArray(companiesArray) ? companiesArray : []);
         })
         .catch(err => {
@@ -260,16 +253,25 @@ export default function PrevisaoPage() {
         {/* Grupo */}
         <div className="w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
-          <select
-            value={selectedGroupId}
-            onChange={(e) => setSelectedGroupId(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">Selecione...</option>
-            {groups.map((g: any) => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </select>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">Selecione...</option>
+              {groups.map((g: any) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Empresa (Obrigatório) */}

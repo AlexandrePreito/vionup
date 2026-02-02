@@ -22,6 +22,7 @@ import {
   ChevronUp,
   Search
 } from 'lucide-react';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 interface Unidade {
   id: string;
@@ -233,6 +234,7 @@ function ScoreCard({
 }
 
 export default function NPSDashboardPage() {
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [unidades, setUnidades] = useState<Unidade[]>([]);
   const [selectedUnidade, setSelectedUnidade] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -245,14 +247,24 @@ export default function NPSDashboardPage() {
 
   // Buscar unidades
   useEffect(() => {
+    if (!selectedGroupId) {
+      setUnidades([]);
+      setSelectedUnidade('');
+      setLoadingUnidades(false);
+      return;
+    }
+
     const fetchUnidades = async () => {
       try {
-        const res = await fetch('/api/goomer/unidades');
+        setLoadingUnidades(true);
+        const res = await fetch(`/api/goomer/unidades?group_id=${selectedGroupId}`);
         if (res.ok) {
           const result = await res.json();
           setUnidades(result.unidades || []);
           if (result.unidades?.length > 0) {
             setSelectedUnidade(result.unidades[0].id);
+          } else {
+            setSelectedUnidade('');
           }
         }
       } catch (error) {
@@ -262,7 +274,7 @@ export default function NPSDashboardPage() {
       }
     };
     fetchUnidades();
-  }, []);
+  }, [selectedGroupId]);
 
   // Buscar dados do dashboard
   useEffect(() => {
@@ -304,6 +316,30 @@ export default function NPSDashboardPage() {
 
       {/* Filtros */}
       <div className="flex flex-wrap items-end gap-4">
+        {/* Grupo */}
+        <div className="w-48">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Selecione...</option>
+              {groups.map((group: any) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
         {/* Unidade */}
         <div className="w-56">
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -312,7 +348,7 @@ export default function NPSDashboardPage() {
           <select
             value={selectedUnidade}
             onChange={(e) => setSelectedUnidade(e.target.value)}
-            disabled={loadingUnidades}
+            disabled={loadingUnidades || !selectedGroupId}
             className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
           >
             <option value="">Selecione uma unidade...</option>
@@ -353,8 +389,17 @@ export default function NPSDashboardPage() {
         </div>
       </div>
 
+      {/* Mensagem se não selecionou grupo */}
+      {!selectedGroupId && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-8 text-center">
+          <Building2 size={48} className="mx-auto text-indigo-400 mb-4" />
+          <h3 className="text-lg font-medium text-indigo-900">Selecione um grupo</h3>
+          <p className="text-indigo-600 mt-1">Escolha um grupo para visualizar o dashboard de NPS</p>
+        </div>
+      )}
+
       {/* Mensagem se não selecionou unidade */}
-      {!selectedUnidade && !loadingUnidades && (
+      {selectedGroupId && !selectedUnidade && !loadingUnidades && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-8 text-center">
           <Building2 size={48} className="mx-auto text-blue-400 mb-4" />
           <h3 className="text-lg font-medium text-blue-900">Selecione uma unidade</h3>

@@ -5,6 +5,7 @@ import { Plus, Pencil, Trash2, ChevronRight, ChevronDown, FolderTree, Loader2, L
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui';
 import { Category, CompanyGroup, CategoryMapping } from '@/types';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 interface CategoryNode extends Category {
   children: CategoryNode[];
@@ -13,11 +14,10 @@ interface CategoryNode extends Category {
 
 export default function CategoriasPage() {
   const router = useRouter();
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [mappings, setMappings] = useState<CategoryMapping[]>([]);
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterGroup, setFilterGroup] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   
@@ -32,28 +32,13 @@ export default function CategoriasPage() {
   });
   const [saving, setSaving] = useState(false);
 
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      const data = await res.json();
-      setGroups(data.groups || []);
-      // Selecionar primeiro grupo automaticamente se não houver filtro
-      if (data.groups?.length > 0 && !filterGroup) {
-        setFilterGroup(data.groups[0].id);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
-    }
-  };
-
   // Buscar categorias
   const fetchCategories = async () => {
-    if (!filterGroup) return;
+    if (!selectedGroupId) return;
     
     try {
       setLoading(true);
-      const res = await fetch(`/api/categories?group_id=${filterGroup}&include_inactive=true`);
+      const res = await fetch(`/api/categories?group_id=${selectedGroupId}&include_inactive=true`);
       const data = await res.json();
       setCategories(data.categories || []);
     } catch (error) {
@@ -65,10 +50,10 @@ export default function CategoriasPage() {
 
   // Buscar mapeamentos para mostrar contador
   const fetchMappings = async () => {
-    if (!filterGroup) return;
+    if (!selectedGroupId) return;
     
     try {
-      const res = await fetch(`/api/mappings/categories?group_id=${filterGroup}`);
+      const res = await fetch(`/api/mappings/categories?group_id=${selectedGroupId}`);
       const data = await res.json();
       setMappings(data.mappings || []);
     } catch (error) {
@@ -77,15 +62,11 @@ export default function CategoriasPage() {
   };
 
   useEffect(() => {
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
-    if (filterGroup) {
+    if (selectedGroupId) {
       fetchCategories();
       fetchMappings();
     }
-  }, [filterGroup]);
+  }, [selectedGroupId]);
 
   // Expandir automaticamente quando carregar categorias
   useEffect(() => {
@@ -275,7 +256,7 @@ export default function CategoriasPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            company_group_id: filterGroup,
+            company_group_id: selectedGroupId,
             parent_id: parentCategory?.id || null,
             name: formData.name,
             code: formData.code || null,
@@ -490,21 +471,34 @@ export default function CategoriasPage() {
 
         {/* Filtros */}
         <div className="flex gap-4 items-center flex-wrap">
+          {/* Grupo */}
           <div className="w-64">
-            <select
-              value={filterGroup}
-              onChange={(e) => setFilterGroup(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Selecione um grupo</option>
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>{group.name}</option>
-              ))}
-            </select>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
+            {isGroupReadOnly ? (
+              <input
+                type="text"
+                value={groupName}
+                disabled
+                className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+              />
+            ) : (
+              <select
+                value={selectedGroupId}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Selecione um grupo</option>
+                {groups.map((group: any) => (
+                  <option key={group.id} value={group.id}>{group.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
-          {filterGroup && (
+          {/* Buscar */}
+          {selectedGroupId && (
             <div className="flex-1 max-w-md">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
               <div className="relative">
                 <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
@@ -518,7 +512,7 @@ export default function CategoriasPage() {
             </div>
           )}
 
-          {filterGroup && categories.length > 0 && (
+          {selectedGroupId && categories.length > 0 && (
             <div className="flex items-center gap-2">
               <button
                 onClick={expandAll}
@@ -543,7 +537,7 @@ export default function CategoriasPage() {
             <Loader2 size={48} className="mx-auto text-gray-300 mb-4 animate-spin" />
             <p className="text-gray-500">Carregando categorias...</p>
           </div>
-        ) : !filterGroup ? (
+        ) : !selectedGroupId ? (
           <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
             <FolderTree size={48} className="mx-auto text-gray-300 mb-4" />
             <h2 className="text-lg font-medium text-gray-900 mb-2">Selecione um grupo</h2>

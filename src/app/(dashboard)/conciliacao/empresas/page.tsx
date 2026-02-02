@@ -5,11 +5,11 @@ import { useRouter } from 'next/navigation';
 import { Search, Link2, Unlink, Building, GripVertical, Check, X, Filter, ChevronDown } from 'lucide-react';
 import { Button, Select, Modal } from '@/components/ui';
 import { Company, ExternalCompany, CompanyMapping, CompanyGroup } from '@/types';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 export default function ConciliacaoEmpresasPage() {
   const router = useRouter();
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState('');
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [externalCompanies, setExternalCompanies] = useState<ExternalCompany[]>([]);
   const [mappings, setMappings] = useState<CompanyMapping[]>([]);
@@ -30,23 +30,6 @@ export default function ConciliacaoEmpresasPage() {
   const [currentPageInternal, setCurrentPageInternal] = useState(1);
   const [currentPageExternal, setCurrentPageExternal] = useState(1);
 
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      if (!res.ok) {
-        console.error('Erro ao buscar grupos:', res.status, res.statusText);
-        return;
-      }
-      const data = await res.json();
-      setGroups(data.groups || []);
-      if (data.groups?.length > 0) {
-        setSelectedGroup(data.groups[0].id);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
-    }
-  };
 
   // Buscar empresas internas
   const fetchCompanies = async (groupId: string) => {
@@ -109,14 +92,10 @@ export default function ConciliacaoEmpresasPage() {
   };
 
   useEffect(() => {
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
-    if (selectedGroup) {
-      loadData(selectedGroup);
+    if (selectedGroupId) {
+      loadData(selectedGroupId);
     }
-  }, [selectedGroup]);
+  }, [selectedGroupId]);
 
   // Verificar se empresa externa está mapeada
   const isExternalMapped = (externalId: string) => {
@@ -135,14 +114,14 @@ export default function ConciliacaoEmpresasPage() {
 
   // Criar mapeamento via drag and drop
   const handleCreateMapping = async (companyId: string, externalCompanyId: string) => {
-    if (!selectedGroup) return;
+    if (!selectedGroupId) return;
 
     try {
       const res = await fetch('/api/mappings/companies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          company_group_id: selectedGroup,
+          company_group_id: selectedGroupId,
           company_id: companyId,
           external_company_id: externalCompanyId
         })
@@ -155,7 +134,7 @@ export default function ConciliacaoEmpresasPage() {
         return;
       }
 
-      await fetchMappings(selectedGroup);
+      await fetchMappings(selectedGroupId);
     } catch (error) {
       console.error('Erro ao criar mapeamento:', error);
       alert('Erro ao criar mapeamento');
@@ -174,7 +153,7 @@ export default function ConciliacaoEmpresasPage() {
         return;
       }
 
-      await fetchMappings(selectedGroup);
+      await fetchMappings(selectedGroupId);
     } catch (error) {
       console.error('Erro ao remover mapeamento:', error);
       alert('Erro ao remover mapeamento');
@@ -272,7 +251,6 @@ export default function ConciliacaoEmpresasPage() {
     setCurrentPageExternal(1);
   }, [searchExternal, filterExternal]);
 
-  const groupOptions = groups?.map(g => ({ value: g.id, label: g.name })) || [];
 
   // Estatísticas
   const totalInternal = companies?.length || 0;
@@ -288,27 +266,52 @@ export default function ConciliacaoEmpresasPage() {
           <h1 className="text-2xl font-bold text-gray-900">Conciliação de Empresas</h1>
           <p className="text-gray-500 text-sm">Arraste as empresas externas para vincular com as empresas do sistema</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="w-64">
-            {groupOptions.length > 0 ? (
-              <Select
-                options={groupOptions}
-                value={selectedGroup}
-                onChange={(e) => setSelectedGroup(e.target.value)}
-                placeholder="Selecione o grupo"
-              />
-            ) : (
-              <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                <option>Carregando grupos...</option>
-              </select>
-            )}
+        <Button
+          onClick={() => router.push('/empresas')}
+          className="bg-blue-600 hover:bg-blue-700 text-white"
+        >
+          Empresas
+        </Button>
+      </div>
+
+      {/* Filtros */}
+      <div className="flex gap-4 mb-4">
+        {/* Grupo */}
+        <div className="w-64">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Selecione o grupo</option>
+              {groups.map((group: any) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        {/* Buscar (apenas para empresas internas) */}
+        <div className="flex-1 max-w-md">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
+          <div className="relative">
+            <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar empresas..."
+              value={searchInternal}
+              onChange={(e) => setSearchInternal(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
           </div>
-          <Button
-            onClick={() => router.push('/empresas')}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            Empresas
-          </Button>
         </div>
       </div>
 
@@ -324,7 +327,17 @@ export default function ConciliacaoEmpresasPage() {
         </div>
       </div>
 
-      {loading ? (
+      {!selectedGroupId ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="bg-white rounded-2xl p-12 text-center border border-gray-100 max-w-md">
+            <Building size={48} className="mx-auto text-gray-300 mb-4" />
+            <h2 className="text-lg font-medium text-gray-900 mb-2">Selecione um grupo</h2>
+            <p className="text-gray-500">
+              Escolha um grupo para visualizar e conciliar as empresas
+            </p>
+          </div>
+        </div>
+      ) : loading ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
         </div>

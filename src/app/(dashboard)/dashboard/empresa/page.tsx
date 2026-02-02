@@ -15,6 +15,7 @@ import {
   Calendar
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 interface CompanyGroup {
   id: string;
@@ -106,40 +107,20 @@ const MONTHS = [
 ];
 
 export default function DashboardEmpresaPage() {
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [loading, setLoading] = useState(false);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
 
-  // Buscar grupos
-  useEffect(() => {
-    const fetchGroups = async () => {
-      try {
-        const res = await fetch('/api/groups');
-        if (res.ok) {
-          const data = await res.json();
-          setGroups(data.groups || []);
-          if (data.groups?.length > 0) {
-            setSelectedGroup(data.groups[0].id);
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao buscar grupos:', error);
-      }
-    };
-    fetchGroups();
-  }, []);
-
   // Buscar empresas quando grupo mudar
   useEffect(() => {
-    if (!selectedGroup) return;
+    if (!selectedGroupId) return;
     const fetchCompanies = async () => {
       try {
-        const res = await fetch(`/api/companies?group_id=${selectedGroup}`);
+        const res = await fetch(`/api/companies?group_id=${selectedGroupId}`);
         if (res.ok) {
           const data = await res.json();
           setCompanies(data.companies || []);
@@ -151,7 +132,7 @@ export default function DashboardEmpresaPage() {
       }
     };
     fetchCompanies();
-  }, [selectedGroup]);
+  }, [selectedGroupId]);
 
   // Buscar dados do dashboard
   const fetchDashboard = async () => {
@@ -160,7 +141,7 @@ export default function DashboardEmpresaPage() {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/dashboard/company?company_id=${selectedCompany}&year=${selectedYear}&month=${selectedMonth}&group_id=${selectedGroup}`
+        `/api/dashboard/company?company_id=${selectedCompany}&year=${selectedYear}&month=${selectedMonth}&group_id=${selectedGroupId}`
       );
       if (res.ok) {
         const data = await res.json();
@@ -247,7 +228,10 @@ export default function DashboardEmpresaPage() {
   }, [dashboardData, selectedCompany, selectedYear, selectedMonth]);
 
   // Formatar valor em R$
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: number | null | undefined) => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return 'R$ 0,00';
+    }
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
@@ -301,16 +285,25 @@ export default function DashboardEmpresaPage() {
         {/* Grupo */}
         <div className="w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
-          <select
-            value={selectedGroup}
-            onChange={(e) => setSelectedGroup(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Selecione...</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>{group.name}</option>
-            ))}
-          </select>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Selecione...</option>
+              {groups.map((group: any) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Empresa */}

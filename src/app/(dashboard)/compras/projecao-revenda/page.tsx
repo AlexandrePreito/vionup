@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { CompanyGroup, Company } from '@/types';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 interface ProductTag {
   id: string;
@@ -67,8 +68,7 @@ interface ProjectionSummary {
 }
 
 export default function ProjecaoRevendaPage() {
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState('');
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState('');
   const [projectionDays, setProjectionDays] = useState(10);
@@ -112,26 +112,11 @@ export default function ProjecaoRevendaPage() {
     return acc;
   }, {} as Record<string, ProductTag[]>);
 
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      if (!res.ok) return;
-      const data = await res.json();
-      setGroups(data.groups || []);
-      if (data.groups?.length > 0) {
-        setSelectedGroup(data.groups[0].id);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
-    }
-  };
-
   // Buscar empresas do grupo
   const fetchCompanies = async () => {
-    if (!selectedGroup) return;
+    if (!selectedGroupId) return;
     try {
-      const res = await fetch(`/api/companies?group_id=${selectedGroup}`);
+      const res = await fetch(`/api/companies?group_id=${selectedGroupId}`);
       if (!res.ok) {
         console.error('Erro na resposta:', res.status);
         return;
@@ -146,9 +131,9 @@ export default function ProjecaoRevendaPage() {
 
   // Buscar tags
   const fetchTags = async () => {
-    if (!selectedGroup) return;
+    if (!selectedGroupId) return;
     try {
-      const res = await fetch(`/api/product-tags?group_id=${selectedGroup}`);
+      const res = await fetch(`/api/product-tags?group_id=${selectedGroupId}`);
       if (!res.ok) return;
       const data = await res.json();
       setTags(data.tags || []);
@@ -159,9 +144,9 @@ export default function ProjecaoRevendaPage() {
 
   // Buscar atribuições de tags
   const fetchTagAssignments = async () => {
-    if (!selectedGroup) return;
+    if (!selectedGroupId) return;
     try {
-      const res = await fetch(`/api/product-tags/assignments?group_id=${selectedGroup}`);
+      const res = await fetch(`/api/product-tags/assignments?group_id=${selectedGroupId}`);
       if (!res.ok) return;
       const data = await res.json();
       setTagAssignments(data.assignments || []);
@@ -179,7 +164,7 @@ export default function ProjecaoRevendaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'create',
-          company_group_id: selectedGroup,
+          company_group_id: selectedGroupId,
           name: newTagName.trim()
         })
       });
@@ -204,7 +189,7 @@ export default function ProjecaoRevendaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'assign',
-          company_group_id: selectedGroup,
+          company_group_id: selectedGroupId,
           tag_id: selectedTagToAssign,
           product_ids: Array.from(selectedProducts)
         })
@@ -302,11 +287,11 @@ export default function ProjecaoRevendaPage() {
 
   // Buscar projeção
   const fetchProjection = async () => {
-    if (!selectedGroup) return;
+    if (!selectedGroupId) return;
     
     setLoading(true);
     try {
-      let url = `/api/projection/resale?group_id=${selectedGroup}&projection_days=${projectionDays}&history_days=${historyDays}&projection_type=${projectionType}`;
+      let url = `/api/projection/resale?group_id=${selectedGroupId}&projection_days=${projectionDays}&history_days=${historyDays}&projection_type=${projectionType}`;
       if (selectedCompany) {
         url += `&company_id=${selectedCompany}`;
       }
@@ -331,18 +316,14 @@ export default function ProjecaoRevendaPage() {
   };
 
   useEffect(() => {
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
-    if (selectedGroup) {
+    if (selectedGroupId) {
       fetchCompanies();
       fetchProjection();
       fetchTags();
       fetchTagAssignments();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroup]);
+  }, [selectedGroupId]);
 
   // Filtrar produtos
   const filteredProjection = projection.filter((item: any) => {
@@ -488,16 +469,25 @@ export default function ProjecaoRevendaPage() {
           {/* Grupo */}
           <div className="w-48">
             <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
-            <select
-              value={selectedGroup}
-              onChange={(e) => setSelectedGroup(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Selecione...</option>
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>{group.name}</option>
-              ))}
-            </select>
+            {isGroupReadOnly ? (
+              <input
+                type="text"
+                value={groupName}
+                disabled
+                className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+              />
+            ) : (
+              <select
+                value={selectedGroupId}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Selecione...</option>
+                {groups.map((group: any) => (
+                  <option key={group.id} value={group.id}>{group.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Empresa */}
@@ -507,7 +497,7 @@ export default function ProjecaoRevendaPage() {
               value={selectedCompany}
               onChange={(e) => setSelectedCompany(e.target.value)}
               className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              disabled={!selectedGroup}
+              disabled={!selectedGroupId}
             >
               <option value="">Todas as empresas</option>
               {companies.map((company) => (
@@ -574,7 +564,7 @@ export default function ProjecaoRevendaPage() {
           <div className="flex items-end">
             <button 
               onClick={fetchProjection} 
-              disabled={!selectedGroup || loading}
+              disabled={!selectedGroupId || loading}
               title="Calcular Projeção"
               className="p-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
@@ -864,7 +854,7 @@ export default function ProjecaoRevendaPage() {
         </div>
       )}
 
-      {!loading && projection.length === 0 && selectedGroup && (
+      {!loading && projection.length === 0 && selectedGroupId && (
         <div className="flex flex-col items-center justify-center py-12 text-gray-500">
           <BarChart3 size={48} className="mb-4 text-gray-300" />
           <p className="text-lg font-medium">Nenhuma projeção calculada</p>
