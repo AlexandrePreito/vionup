@@ -619,9 +619,6 @@ export default function ConciliacaoProdutosPage() {
                                 {product.code}
                               </span>
                             )}
-                            {product.category && (
-                              <span className="truncate">{product.category}</span>
-                            )}
                           </div>
                         </div>
                         {productMappings.length > 0 && (
