@@ -47,7 +47,8 @@ export function UserMenu() {
   const getRoleLabel = (role: string) => {
     const labels: Record<string, string> = {
       master: 'Master',
-      admin: 'Administrador',
+      group_admin: 'Group Admin',
+      company_admin: 'Company Admin',
       user: 'Usuário',
     };
     return labels[role] || role;

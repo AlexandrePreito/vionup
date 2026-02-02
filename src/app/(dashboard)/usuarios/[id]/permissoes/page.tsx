@@ -108,7 +108,7 @@ export default function PermissoesPage() {
   };
 
   const isMaster = user?.role === 'master';
-  const isAdmin = user?.role === 'admin';
+  const isGroupAdmin = user?.role === 'group_admin';
 
   if (loading) {
     return (
@@ -134,10 +134,10 @@ export default function PermissoesPage() {
             {user?.name} ({user?.email})
             <span className={`ml-2 inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
               user?.role === 'master' ? 'bg-purple-100 text-purple-800' :
-              user?.role === 'admin' ? 'bg-blue-100 text-blue-800' :
+              user?.role === 'group_admin' ? 'bg-blue-100 text-blue-800' :
               'bg-gray-100 text-gray-800'
             }`}>
-              {user?.role === 'master' ? 'Master' : user?.role === 'admin' ? 'Admin' : 'Usuário'}
+              {user?.role === 'master' ? 'Master' : user?.role === 'group_admin' ? 'Group Admin' : 'Usuário'}
             </span>
           </p>
         </div>
@@ -159,11 +159,11 @@ export default function PermissoesPage() {
         </div>
       )}
 
-      {/* Aviso para Admin */}
-      {isAdmin && (
+      {/* Aviso para Group Admin */}
+      {isGroupAdmin && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
           <p className="text-blue-800 text-sm">
-            Admins têm acesso a todos os módulos do grupo, exceto Power BI.
+            Group Admins têm acesso a todos os módulos do grupo, exceto Power BI.
           </p>
         </div>
       )}
@@ -182,7 +182,7 @@ export default function PermissoesPage() {
             {modules.map((module) => {
               const perm = permissions[module.id] || { can_view: false, can_edit: false };
               const isPowerBI = module.name === 'powerbi';
-              const isDisabled = isMaster || (isAdmin && !isPowerBI);
+              const isDisabled = isMaster || (isGroupAdmin && !isPowerBI);
               const isBlockedForNonMaster = isPowerBI && !isMaster;
 
               return (
@@ -204,7 +204,7 @@ export default function PermissoesPage() {
                   <td className="text-center py-4 px-6">
                     <input
                       type="checkbox"
-                      checked={isMaster || (isAdmin && !isPowerBI) || Boolean(perm?.can_view)}
+                      checked={isMaster || (isGroupAdmin && !isPowerBI) || Boolean(perm?.can_view)}
                       onChange={(e) => handlePermissionChange(module.id, 'can_view', e.target.checked)}
                       disabled={isDisabled || isBlockedForNonMaster}
                       className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
@@ -213,7 +213,7 @@ export default function PermissoesPage() {
                   <td className="text-center py-4 px-6">
                     <input
                       type="checkbox"
-                      checked={isMaster || (isAdmin && !isPowerBI) || Boolean(perm?.can_edit)}
+                      checked={isMaster || (isGroupAdmin && !isPowerBI) || Boolean(perm?.can_edit)}
                       onChange={(e) => handlePermissionChange(module.id, 'can_edit', e.target.checked)}
                       disabled={isDisabled || isBlockedForNonMaster}
                       className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"

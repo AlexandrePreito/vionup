@@ -35,9 +35,7 @@ export function useGroupFilter() {
 
   // Definir grupo automaticamente se não for master
   useEffect(() => {
-    // Aceitar tanto 'admin' quanto 'group_admin' temporariamente (compatibilidade)
-    const isNotMaster = currentUser && currentUser.role !== 'master' && 
-                       (currentUser.role === 'admin' || currentUser.role === 'group_admin' || currentUser.role === 'company_admin' || currentUser.role === 'user');
+    const isNotMaster = currentUser && currentUser.role !== 'master';
     
     if (isNotMaster && currentUser.company_group_id) {
       console.log('useGroupFilter - Definindo grupo automaticamente:', currentUser.company_group_id);
@@ -47,9 +45,7 @@ export function useGroupFilter() {
     }
   }, [currentUser]);
 
-  // Aceitar tanto 'admin' quanto 'group_admin' temporariamente (compatibilidade)
-  const isGroupReadOnly = currentUser && currentUser.role !== 'master' && 
-                         (currentUser.role === 'admin' || currentUser.role === 'group_admin' || currentUser.role === 'company_admin' || currentUser.role === 'user');
+  const isGroupReadOnly = currentUser && currentUser.role !== 'master';
   const fixedGroupId = currentUser && currentUser.role !== 'master' 
     ? (currentUser.company_group_id || '')
     : null;
