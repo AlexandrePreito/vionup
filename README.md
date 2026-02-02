@@ -1,36 +1,152 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Vion Up! - Sistema de Gestão de Metas
 
-## Getting Started
+Sistema completo de gestão empresarial com foco em metas, previsões, compras e análise de dados.
 
-First, run the development server:
+## 🚀 Tecnologias
 
+- **Next.js 16** - Framework React com App Router
+- **TypeScript** - Tipagem estática
+- **Supabase** - Backend e banco de dados
+- **Tailwind CSS** - Estilização
+- **Recharts** - Gráficos e visualizações
+- **Lucide React** - Ícones
+
+## 📋 Funcionalidades
+
+### Dashboard
+- **Previsão de Vendas**: Projeções baseadas em histórico com cenários otimista, realista e pessimista
+- **Dashboard Empresa**: Visão geral de metas e realizações por modo de venda e turno
+- **NPS Dashboard**: Análise de satisfação do cliente com comentários e pesquisas
+
+### Metas
+- Gestão de metas por funcionário, turno e modo de venda
+- Metas de produtos com distribuição entre funcionários
+- Importação em massa via Excel
+- Clonagem de metas entre períodos
+
+### Compras
+- Projeção de revenda com cálculo automático de quantidades
+- Gestão de matérias-primas
+- Projeção de matérias-primas baseada em vendas
+
+### Cadastros
+- Empresas e grupos
+- Produtos e categorias
+- Funcionários
+- Turnos e modos de venda
+- Usuários e permissões
+
+### Power BI
+- Sincronização de dados com Power BI
+- Configuração de conexões e datasets
+- Sincronização incremental e agendada
+
+### Importação
+- Importação de dados Goomer (NPS, comentários, scores)
+- Importação de funcionários via Excel
+
+## 🛠️ Instalação
+
+1. Clone o repositório:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/seu-usuario/vionup.git
+cd vionup
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Instale as dependências:
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Configure as variáveis de ambiente:
+```bash
+cp .env.example .env.local
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Edite `.env.local` com suas credenciais do Supabase:
+```
+NEXT_PUBLIC_SUPABASE_URL=sua_url_supabase
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_chave_anon
+SUPABASE_SERVICE_ROLE_KEY=sua_chave_service_role
+```
 
-## Learn More
+4. Execute as migrações do Supabase:
+```bash
+npx supabase migration up
+```
 
-To learn more about Next.js, take a look at the following resources:
+5. Inicie o servidor de desenvolvimento:
+```bash
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Acesse [http://localhost:3000](http://localhost:3000)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 📁 Estrutura do Projeto
 
-## Deploy on Vercel
+```
+vionup/
+├── src/
+│   ├── app/              # Rotas e páginas (Next.js App Router)
+│   │   ├── (dashboard)/  # Páginas do dashboard
+│   │   ├── api/          # API Routes
+│   │   └── login/        # Página de login
+│   ├── components/       # Componentes React
+│   ├── contexts/         # Contextos React (Auth, Toast, Sidebar)
+│   ├── lib/              # Utilitários e helpers
+│   └── types/            # Tipos TypeScript
+├── supabase/
+│   └── migrations/       # Migrações do banco de dados
+└── sql/                  # Scripts SQL adicionais
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🔐 Autenticação
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+O sistema possui 3 níveis de permissão:
+- **Master**: Acesso total ao sistema
+- **Admin**: Administrador do grupo, acesso a configurações
+- **User**: Acesso apenas às empresas vinculadas
+
+## 📊 Banco de Dados
+
+O sistema utiliza Supabase (PostgreSQL) com as seguintes tabelas principais:
+- `users` - Usuários do sistema
+- `company_groups` - Grupos de empresas
+- `companies` - Empresas
+- `products` - Produtos
+- `employees` - Funcionários
+- `sales_goals` - Metas de vendas
+- `external_cash_flow` - Fluxo de caixa externo
+- `goomer_*` - Dados do Goomer (NPS, feedbacks, etc)
+
+## 🚀 Deploy
+
+### Vercel (Recomendado)
+
+1. Conecte seu repositório GitHub à Vercel
+2. Configure as variáveis de ambiente
+3. Deploy automático a cada push
+
+### Outros provedores
+
+O projeto pode ser deployado em qualquer plataforma que suporte Next.js:
+- Netlify
+- Railway
+- AWS Amplify
+- DigitalOcean App Platform
+
+## 📝 Licença
+
+Este projeto é privado e proprietário.
+
+## 👥 Contribuindo
+
+Este é um projeto privado. Para contribuições, entre em contato com a equipe de desenvolvimento.
+
+## 📧 Contato
+
+Para dúvidas ou suporte, entre em contato com a equipe de desenvolvimento.
+
+---
+
+Desenvolvido com ❤️ pela equipe Vion Up!
