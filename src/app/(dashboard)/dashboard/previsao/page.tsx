@@ -648,11 +648,9 @@ export default function PrevisaoPage() {
                     <LabelList 
                       dataKey="otimista" 
                       position="top" 
-                      formatter={(value, entry: any, index: number) => {
-                        // Mostrar apenas no último ponto não-null
+                      formatter={(value: any) => {
                         if (typeof value !== 'number' || !value) return '';
-                        const lastIndex = graficoPrincipalData.findLastIndex((d: any) => d.otimista !== null);
-                        return index === lastIndex ? formatCurrency(value) : '';
+                        return formatCurrency(value);
                       }}
                       style={{ fontSize: 11, fill: '#10b981', fontWeight: 600 }}
                     />
@@ -670,11 +668,9 @@ export default function PrevisaoPage() {
                     <LabelList 
                       dataKey="realista" 
                       position="top" 
-                      formatter={(value, entry: any, index: number) => {
-                        // Mostrar apenas no último ponto não-null
+                      formatter={(value: any) => {
                         if (typeof value !== 'number' || !value) return '';
-                        const lastIndex = graficoPrincipalData.findLastIndex((d: any) => d.realista !== null);
-                        return index === lastIndex ? formatCurrency(value) : '';
+                        return formatCurrency(value);
                       }}
                       style={{ fontSize: 11, fill: '#f59e0b', fontWeight: 600 }}
                     />
@@ -692,11 +688,9 @@ export default function PrevisaoPage() {
                     <LabelList 
                       dataKey="pessimista" 
                       position="top" 
-                      formatter={(value, entry: any, index: number) => {
-                        // Mostrar apenas no último ponto não-null
+                      formatter={(value: any) => {
                         if (typeof value !== 'number' || !value) return '';
-                        const lastIndex = graficoPrincipalData.findLastIndex((d: any) => d.pessimista !== null);
-                        return index === lastIndex ? formatCurrency(value) : '';
+                        return formatCurrency(value);
                       }}
                       style={{ fontSize: 11, fill: '#ef4444', fontWeight: 600 }}
                     />
