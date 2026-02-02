@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
             .select('company_group_id')
             .in('id', user.company_ids);
           
-          const groupIds: string[] = [...new Set(userCompanies?.map((c: any) => c.company_group_id).filter(Boolean) || [])];
+          const groupIds = [...new Set(userCompanies?.map((c: any) => c.company_group_id).filter(Boolean) || [])] as string[];
           if (groupIds.length > 0) {
             if (groupIds.length === 1) {
               effectiveGroupId = groupIds[0];
