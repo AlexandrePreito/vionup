@@ -83,6 +83,9 @@ export async function POST(request: NextRequest) {
         daxQuery = addDateFilterToQuery(daxQuery, config.date_field, filterDate);
       }
 
+      // Remover campos vazios da query DAX antes de processar
+      daxQuery = removeEmptyFieldsFromDaxQuery(daxQuery, config.field_mapping, config.entity_type);
+
       console.log('=== SINCRONIZAÇÃO ===');
       console.log('Tipo de sync:', syncType);
       console.log('Entity type:', config.entity_type);
@@ -94,7 +97,7 @@ export async function POST(request: NextRequest) {
         return await processInDateRangeBatches(
           config,
           connection,
-          config.dax_query,
+          daxQuery,
           syncType,
           filterDate,
           syncLog,
@@ -637,7 +640,7 @@ async function processInDateRangeBatches(
 
 // ============================================
 // FUNÇÃO: Injetar filtro de data no SUMMARIZECOLUMNS
-// Formato: FILTER(ALL(Tabela[campo]), Tabela[campo] >= DATE(...) && Tabela[campo] <= DATE(...))
+// Aplica o filtro externamente ao SUMMARIZECOLUMNS usando FILTER(..., condição)
 // ============================================
 function injectDateFilterIntoQuery(
   baseQuery: string,
@@ -649,39 +652,165 @@ function injectDateFilterIntoQuery(
   const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
   const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
 
-  // Construir o filtro de data
-  const dateFilter = `FILTER(ALL(${tableName}[${dateField}]), ${tableName}[${dateField}] >= DATE(${startYear}, ${startMonth}, ${startDay}) && ${tableName}[${dateField}] <= DATE(${endYear}, ${endMonth}, ${endDay}))`;
+  // Construir a condição de data usando KEEPFILTERS para aplicar ao contexto
+  // Como estamos usando SUMMARIZECOLUMNS, precisamos filtrar a tabela base antes
+  const dateCondition = `${tableName}[${dateField}] >= DATE(${startYear}, ${startMonth}, ${startDay}) && ${tableName}[${dateField}] <= DATE(${endYear}, ${endMonth}, ${endDay})`;
 
-  // Encontrar onde injetar - logo antes da medida ("alias", ...)
-  // Procurar por: "algo", [Medida] ou "algo", SUM(...)
-  const measurePattern = /("[\w]+",\s*(?:\[[\w]+\]|SUM|COUNT|AVERAGE|MIN|MAX))/i;
-  
-  if (measurePattern.test(baseQuery)) {
-    // Injetar o filtro antes da primeira medida
-    return baseQuery.replace(measurePattern, `${dateFilter},\n    $1`);
+  // Se a query já tem um FILTER externo, adicionar a condição de data com AND
+  if (baseQuery.includes('FILTER(') && baseQuery.includes('SUMMARIZECOLUMNS')) {
+    // Encontrar o FILTER existente - padrão: FILTER(SUMMARIZECOLUMNS(...), condição)
+    // Usar uma regex mais robusta para capturar todo o conteúdo
+    const filterPattern = /FILTER\s*\(\s*(SUMMARIZECOLUMNS\s*\([\s\S]*?\))\s*,\s*([\s\S]*?)\s*\)/i;
+    const match = baseQuery.match(filterPattern);
+    
+    if (match) {
+      const summarizePart = match[1];
+      const existingCondition = match[2].trim();
+      
+      // Combinar condições com AND
+      const newCondition = existingCondition 
+        ? `${existingCondition} && ${dateCondition}`
+        : dateCondition;
+      
+      return baseQuery.replace(
+        filterPattern,
+        `FILTER(\n  ${summarizePart},\n  ${newCondition}\n)`
+      );
+    }
   }
 
-  // Fallback: se não encontrar o padrão, tentar inserir antes do último parêntese do SUMMARIZECOLUMNS
-  // Encontrar SUMMARIZECOLUMNS e seu conteúdo
-  const summarizeMatch = baseQuery.match(/SUMMARIZECOLUMNS\s*\(([\s\S]*?)\)\s*,?\s*(?:NOT ISBLANK|$)/i);
+  // Se não tem FILTER externo, adicionar um
+  // Encontrar o SUMMARIZECOLUMNS e seu conteúdo
+  const summarizePattern = /(SUMMARIZECOLUMNS\s*\([\s\S]*?\))/i;
+  const summarizeMatch = baseQuery.match(summarizePattern);
   
   if (summarizeMatch) {
-    const summarizeContent = summarizeMatch[1];
-    const lastCommaIndex = summarizeContent.lastIndexOf(',');
+    const summarizeFull = summarizeMatch[1];
     
-    if (lastCommaIndex > 0) {
-      // Encontrar a posição para inserir (antes da última coluna/medida)
-      const beforeMeasure = summarizeContent.substring(0, lastCommaIndex);
-      const afterMeasure = summarizeContent.substring(lastCommaIndex);
-      
-      const newContent = `${beforeMeasure},\n    ${dateFilter}${afterMeasure}`;
-      return baseQuery.replace(summarizeContent, newContent);
-    }
+    // Adicionar FILTER externo com a condição de data
+    return baseQuery.replace(
+      summarizeFull,
+      `FILTER(\n  ${summarizeFull},\n  ${dateCondition}\n)`
+    );
   }
 
   // Se nada funcionar, retorna a query original (vai falhar, mas pelo menos não quebra)
   console.warn('⚠️ Não foi possível injetar filtro de data na query');
   return baseQuery;
+}
+
+// ============================================
+// FUNÇÃO: Remover campos vazios da query DAX
+// Remove campos do SUMMARIZECOLUMNS que não estão no field_mapping
+// ============================================
+function removeEmptyFieldsFromDaxQuery(
+  daxQuery: string,
+  fieldMapping: Record<string, string>,
+  entityType: string
+): string {
+  // Extrair nome da tabela
+  const tableMatch = daxQuery.match(/(\w+)\[/);
+  const tableName = tableMatch ? tableMatch[1] : '';
+
+  if (!tableName) {
+    return daxQuery; // Não conseguiu extrair tabela, retorna original
+  }
+
+  // Criar lista de campos mapeados (sem colchetes)
+  const mappedFields = new Set<string>();
+  for (const [pbiField] of Object.entries(fieldMapping)) {
+    // Remover colchetes e espaços
+    const cleanField = pbiField.replace(/\[|\]/g, '').trim();
+    if (cleanField) {
+      mappedFields.add(cleanField.toLowerCase());
+    }
+  }
+
+  // Remover campos do SUMMARIZECOLUMNS
+  // Padrão: SUMMARIZECOLUMNS( campo1, campo2, ... )
+  const summarizePattern = /SUMMARIZECOLUMNS\s*\(([\s\S]*?)\)/i;
+  const match = daxQuery.match(summarizePattern);
+
+  if (!match) {
+    return daxQuery; // Não tem SUMMARIZECOLUMNS, retorna original
+  }
+
+  const summarizeContent = match[1];
+  
+  // Dividir campos por vírgula (respeitando quebras de linha e parênteses)
+  const fields: string[] = [];
+  let currentField = '';
+  let depth = 0;
+  
+  for (let i = 0; i < summarizeContent.length; i++) {
+    const char = summarizeContent[i];
+    
+    if (char === '(') {
+      depth++;
+      currentField += char;
+    } else if (char === ')') {
+      depth--;
+      currentField += char;
+    } else if (char === ',' && depth === 0) {
+      // Vírgula no nível raiz - separador de campo
+      if (currentField.trim()) {
+        fields.push(currentField.trim());
+      }
+      currentField = '';
+    } else {
+      currentField += char;
+    }
+  }
+  
+  // Adicionar último campo
+  if (currentField.trim()) {
+    fields.push(currentField.trim());
+  }
+
+  // Filtrar campos que não estão no mapeamento
+  // Apenas remover colunas (TableName[FieldName]), manter medidas/agregações
+  const fieldsToRemove: string[] = [];
+  const filteredFields = fields.filter(f => {
+    const trimmed = f.trim();
+    
+    // Se é uma medida/agregação (contém "dbField", [Measure] ou SUM(...)), manter
+    if (trimmed.includes('"') || trimmed.includes('SUM(') || trimmed.includes('COUNT(') || 
+        trimmed.includes('AVERAGE(') || trimmed.includes('MAX(') || trimmed.includes('MIN(')) {
+      return true; // Manter medidas/agregações
+    }
+    
+    // Se é uma coluna: TableName[FieldName]
+    const columnMatch = trimmed.match(/\[([^\]]+)\]/);
+    if (columnMatch) {
+      const fieldName = columnMatch[1].toLowerCase();
+      
+      // Se o campo não está no mapeamento, remover
+      if (!mappedFields.has(fieldName)) {
+        fieldsToRemove.push(trimmed);
+        console.log(`  ❌ Removendo campo não mapeado: ${fieldName}`);
+        return false;
+      }
+    }
+    
+    return true; // Manter outros campos
+  });
+
+  if (fieldsToRemove.length === 0) {
+    return daxQuery; // Nenhum campo para remover
+  }
+
+  console.log(`\n🔍 Removendo ${fieldsToRemove.length} campo(s) não mapeado(s) da query DAX`);
+
+  // Reconstruir o SUMMARIZECOLUMNS sem os campos removidos
+  const newSummarizeContent = filteredFields.join(',\n    ');
+  const newSummarizePart = `SUMMARIZECOLUMNS(\n    ${newSummarizeContent}\n  )`;
+
+  // Substituir na query original
+  const newQuery = daxQuery.replace(summarizePattern, newSummarizePart);
+
+  console.log(`✅ Query DAX atualizada`);
+
+  return newQuery;
 }
 
 // Salvar dados válidos no Supabase

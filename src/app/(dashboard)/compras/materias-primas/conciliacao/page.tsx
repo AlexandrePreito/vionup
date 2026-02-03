@@ -5,16 +5,16 @@ import { useRouter } from 'next/navigation';
 import { Search, Package, Loader2, CheckCircle, Link2, ChevronLeft, ChevronRight, ArrowLeft, Boxes, X, GripVertical, Check } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { RawMaterial, CompanyGroup, ExternalProduct, ExternalStock, Company, CompanyMapping, ExternalCompany } from '@/types';
+import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 const ITEMS_PER_PAGE = 20;
 
 export default function ConciliacaoMateriasPrimasPage() {
   const router = useRouter();
+  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [externalProducts, setExternalProducts] = useState<ExternalProduct[]>([]);
   const [externalStock, setExternalStock] = useState<ExternalStock[]>([]);
-  const [groups, setGroups] = useState<CompanyGroup[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState('');
   const [loading, setLoading] = useState(false);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyMappings, setCompanyMappings] = useState<CompanyMapping[]>([]);
@@ -41,23 +41,6 @@ export default function ConciliacaoMateriasPrimasPage() {
   const [linkQty, setLinkQty] = useState('');
   const [linking, setLinking] = useState(false);
 
-  // Buscar grupos
-  const fetchGroups = async () => {
-    try {
-      const res = await fetch('/api/groups');
-      if (!res.ok) {
-        console.error('Erro ao buscar grupos:', res.status, res.statusText);
-        return;
-      }
-      const data = await res.json();
-      setGroups(data.groups || []);
-      if (data.groups?.length > 0) {
-        setSelectedGroup(data.groups[0].id);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
-    }
-  };
 
   // Buscar matérias-primas
   const fetchRawMaterials = async (groupId: string) => {
@@ -173,14 +156,19 @@ export default function ConciliacaoMateriasPrimasPage() {
   };
 
   useEffect(() => {
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
-    if (selectedGroup) {
-      loadData(selectedGroup);
+    if (selectedGroupId) {
+      loadData(selectedGroupId);
+    } else {
+      // Se não há grupo selecionado, limpar dados
+      setRawMaterials([]);
+      setExternalProducts([]);
+      setExternalStock([]);
+      setCompanies([]);
+      setCompanyMappings([]);
+      setExternalCompanies([]);
+      setLoading(false);
     }
-  }, [selectedGroup]);
+  }, [selectedGroupId]);
 
   // Verificar se produto está vinculado
   const isProductLinked = (externalProductId: string): boolean => {
@@ -285,8 +273,8 @@ export default function ConciliacaoMateriasPrimasPage() {
       setSelectedMP(null);
       setSelectedProduct(null);
       setDraggedProduct(null);
-      if (selectedGroup) {
-        await fetchRawMaterials(selectedGroup);
+      if (selectedGroupId) {
+        await fetchRawMaterials(selectedGroupId);
       }
     } catch (error) {
       console.error('Erro ao vincular:', error);
@@ -308,8 +296,8 @@ export default function ConciliacaoMateriasPrimasPage() {
         return;
       }
 
-      if (selectedGroup) {
-        await fetchRawMaterials(selectedGroup);
+      if (selectedGroupId) {
+        await fetchRawMaterials(selectedGroupId);
       }
     } catch (error) {
       console.error('Erro ao remover mapeamento:', error);
@@ -405,6 +393,33 @@ export default function ConciliacaoMateriasPrimasPage() {
   const totalProducts = externalProducts?.length || 0;
   const mappedProducts = externalProducts?.filter(p => isProductLinked(p.external_id)).length || 0;
 
+  // Se não há grupo selecionado, mostrar mensagem
+  if (!selectedGroupId && groups.length > 0) {
+    return (
+      <div className="flex flex-col p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Conciliação Produtos para Vendas</h1>
+            <p className="text-gray-500 text-sm">Arraste os produtos externos para vincular com as matérias-primas do sistema</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <Button
+              onClick={() => router.push('/compras/materias-primas')}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Matérias-Primas
+            </Button>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 text-gray-500 bg-white rounded-2xl border border-gray-100">
+          <Package size={48} className="mb-4 text-gray-300" />
+          <p className="text-lg font-medium">Selecione um grupo</p>
+          <p className="text-sm text-gray-400 mt-2">Escolha um grupo acima para visualizar a conciliação</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col p-6">
       {/* Header */}
@@ -426,16 +441,25 @@ export default function ConciliacaoMateriasPrimasPage() {
       {/* Filtros */}
       <div className="flex gap-4 mb-4">
         <div className="w-48">
-          <select
-            value={selectedGroup}
-            onChange={(e) => setSelectedGroup(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Selecione o grupo</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>{group.name}</option>
-            ))}
-          </select>
+          {isGroupReadOnly ? (
+            <input
+              type="text"
+              value={groupName}
+              disabled
+              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+            />
+          ) : (
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Selecione o grupo</option>
+              {groups.map((group: any) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 

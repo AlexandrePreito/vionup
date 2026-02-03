@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Play, Loader2, Clock, Building, Users, Package, ShoppingCart, Wallet, TrendingUp, FolderTree, Settings, Plus, Trash2, CheckCircle, AlertCircle, Calendar, Power, PowerOff, Boxes, Square } from 'lucide-react';
 import { Button, Modal, Input, Select } from '@/components/ui';
 import { PowerBIConnection, PowerBISyncConfig, PowerBISyncSchedule } from '@/types';
+import { toast } from '@/lib/toast';
 
 interface FieldConfig {
   key: string;
@@ -361,16 +362,35 @@ export default function PowerBISincronizacaoPage() {
 
     const daxFieldsStr = daxFieldEntries
       .map(([dbField, pbiField]) => {
+        const trimmedField = pbiField.trim();
+        
         // Se já é uma medida (começa com [), usa direto
-        if (pbiField.startsWith('[')) {
-          return `"${dbField}", ${pbiField}`;
+        if (trimmedField.startsWith('[') && trimmedField.endsWith(']')) {
+          return `"${dbField}", ${trimmedField}`;
         }
+        
+        // Se contém colchetes [...], é uma medida DAX - extrair apenas a parte entre colchetes
+        if (trimmedField.includes('[') && trimmedField.includes(']')) {
+          const bracketMatch = trimmedField.match(/\[([^\]]+)\]/);
+          if (bracketMatch) {
+            // Extrair apenas o conteúdo entre colchetes
+            const measureName = bracketMatch[1];
+            console.log(`[DAX] Campo ${dbField}: ${trimmedField} -> [${measureName}]`);
+            return `"${dbField}", [${measureName}]`;
+          }
+          // Se não conseguir extrair, usa o campo original
+          console.warn(`[DAX] Não foi possível extrair medida de: ${trimmedField}`);
+          return `"${dbField}", ${trimmedField}`;
+        }
+        
         // Se é uma expressão DAX (contém parênteses), usa direto
-        if (pbiField.includes('(')) {
-          return `"${dbField}", ${pbiField}`;
+        if (trimmedField.includes('(')) {
+          return `"${dbField}", ${trimmedField}`;
         }
+        
         // Caso contrário, é uma coluna - aplica SUM
-        return `"${dbField}", SUM(${tableName}[${pbiField}])`;
+        console.log(`[DAX] Campo ${dbField}: ${trimmedField} -> SUM(${tableName}[${trimmedField}])`);
+        return `"${dbField}", SUM(${tableName}[${trimmedField}])`;
       })
       .join(',\n    ');
 
@@ -476,18 +496,18 @@ SELECTCOLUMNS(
       const missingLabels = missingFields.map(key => 
         entityConfig.fields.find(f => f.key === key)?.label || key
       );
-      alert(`Preencha: Dataset, Nome da Tabela e campos: ${missingLabels.join(', ')}`);
+      toast.warning(`Preencha: Dataset, Nome da Tabela e campos: ${missingLabels.join(', ')}`);
       return;
     }
 
     // Validar campos incrementais se habilitado
     if (configForm.is_incremental) {
       if (!configForm.date_field) {
-        alert('Para sincronização incremental, informe o campo de data');
+        toast.warning('Para sincronização incremental, informe o campo de data');
         return;
       }
       if (!configForm.initial_date) {
-        alert('Para sincronização incremental, informe a data inicial');
+        toast.warning('Para sincronização incremental, informe a data inicial');
         return;
       }
     }
@@ -524,15 +544,16 @@ SELECTCOLUMNS(
 
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || 'Erro ao salvar');
+        toast.error(data.error || 'Erro ao salvar');
         return;
       }
 
+      toast.success('Configuração salva com sucesso!');
       setIsConfigModalOpen(false);
       fetchConfigs(selectedConnection);
     } catch (error) {
       console.error('Erro ao salvar:', error);
-      alert('Erro ao salvar configuração');
+      toast.error('Erro ao salvar configuração');
     } finally {
       setSavingConfig(false);
     }
@@ -561,20 +582,20 @@ SELECTCOLUMNS(
 
       const data = await res.json();
       if (!res.ok) {
-        alert(`Erro: ${data.error}`);
+        toast.error(`Erro: ${data.error}`);
       } else {
         const syncTypeLabel = data.sync_type === 'incremental' ? '(incremental)' : 
                              data.sync_type === 'initial' ? '(inicial)' : '(completa)';
-        alert(`✅ ${data.records_synced} registros sincronizados ${syncTypeLabel}!`);
+        toast.success(`${data.records_synced} registros sincronizados ${syncTypeLabel}!`);
       }
       fetchConfigs(selectedConnection);
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.log('Sincronização cancelada pelo usuário');
-        alert('Sincronização cancelada');
+        toast.info('Sincronização cancelada');
       } else {
         console.error('Erro:', error);
-        alert('Erro na sincronização');
+        toast.error('Erro na sincronização');
       }
     } finally {
       setSyncing(null);
@@ -622,15 +643,16 @@ SELECTCOLUMNS(
 
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || 'Erro ao salvar');
+        toast.error(data.error || 'Erro ao salvar');
         return;
       }
 
+      toast.success('Agendamento salvo com sucesso!');
       setIsScheduleModalOpen(false);
       fetchSchedules(config.id, scheduleEntityType);
     } catch (error) {
       console.error('Erro:', error);
-      alert('Erro ao salvar agendamento');
+      toast.error('Erro ao salvar agendamento');
     } finally {
       setSavingSchedule(false);
     }
@@ -667,14 +689,15 @@ SELECTCOLUMNS(
 
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || 'Erro ao atualizar');
+        toast.error(data.error || 'Erro ao atualizar');
         return;
       }
 
+      toast.success(`Configuração ${newActiveState ? 'ativada' : 'desativada'} com sucesso!`);
       fetchConfigs(selectedConnection);
     } catch (error) {
       console.error('Erro:', error);
-      alert('Erro ao atualizar configuração');
+      toast.error('Erro ao atualizar configuração');
     }
   };
 
@@ -694,14 +717,15 @@ SELECTCOLUMNS(
 
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || 'Erro ao excluir');
+        toast.error(data.error || 'Erro ao excluir');
         return;
       }
 
+      toast.success('Configuração excluída com sucesso!');
       fetchConfigs(selectedConnection);
     } catch (error) {
       console.error('Erro:', error);
-      alert('Erro ao excluir configuração');
+      toast.error('Erro ao excluir configuração');
     }
   };
 

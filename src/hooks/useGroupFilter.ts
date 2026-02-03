@@ -60,17 +60,22 @@ export function useGroupFilter() {
       });
   }, [currentUser]);
 
-  // Definir grupo automaticamente se não for master
+  // Definir grupo automaticamente
   useEffect(() => {
     const isNotMaster = currentUser && currentUser.role !== 'master';
     
     if (isNotMaster && currentUser.company_group_id) {
-      console.log('useGroupFilter - Definindo grupo automaticamente:', currentUser.company_group_id);
+      // Usuário não-master: usar grupo fixo
+      console.log('useGroupFilter - Definindo grupo automaticamente (não-master):', currentUser.company_group_id);
       setSelectedGroupId(currentUser.company_group_id);
+    } else if (currentUser?.role === 'master' && groups.length > 0 && !selectedGroupId) {
+      // Master: selecionar primeiro grupo automaticamente se não houver seleção
+      console.log('useGroupFilter - Selecionando primeiro grupo automaticamente (master)');
+      setSelectedGroupId(groups[0].id);
     } else {
       console.log('useGroupFilter - Usuário:', currentUser ? { id: currentUser.id, role: currentUser.role, company_group_id: currentUser.company_group_id } : 'null');
     }
-  }, [currentUser]);
+  }, [currentUser, groups.length, selectedGroupId]);
 
   const isGroupReadOnly = currentUser && currentUser.role !== 'master';
   const fixedGroupId = currentUser && currentUser.role !== 'master' 

@@ -136,6 +136,13 @@ export default function MateriasPrimasPage() {
       fetchRawMaterials();
       fetchExternalProducts(selectedGroupId);
       fetchExternalStock(selectedGroupId);
+    } else {
+      // Se não há grupo selecionado, limpar dados e parar loading
+      setRawMaterials([]);
+      setCompanies([]);
+      setExternalProducts([]);
+      setExternalStock([]);
+      setLoading(false);
     }
   }, [selectedGroupId]);
 
@@ -493,6 +500,25 @@ export default function MateriasPrimasPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  // Se não há grupo selecionado, mostrar mensagem
+  if (!selectedGroupId && groups.length > 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between pt-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Matérias-Primas</h1>
+            <p className="text-gray-500 mt-1">Gerencie as matérias-primas e vincule aos produtos</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 text-gray-500 bg-white rounded-2xl border border-gray-100">
+          <Package size={48} className="mb-4 text-gray-300" />
+          <p className="text-lg font-medium">Selecione um grupo</p>
+          <p className="text-sm text-gray-400 mt-2">Escolha um grupo acima para visualizar as matérias-primas</p>
+        </div>
       </div>
     );
   }

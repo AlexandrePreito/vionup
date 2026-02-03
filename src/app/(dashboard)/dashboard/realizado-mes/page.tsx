@@ -540,8 +540,8 @@ export default function DashboardRealizadoMesPage() {
               </p>
             </div>
             
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-80 min-h-[320px] w-full" style={{ minWidth: 0 }}>
+              <ResponsiveContainer width="100%" height="100%" minHeight={320} minWidth={0}>
                 <ComposedChart data={chartData}>
                   <defs>
                     <linearGradient id="colorRevenueGradient" x1="0" y1="0" x2="0" y2="1">
