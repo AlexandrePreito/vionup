@@ -1,31 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
-// Função para buscar todos os registros (sem limite de 1000)
-async function fetchAllRecords<T>(
-  query: ReturnType<typeof supabaseAdmin.from>,
-  pageSize: number = 1000
-): Promise<T[]> {
-  const allRecords: T[] = [];
-  let from = 0;
-  let hasMore = true;
-
-  while (hasMore) {
-    const { data, error } = await query.range(from, from + pageSize - 1);
-    
-    if (error) throw error;
-    
-    if (data && data.length > 0) {
-      allRecords.push(...(data as T[]));
-      from += pageSize;
-      hasMore = data.length === pageSize;
-    } else {
-      hasMore = false;
-    }
-  }
-
-  return allRecords;
-}
 
 // Buscar feriados nacionais via BrasilAPI
 async function fetchHolidays(year: number): Promise<Date[]> {
@@ -195,7 +170,12 @@ export async function GET(request: NextRequest) {
       lastSaleQuery = lastSaleQuery.in('external_company_id', externalCompanyCodes);
     }
 
-    const { data: lastSaleData } = await lastSaleQuery.single();
+    const { data: lastSaleData, error: lastSaleError } = await lastSaleQuery.single();
+    
+    if (lastSaleError && lastSaleError.code !== 'PGRST116') { // PGRST116 = no rows returned
+      console.error('Erro ao buscar última venda:', lastSaleError);
+      // Continuar com data atual se houver erro
+    }
 
     // Usar última data de venda como "hoje" para cálculos
     const referenceDate = lastSaleData 
@@ -223,22 +203,27 @@ export async function GET(request: NextRequest) {
     ]);
     const allHolidays = [...holidaysCurrentYear, ...holidaysNextYear];
 
-    // Buscar TODOS os produtos de revenda (sem limite de 1000)
+    // Buscar produtos de revenda com limite para evitar timeout
+    // Limite máximo de 5.000 produtos
     const productsQuery = supabaseAdmin
       .from('external_products')
       .select('id, external_id, name, category, product_group')
       .eq('company_group_id', groupId)
       .eq('type', 'Revenda')
-      .order('name');
+      .order('name')
+      .limit(5000); // Limite máximo para evitar timeout
 
-    const products = await fetchAllRecords<{
-      id: string;
-      external_id: string;
-      name: string;
-      category: string;
-      product_group: string | null;
-    }>(productsQuery);
+    const { data: productsData, error: productsError } = await productsQuery;
 
+    if (productsError) {
+      console.error('Erro ao buscar produtos de revenda:', productsError);
+      return NextResponse.json(
+        { error: 'Erro ao buscar produtos', details: productsError.message },
+        { status: 500 }
+      );
+    }
+
+    const products = productsData || [];
     console.log(`Produtos de revenda encontrados: ${products.length}`);
 
     if (products.length === 0) {
@@ -253,46 +238,56 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Buscar TODAS as vendas do período histórico (sem limite de 1000)
+    // Buscar vendas do período histórico com limite para evitar timeout
+    // Limite máximo de 50.000 vendas
     let salesQueryBuilder = supabaseAdmin
       .from('external_sales')
       .select('external_product_id, sale_date, quantity')
       .eq('company_group_id', groupId)
       .gte('sale_date', historyStartDate.toISOString().split('T')[0])
-      .lte('sale_date', referenceDate.toISOString().split('T')[0]);
+      .lte('sale_date', referenceDate.toISOString().split('T')[0])
+      .limit(50000); // Limite máximo para evitar timeout
 
     if (externalCompanyCodes.length > 0) {
       salesQueryBuilder = salesQueryBuilder.in('external_company_id', externalCompanyCodes);
     }
 
-    const sales = await fetchAllRecords<{
-      external_product_id: string;
-      sale_date: string;
-      quantity: number;
-    }>(salesQueryBuilder);
+    const { data: salesData, error: salesError } = await salesQueryBuilder;
 
+    if (salesError) {
+      console.error('Erro ao buscar vendas:', salesError);
+      return NextResponse.json(
+        { error: 'Erro ao buscar vendas', details: salesError.message },
+        { status: 500 }
+      );
+    }
+
+    const sales = salesData || [];
     console.log(`Vendas encontradas no período: ${sales.length}`);
 
-    // Buscar TODO o estoque atual (sem limite de 1000)
+    // Buscar estoque atual com limite para evitar timeout
+    // Limite máximo de 5.000 registros de estoque
     let stockQueryBuilder = supabaseAdmin
       .from('external_stock')
       .select('external_product_id, quantity, min_quantity, max_quantity, unit, conversion_factor, purchase_unit')
-      .eq('company_group_id', groupId);
+      .eq('company_group_id', groupId)
+      .limit(5000); // Limite máximo para evitar timeout
 
     if (externalCompanyCodes.length > 0) {
       stockQueryBuilder = stockQueryBuilder.in('external_company_id', externalCompanyCodes);
     }
 
-    const stock = await fetchAllRecords<{
-      external_product_id: string;
-      quantity: number;
-      min_quantity: number;
-      max_quantity: number;
-      unit: string;
-      conversion_factor: number | null;
-      purchase_unit: string | null;
-    }>(stockQueryBuilder);
+    const { data: stockData, error: stockError } = await stockQueryBuilder;
 
+    if (stockError) {
+      console.error('Erro ao buscar estoque:', stockError);
+      return NextResponse.json(
+        { error: 'Erro ao buscar estoque', details: stockError.message },
+        { status: 500 }
+      );
+    }
+
+    const stock = stockData || [];
     console.log(`Estoque encontrado: ${stock.length}`);
 
     // Criar mapa de estoque por produto
@@ -438,8 +433,14 @@ export async function GET(request: NextRequest) {
       }
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro na API de projeção:', error);
-    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
+    return NextResponse.json(
+      { 
+        error: 'Erro interno do servidor',
+        details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+      },
+      { status: 500 }
+    );
   }
 }

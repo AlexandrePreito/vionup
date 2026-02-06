@@ -402,6 +402,7 @@ export interface ExternalSale {
   id: string;
   company_group_id: string;
   external_id: string;
+  venda_id?: string;
   external_product_id: string;
   external_employee_id?: string;
   external_company_id: string;
@@ -556,10 +557,14 @@ export interface RawMaterial {
   category?: string;
   is_resale: boolean;
   is_active: boolean;
+  parent_id?: string | null;
+  level: number;
+  gramatura?: number; // Gramatura em gramas (apenas nível 3)
   created_at: string;
   updated_at: string;
   raw_material_products?: RawMaterialProduct[];
   raw_material_stock?: RawMaterialStock[];
+  parent?: RawMaterial;
 }
 
 export interface RawMaterialProduct {

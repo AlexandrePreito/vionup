@@ -25,13 +25,27 @@ import {
   Upload,
   Star,
   BarChart3,
-  Calendar
+  Calendar,
+  FileText,
+  MessageSquare,
+  QrCode,
+  Settings,
+  ClipboardList,
+  Search,
+  Award,
+  Target,
+  CheckCircle2
 } from 'lucide-react';
 
 interface SidebarItem {
   href: string;
   icon: React.ReactNode;
   tooltip: string;
+}
+
+interface SidebarGroup {
+  title: string;
+  items: SidebarItem[];
 }
 
 const cadastrosItems: SidebarItem[] = [
@@ -116,59 +130,142 @@ const comprasItems: SidebarItem[] = [
   }
 ];
 
-const metasItems: SidebarItem[] = [
+const metasItems: (SidebarItem | SidebarGroup)[] = [
   {
     href: '/metas',
     icon: <DollarSign size={20} />,
     tooltip: 'Meta Faturamento'
   },
   {
+    href: '/metas/pesquisas',
+    icon: <Search size={20} />,
+    tooltip: 'Meta Pesquisas'
+  },
+  {
     href: '/metas/produtos',
     icon: <Package size={20} />,
     tooltip: 'Meta Produtos'
+  },
+  {
+    title: 'Qualidade',
+    items: [
+      {
+        href: '/metas/qualidade/categorias',
+        icon: <Award size={20} />,
+        tooltip: 'Categorias de Qualidade'
+      },
+      {
+        href: '/metas/qualidade',
+        icon: <Target size={20} />,
+        tooltip: 'Metas de Qualidade'
+      },
+      {
+        href: '/metas/qualidade/realizado',
+        icon: <CheckCircle2 size={20} />,
+        tooltip: 'Resultados de Qualidade'
+      }
+    ]
   }
 ];
 
-const dashboardItems: SidebarItem[] = [
+const dashboardItems: (SidebarItem | SidebarGroup)[] = [
   {
-    href: '/dashboard/previsao',
-    icon: <TrendingUp size={20} />,
-    tooltip: 'Previsão de Vendas'
+    title: 'Realizado',
+    items: [
+      {
+        href: '/dashboard/realizado',
+        icon: <BarChart3 size={20} />,
+        tooltip: 'Realizado'
+      },
+      {
+        href: '/dashboard/previsao',
+        icon: <TrendingUp size={20} />,
+        tooltip: 'Previsão de Vendas'
+      },
+      {
+        href: '/dashboard/realizado-mes',
+        icon: <Calendar size={20} />,
+        tooltip: 'Realizado por Mês'
+      }
+    ]
   },
   {
-    href: '/dashboard/realizado',
+    title: 'Metas Empresa',
+    items: [
+      {
+        href: '/dashboard/empresas',
+        icon: <Building2 size={20} />,
+        tooltip: 'Empresas'
+      },
+      {
+        href: '/dashboard/empresa',
+        icon: <Building size={20} />,
+        tooltip: 'Empresa'
+      }
+    ]
+  },
+  {
+    title: 'Meta Funcionário',
+    items: [
+      {
+        href: '/dashboard/equipe',
+        icon: <Users size={20} />,
+        tooltip: 'Equipe'
+      },
+      {
+        href: '/dashboard/funcionario',
+        icon: <User size={20} />,
+        tooltip: 'Funcionário'
+      }
+    ]
+  },
+  {
+    title: 'NPS',
+    items: [
+      {
+        href: '/nps',
+        icon: <Star size={20} />,
+        tooltip: 'NPS (Interno)'
+      },
+      {
+        href: '/dashboard/nps',
+        icon: <BarChart3 size={20} />,
+        tooltip: 'Dashboard NPS (Goomer)'
+      }
+    ]
+  }
+];
+
+const npsItems: SidebarItem[] = [
+  {
+    href: '/nps',
     icon: <BarChart3 size={20} />,
-    tooltip: 'Realizado'
+    tooltip: 'Dashboard'
   },
   {
-    href: '/dashboard/realizado-mes',
-    icon: <Calendar size={20} />,
-    tooltip: 'Realizado por Mês'
+    href: '/nps/pesquisas',
+    icon: <FileText size={20} />,
+    tooltip: 'Pesquisas'
   },
   {
-    href: '/dashboard/nps',
-    icon: <Star size={20} />,
-    tooltip: 'NPS'
+    href: '/nps/perguntas',
+    icon: <MessageSquare size={20} />,
+    tooltip: 'Perguntas'
   },
   {
-    href: '/dashboard/empresas',
-    icon: <Building2 size={20} />,
-    tooltip: 'Empresas'
+    href: '/nps/links',
+    icon: <QrCode size={20} />,
+    tooltip: 'QR Codes & Links'
   },
   {
-    href: '/dashboard/empresa',
-    icon: <Building size={20} />,
-    tooltip: 'Empresa'
+    href: '/nps/respostas',
+    icon: <ClipboardList size={20} />,
+    tooltip: 'Respostas'
   },
   {
-    href: '/dashboard/equipe',
-    icon: <Users size={20} />,
-    tooltip: 'Equipe'
-  },
-  {
-    href: '/dashboard/funcionario',
-    icon: <User size={20} />,
-    tooltip: 'Funcionário'
+    href: '/nps/configuracoes',
+    icon: <Settings size={20} />,
+    tooltip: 'Configurações'
   }
 ];
 
@@ -177,14 +274,29 @@ export function Sidebar() {
   const { activeSection, isExpanded, setIsExpanded } = useSidebar();
   const { user } = useAuth();
 
-  const isActive = (href: string) => {
+  const isActive = (href: string, allItemsInGroup?: SidebarItem[]) => {
     if (href === '/') return pathname === '/';
-    // Correspondência exata para itens do sidebar
-    return pathname === href;
+    
+    // Se há outros itens no grupo, verificar se algum deles também corresponde
+    if (allItemsInGroup && allItemsInGroup.length > 1) {
+      // Verificar se há outros itens que começam com o mesmo prefixo
+      const conflictingItems = allItemsInGroup.filter(item => 
+        item.href !== href && 
+        (item.href.startsWith(href + '/') || href.startsWith(item.href + '/'))
+      );
+      
+      // Se há conflitos, usar correspondência exata
+      if (conflictingItems.length > 0) {
+        return pathname === href;
+      }
+    }
+    
+    // Correspondência exata ou se a rota começa com o href (para sub-rotas)
+    return pathname === href || pathname.startsWith(href + '/');
   };
 
   // Determinar quais itens mostrar
-  let sidebarItems: SidebarItem[] = [];
+  let sidebarItems: (SidebarItem | SidebarGroup)[] = [];
   
   if (activeSection === 'cadastros') {
     sidebarItems = cadastrosItems;
@@ -210,107 +322,151 @@ export function Sidebar() {
     sidebarItems = metasItems;
   } else if (activeSection === 'dashboard') {
     sidebarItems = dashboardItems;
+  } else if (activeSection === 'nps') {
+    sidebarItems = npsItems;
   }
 
   return (
     <aside className={`bg-white border-r border-gray-200 min-h-screen flex flex-col fixed left-0 top-0 z-40 transition-all duration-300 ${isExpanded ? 'w-64' : 'w-16'}`}>
       {/* Header */}
-      <div className={`flex items-center ${isExpanded ? 'justify-start gap-3 px-4' : 'justify-center'} p-4 border-b border-gray-200 h-16 transition-all duration-300`}>
-        <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-          {/* Rocket Icon com gradiente e rotação baseada no estado */}
-          <svg 
-            className={`w-8 h-8 transition-transform duration-300 ${isExpanded ? 'rotate-45' : '-rotate-45'}`}
-            viewBox="0 0 24 24" 
-            fill="none" 
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <defs>
-              <linearGradient id="rocketGradientSidebar" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#3b82f6" />
-                <stop offset="100%" stopColor="#06b6d4" />
-              </linearGradient>
-            </defs>
-            <path 
-              d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" 
-              stroke="url(#rocketGradientSidebar)" 
-              strokeWidth="1.5" 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              fill="none"
-            />
-            <path 
-              d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" 
-              stroke="url(#rocketGradientSidebar)" 
-              strokeWidth="1.5" 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              fill="none"
-            />
-            <path 
-              d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" 
-              stroke="url(#rocketGradientSidebar)" 
-              strokeWidth="1.5" 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              fill="none"
-            />
-            <path 
-              d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" 
-              stroke="url(#rocketGradientSidebar)" 
-              strokeWidth="1.5" 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              fill="none"
-            />
-          </svg>
-        </div>
-        {isExpanded && (
-          <div className="flex flex-col">
-            <h1 className="text-sm font-bold text-gray-900 leading-tight">Vion Up!</h1>
-            <p className="text-xs text-gray-400 leading-tight">Inteligência em metas</p>
+      <div className={`flex items-center ${isExpanded ? 'justify-between gap-3 px-4' : 'justify-center'} p-4 border-b border-gray-200 h-16 transition-all duration-300`}>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+            {/* Rocket Icon com gradiente e rotação baseada no estado */}
+            <svg 
+              className={`w-8 h-8 transition-transform duration-300 ${isExpanded ? 'rotate-45' : '-rotate-45'}`}
+              viewBox="0 0 24 24" 
+              fill="none" 
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <defs>
+                <linearGradient id="rocketGradientSidebar" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#3b82f6" />
+                  <stop offset="100%" stopColor="#06b6d4" />
+                </linearGradient>
+              </defs>
+              <path 
+                d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" 
+                stroke="url(#rocketGradientSidebar)" 
+                strokeWidth="1.5" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                fill="none"
+              />
+              <path 
+                d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" 
+                stroke="url(#rocketGradientSidebar)" 
+                strokeWidth="1.5" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                fill="none"
+              />
+              <path 
+                d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" 
+                stroke="url(#rocketGradientSidebar)" 
+                strokeWidth="1.5" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                fill="none"
+              />
+              <path 
+                d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" 
+                stroke="url(#rocketGradientSidebar)" 
+                strokeWidth="1.5" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                fill="none"
+              />
+            </svg>
           </div>
-        )}
+          {isExpanded && (
+            <div className="flex flex-col">
+              <h1 className="text-sm font-bold text-gray-900 leading-tight">Vion Up!</h1>
+              <p className="text-xs text-gray-400 leading-tight">Inteligência em metas</p>
+            </div>
+          )}
+        </div>
+        {/* Botão de expandir/colapsar */}
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className={`flex items-center justify-center w-8 h-8 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors ${!isExpanded ? 'mx-auto' : ''}`}
+          title={isExpanded ? 'Colapsar menu' : 'Expandir menu'}
+        >
+          {isExpanded ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+        </button>
       </div>
 
       {/* Menu */}
-      <nav className="flex-1 p-2">
+      <nav className="flex-1 p-2 overflow-y-auto">
         {sidebarItems.length > 0 ? (
-          <ul className="space-y-2">
-            {sidebarItems.map((item, index) => {
-              const active = isActive(item.href);
-              const isFirstItem = index === 0;
+          <div className="space-y-4">
+            {sidebarItems.map((item) => {
+              // Verificar se é um grupo
+              if ('title' in item && 'items' in item) {
+                const group = item as SidebarGroup;
+                return (
+                  <div key={group.title} className="space-y-2">
+                    {/* Título do grupo */}
+                    {isExpanded && (
+                      <div className="px-3 py-2">
+                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          {group.title}
+                        </h3>
+                      </div>
+                    )}
+                    {/* Itens do grupo */}
+                    <ul className="space-y-1">
+                      {group.items.map((groupItem) => {
+                        const active = isActive(groupItem.href, group.items);
+                        return (
+                          <li key={groupItem.href}>
+                            <Link href={groupItem.href}>
+                              <div
+                                className={`w-full flex items-center ${isExpanded ? 'gap-3 px-3' : 'justify-center'} p-2.5 rounded-lg transition-colors ${
+                                  active
+                                    ? 'bg-blue-50 text-blue-600'
+                                    : 'text-gray-600 hover:bg-gray-100'
+                                }`}
+                                title={groupItem.tooltip}
+                              >
+                                {groupItem.icon}
+                                {isExpanded && (
+                                  <span className="text-sm font-medium">{groupItem.tooltip}</span>
+                                )}
+                              </div>
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              }
+              
+              // Item normal
+              const normalItem = item as SidebarItem;
+              const active = isActive(normalItem.href);
               return (
-                <li key={item.href} className="relative">
-                  {/* Botão de expandir - apenas no primeiro item */}
-                  {isFirstItem && (
-                    <button
-                      onClick={() => setIsExpanded(!isExpanded)}
-                      className="absolute -top-1 w-6 h-6 rounded-full bg-white border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition-colors shadow-sm z-10"
-                      style={{ right: '-18px' }}
-                      title={isExpanded ? 'Colapsar menu' : 'Expandir menu'}
-                    >
-                      {isExpanded ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
-                    </button>
-                  )}
-                  <Link href={item.href}>
+                <div key={normalItem.href}>
+                  <Link href={normalItem.href}>
                     <div
                       className={`w-full flex items-center ${isExpanded ? 'gap-3 px-3' : 'justify-center'} p-3 rounded-lg transition-colors ${
                         active
                           ? 'bg-blue-50 text-blue-600'
                           : 'text-gray-600 hover:bg-gray-100'
                       }`}
-                      title={item.tooltip}
+                      title={normalItem.tooltip}
                     >
-                      {item.icon}
+                      {normalItem.icon}
                       {isExpanded && (
-                        <span className="text-sm font-medium">{item.tooltip}</span>
+                        <span className="text-sm font-medium">{normalItem.tooltip}</span>
                       )}
                     </div>
                   </Link>
-                </li>
+                </div>
               );
             })}
-          </ul>
+          </div>
         ) : (
           <div className="flex items-center justify-center h-full">
             <p className={`text-xs text-gray-400 text-center ${isExpanded ? 'px-4' : 'px-2'}`}>

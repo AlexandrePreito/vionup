@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, LogIn, Rocket, Target, TrendingUp, Zap, Shield, BarChart3 } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Target, TrendingUp, Zap, Shield, BarChart3 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { LoadingScreen } from '@/components/LoadingScreen';
 
 // Componente de número animado com contador
 function AnimatedCounter({ end, duration = 2000, prefix = '', suffix = '' }: { end: number; duration?: number; prefix?: string; suffix?: string }) {
@@ -102,8 +103,9 @@ function FeatureItem({ icon: Icon, text, delay }: { icon: any; text: string; del
 
 // Componente Rocket com gradiente
 function RocketIcon({ className = "w-12 h-12", rotate = false }: { className?: string; rotate?: boolean }) {
-  // Gerar ID único para o gradiente para evitar conflitos
-  const gradientId = `rocketGradient-${Math.random().toString(36).substr(2, 9)}`;
+  // ID fixo para evitar problemas de hidratação
+  // Cada SVG tem seu próprio namespace, então não há risco de colisão
+  const gradientId = 'rocketGradient-login';
   
   return (
     <svg 
@@ -140,6 +142,10 @@ export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
   const [email, setEmail] = useState('');
+
+  useEffect(() => {
+    document.title = 'Vion Up! Login';
+  }, []);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -374,42 +380,13 @@ export default function LoginPage() {
       </div>
 
       {/* Overlay de transição */}
-      {transitioning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white transition-overlay">
-          <div className="flex flex-col items-center gap-4 transition-spinner">
-            <RocketIcon className="w-16 h-16 rocket-flying" rotate={true} />
-            <p className="text-gray-700 font-medium">Carregando...</p>
-          </div>
-        </div>
-      )}
+      {transitioning && <LoadingScreen />}
 
       {/* CSS das animações */}
       <style jsx global>{`
         @keyframes float {
           0%, 100% { transform: translateY(0px) rotate(-45deg); }
           50% { transform: translateY(-20px) rotate(-45deg); }
-        }
-        
-        @keyframes rocketFly {
-          0% { 
-            transform: translateY(0px) translateX(0px) rotate(-45deg);
-          }
-          25% { 
-            transform: translateY(-15px) translateX(10px) rotate(-45deg);
-          }
-          50% { 
-            transform: translateY(-25px) translateX(20px) rotate(-45deg);
-          }
-          75% { 
-            transform: translateY(-15px) translateX(10px) rotate(-45deg);
-          }
-          100% { 
-            transform: translateY(0px) translateX(0px) rotate(-45deg);
-          }
-        }
-        
-        .rocket-flying {
-          animation: rocketFly 2s ease-in-out infinite;
         }
         
         .page-transition {

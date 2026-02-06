@@ -22,6 +22,8 @@ import {
   BarChart,
   Bar,
   ComposedChart,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -94,11 +96,16 @@ export default function DashboardRealizadoMesPage() {
   
   // Estados para dados
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonths, setSelectedMonths] = useState<number[]>([]);
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [realizadoData, setRealizadoData] = useState<RealizadoMesData | null>(null);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [filteredData, setFilteredData] = useState<RealizadoMesData | null>(null);
+  
+  // Estados para dropdowns
+  const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
+  const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState(false);
 
   // Buscar dados realizados
   const fetchRealizadoData = async () => {
@@ -141,50 +148,162 @@ export default function DashboardRealizadoMesPage() {
     }
   };
 
-  // Filtrar dados quando selecionar empresa
+  // Filtrar dados quando selecionar empresas ou meses
   useEffect(() => {
     if (!realizadoData) return;
 
-    if (!selectedCompanyId) {
-      setFilteredData(realizadoData);
-      return;
+    let filtered = { ...realizadoData };
+
+    // Filtrar por empresas
+    if (selectedCompanyIds.length > 0) {
+      const selectedCompanies = realizadoData.companies.filter(c => selectedCompanyIds.includes(c.id));
+      if (selectedCompanies.length > 0) {
+        const totalRevenue = selectedCompanies.reduce((sum, c) => sum + c.revenue, 0);
+        const totalTransactions = selectedCompanies.reduce((sum, c) => sum + c.transactions, 0);
+        const totalTrend = selectedCompanies.reduce((sum, c) => sum + c.trend, 0) / selectedCompanies.length;
+        
+        // Calcular proporção para cada empresa
+        const companyRatios = new Map<string, number>();
+        selectedCompanies.forEach(company => {
+          const ratio = realizadoData.summary.totalRevenue > 0 
+            ? company.revenue / realizadoData.summary.totalRevenue 
+            : 0;
+          companyRatios.set(company.id, ratio);
+        });
+        
+        filtered = {
+          ...filtered,
+          companies: selectedCompanies,
+          summary: {
+            ...realizadoData.summary,
+            totalRevenue: totalRevenue,
+            totalTransactions: totalTransactions,
+            averageTicket: totalTransactions > 0 ? totalRevenue / totalTransactions : 0,
+            comparisonLastYear: totalTrend
+          },
+          monthlyRevenue: realizadoData.monthlyRevenue.map(m => {
+            // Soma das receitas das empresas selecionadas para este mês
+            const monthRevenue = selectedCompanies.reduce((sum, company) => {
+              const ratio = companyRatios.get(company.id) || 0;
+              return sum + (m.revenue * ratio);
+            }, 0);
+            const monthTransactions = selectedCompanies.reduce((sum, company) => {
+              const ratio = companyRatios.get(company.id) || 0;
+              return sum + Math.floor(m.transactions * ratio);
+            }, 0);
+            
+            return {
+              ...m,
+              revenue: Math.round(monthRevenue * 100) / 100,
+              transactions: monthTransactions
+            };
+          })
+        };
+      }
     }
 
-    const company = realizadoData.companies.find(c => c.id === selectedCompanyId);
-    if (!company) return;
+    // Filtrar por meses
+    if (selectedMonths.length > 0) {
+      filtered = {
+        ...filtered,
+        monthlyRevenue: filtered.monthlyRevenue.filter(m => selectedMonths.includes(m.month)),
+        monthlyGoals: filtered.monthlyGoals.filter(g => selectedMonths.includes(g.month))
+      };
 
-    // Calcular proporção para filtrar os dados
-    const ratio = realizadoData.summary.totalRevenue > 0 
-      ? company.revenue / realizadoData.summary.totalRevenue 
-      : 0;
-    
-    setFilteredData({
-      ...realizadoData,
-      summary: {
-        ...realizadoData.summary,
-        totalRevenue: company.revenue,
-        totalTransactions: company.transactions,
-        averageTicket: company.averageTicket,
-        comparisonLastYear: company.trend
-      },
-      monthlyRevenue: realizadoData.monthlyRevenue.map(m => ({
-        ...m,
-        revenue: Math.round(m.revenue * ratio * 100) / 100,
-        transactions: Math.floor(m.transactions * ratio)
-      }))
-    });
-  }, [selectedCompanyId, realizadoData]);
+      // Recalcular summary baseado nos meses filtrados
+      const filteredRevenue = filtered.monthlyRevenue.reduce((sum, m) => sum + m.revenue, 0);
+      const filteredTransactions = filtered.monthlyRevenue.reduce((sum, m) => sum + m.transactions, 0);
+      const bestMonth = filtered.monthlyRevenue.reduce((best, m) => 
+        m.revenue > best.revenue ? m : best, 
+        filtered.monthlyRevenue[0] || { month: 0, revenue: 0 }
+      );
+      const worstMonth = filtered.monthlyRevenue.reduce((worst, m) => 
+        m.revenue < worst.revenue ? m : worst, 
+        filtered.monthlyRevenue[0] || { month: 0, revenue: 0 }
+      );
+
+      filtered.summary = {
+        ...filtered.summary,
+        totalRevenue: filteredRevenue,
+        totalTransactions: filteredTransactions,
+        averageTicket: filteredTransactions > 0 ? filteredRevenue / filteredTransactions : 0,
+        bestMonth: { month: bestMonth.month, revenue: bestMonth.revenue },
+        worstMonth: { month: worstMonth.month, revenue: worstMonth.revenue }
+      };
+    }
+
+    setFilteredData(filtered);
+  }, [selectedCompanyIds, selectedMonths, realizadoData]);
 
   // Buscar automaticamente quando filtros mudarem
   useEffect(() => {
     if (selectedGroupId) {
-      setSelectedCompanyId(null);
+      setSelectedCompanyIds([]);
+      setSelectedMonths([]);
       fetchRealizadoData();
     } else {
       setRealizadoData(null);
       setFilteredData(null);
     }
   }, [selectedGroupId, selectedYear]);
+
+  // Inicializar todos os meses e empresas quando dados carregarem
+  useEffect(() => {
+    if (realizadoData) {
+      if (selectedMonths.length === 0) {
+        setSelectedMonths(realizadoData.monthlyRevenue.map(m => m.month));
+      }
+      if (selectedCompanyIds.length === 0) {
+        setSelectedCompanyIds(realizadoData.companies.map(c => c.id));
+      }
+    }
+  }, [realizadoData]);
+
+  // Toggle seleção de empresa
+  const toggleCompany = (companyId: string) => {
+    setSelectedCompanyIds(prev => {
+      if (prev.includes(companyId)) {
+        return prev.filter(id => id !== companyId);
+      } else {
+        return [...prev, companyId];
+      }
+    });
+  };
+
+  // Toggle seleção de mês
+  const toggleMonth = (month: number) => {
+    setSelectedMonths(prev => {
+      if (prev.includes(month)) {
+        return prev.filter(m => m !== month);
+      } else {
+        return [...prev, month].sort((a, b) => a - b);
+      }
+    });
+  };
+
+  // Selecionar todas as empresas
+  const selectAllCompanies = () => {
+    if (realizadoData) {
+      setSelectedCompanyIds(realizadoData.companies.map(c => c.id));
+    }
+  };
+
+  // Desmarcar todas as empresas
+  const deselectAllCompanies = () => {
+    setSelectedCompanyIds([]);
+  };
+
+  // Selecionar todos os meses
+  const selectAllMonths = () => {
+    if (realizadoData) {
+      setSelectedMonths(realizadoData.monthlyRevenue.map(m => m.month));
+    }
+  };
+
+  // Desmarcar todos os meses
+  const deselectAllMonths = () => {
+    setSelectedMonths([]);
+  };
 
   // Formatar valor em R$
   const formatCurrency = (value: number | null | undefined) => {
@@ -229,14 +348,6 @@ export default function DashboardRealizadoMesPage() {
     return COMPANY_COLORS[index % COMPANY_COLORS.length];
   };
 
-  // Selecionar/deselecionar empresa
-  const handleCompanyClick = (companyId: string) => {
-    if (selectedCompanyId === companyId) {
-      setSelectedCompanyId(null);
-    } else {
-      setSelectedCompanyId(companyId);
-    }
-  };
 
   // Combinar dados de faturamento e metas para o gráfico
   const chartData = filteredData?.monthlyRevenue.map(month => {
@@ -248,6 +359,43 @@ export default function DashboardRealizadoMesPage() {
       goal: goal?.goal || 0
     };
   }) || [];
+
+  // Preparar dados para gráfico de linha por empresa
+  const lineChartData = filteredData && realizadoData ? (() => {
+    // Calcular proporção de cada empresa no total original (antes dos filtros)
+    const originalTotalRevenue = realizadoData.summary.totalRevenue;
+    const companyRatios = new Map<string, number>();
+    
+    filteredData.companies.forEach(company => {
+      const ratio = originalTotalRevenue > 0 ? company.revenue / originalTotalRevenue : 0;
+      companyRatios.set(company.id, ratio);
+    });
+
+    // Criar dados mensais por empresa usando os dados originais mensais
+    const monthsToUse = filteredData.monthlyRevenue;
+    const originalMonthlyRevenue = realizadoData.monthlyRevenue;
+    
+    return monthsToUse.map(filteredMonth => {
+      // Encontrar o mês correspondente nos dados originais
+      const originalMonth = originalMonthlyRevenue.find(m => m.month === filteredMonth.month);
+      const monthTotalRevenue = originalMonth?.revenue || 0;
+      
+      const dataPoint: any = {
+        month: filteredMonth.monthName,
+        monthFull: filteredMonth.monthNameFull,
+        monthNumber: filteredMonth.month
+      };
+
+      // Calcular faturamento de cada empresa para este mês
+      filteredData.companies.forEach((company) => {
+        const ratio = companyRatios.get(company.id) || 0;
+        const companyMonthRevenue = Math.round(monthTotalRevenue * ratio * 100) / 100;
+        dataPoint[company.name] = companyMonthRevenue;
+      });
+
+      return dataPoint;
+    });
+  })() : [];
 
   return (
     <div className="p-6 space-y-6">
@@ -285,6 +433,146 @@ export default function DashboardRealizadoMesPage() {
           )}
         </div>
 
+        {/* Empresa - Dropdown com checkboxes */}
+        {realizadoData && (
+          <div className="w-64 relative">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsCompanyDropdownOpen(!isCompanyDropdownOpen)}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-left flex items-center justify-between"
+              >
+                <span className="text-sm text-gray-700">
+                  {selectedCompanyIds.length === 0 
+                    ? 'Nenhuma empresa selecionada'
+                    : selectedCompanyIds.length === realizadoData.companies.length
+                    ? 'Todas as empresas'
+                    : `${selectedCompanyIds.length} empresa(s) selecionada(s)`
+                  }
+                </span>
+                <svg className={`w-4 h-4 text-gray-500 transition-transform ${isCompanyDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              
+              {isCompanyDropdownOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-10" 
+                    onClick={() => setIsCompanyDropdownOpen(false)}
+                  />
+                  <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                    <div className="p-2 border-b border-gray-200 flex gap-2">
+                      <button
+                        onClick={selectAllCompanies}
+                        className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                      >
+                        Selecionar todas
+                      </button>
+                      <button
+                        onClick={deselectAllCompanies}
+                        className="text-xs px-2 py-1 text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                    <div className="p-2 space-y-1">
+                      {realizadoData.companies.map((company) => {
+                        const isSelected = selectedCompanyIds.includes(company.id);
+                        return (
+                          <label
+                            key={company.id}
+                            className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-50 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleCompany(company.id)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">{company.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Mês - Dropdown com checkboxes */}
+        {realizadoData && (
+          <div className="w-64 relative">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsMonthDropdownOpen(!isMonthDropdownOpen)}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-left flex items-center justify-between"
+              >
+                <span className="text-sm text-gray-700">
+                  {selectedMonths.length === 0 
+                    ? 'Nenhum mês selecionado'
+                    : selectedMonths.length === realizadoData.monthlyRevenue.length
+                    ? 'Todos os meses'
+                    : `${selectedMonths.length} mês(es) selecionado(s)`
+                  }
+                </span>
+                <svg className={`w-4 h-4 text-gray-500 transition-transform ${isMonthDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              
+              {isMonthDropdownOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-10" 
+                    onClick={() => setIsMonthDropdownOpen(false)}
+                  />
+                  <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                    <div className="p-2 border-b border-gray-200 flex gap-2">
+                      <button
+                        onClick={selectAllMonths}
+                        className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                      >
+                        Selecionar todos
+                      </button>
+                      <button
+                        onClick={deselectAllMonths}
+                        className="text-xs px-2 py-1 text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                    <div className="p-2 space-y-1">
+                      {realizadoData.monthlyRevenue.map((month) => {
+                        const isSelected = selectedMonths.includes(month.month);
+                        return (
+                          <label
+                            key={month.month}
+                            className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-50 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleMonth(month.month)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">{month.monthNameFull}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Ano */}
         <div className="w-28">
           <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
@@ -318,22 +606,6 @@ export default function DashboardRealizadoMesPage() {
             )}
           </button>
         </div>
-
-        {/* Indicador de filtro ativo */}
-        {selectedCompanyId && realizadoData && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-            <CheckCircle2 size={16} className="text-blue-600" />
-            <span className="text-sm font-medium text-blue-700">
-              Filtrando: {realizadoData.companies.find(c => c.id === selectedCompanyId)?.name}
-            </span>
-            <button
-              onClick={() => setSelectedCompanyId(null)}
-              className="ml-2 p-1 hover:bg-blue-100 rounded transition-colors"
-            >
-              <X size={14} className="text-blue-600" />
-            </button>
-          </div>
-        )}
       </div>
 
       {loading && (
@@ -348,6 +620,7 @@ export default function DashboardRealizadoMesPage() {
           <p className="text-blue-800 font-medium">Selecione um grupo para visualizar os dados</p>
         </div>
       )}
+
 
       {/* Erro */}
       {error && !loading && (
@@ -371,37 +644,28 @@ export default function DashboardRealizadoMesPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {realizadoData.companies.map((company, index) => {
               const colors = getCompanyColor(index);
-              const isSelected = selectedCompanyId === company.id;
+              const isSelected = selectedCompanyIds.includes(company.id);
               
               return (
                 <div
                   key={company.id}
-                  onClick={() => handleCompanyClick(company.id)}
+                  onClick={() => toggleCompany(company.id)}
                   className={`
                     relative overflow-hidden bg-white rounded-2xl p-6 cursor-pointer
                     transition-all duration-300 hover:shadow-lg
                   `}
                   style={{
-                    border: `2px solid ${colors.hex}40`,
+                    border: `2px solid ${colors.hex}15`,
                     boxShadow: isSelected ? `0 0 0 2px ${colors.hex}60` : undefined
                   }}
                 >
-                  {/* Indicador de seleção */}
-                  {isSelected && (
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 rounded-bl-full" />
-                  )}
+                  {/* Marca d'água com cor do LED */}
+                  <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${colors.bg} opacity-10 rounded-bl-full`} />
 
                   {/* Header do card */}
                   <div className="relative mb-4">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
-                          <DollarSign className="w-5 h-5 text-amber-600" />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-medium text-gray-500">Meta de Faturamento</h3>
-                          <p className="text-xs text-gray-400">Valor total em vendas</p>
-                        </div>
                       </div>
                       {company.status === 'achieved' && (
                         <span className="px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
@@ -420,27 +684,30 @@ export default function DashboardRealizadoMesPage() {
                         </span>
                       )}
                     </div>
-                    <p className="text-lg font-bold text-gray-900">{company.name}</p>
+                    <p className="text-lg font-bold" style={{ color: colors.hex }}>{company.name}</p>
                   </div>
 
                   {/* Realizado e Meta */}
                   <div className="space-y-3">
                     <div>
                       <p className="text-xs text-gray-500 mb-1">Realizado</p>
-                      <p className="text-2xl font-bold text-orange-600">{formatCurrency(company.revenue)}</p>
+                      <p className="text-2xl font-bold" style={{ color: colors.hex }}>{formatCurrency(company.revenue)}</p>
                     </div>
                     
                     {/* Barra de progresso */}
                     <div className="space-y-1">
                       <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-orange-500 transition-all duration-300"
-                          style={{ width: `${Math.min(company.progress, 100)}%` }}
+                          className="h-full transition-all duration-300"
+                          style={{ 
+                            width: `${Math.min(company.progress, 100)}%`,
+                            backgroundColor: colors.hex
+                          }}
                         />
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-gray-500">Progresso</span>
-                        <span className="text-sm font-semibold text-orange-600">{company.progress.toFixed(1)}%</span>
+                        <span className="text-sm font-semibold" style={{ color: colors.hex }}>{company.progress.toFixed(1)}%</span>
                       </div>
                     </div>
 
@@ -532,9 +799,14 @@ export default function DashboardRealizadoMesPage() {
               <h3 className="text-lg font-bold text-gray-900">Faturamento Mês a Mês</h3>
               <p className="text-sm text-gray-500">
                 {filteredData.period.year}
-                {selectedCompanyId && realizadoData.companies.find(c => c.id === selectedCompanyId) && (
+                {selectedCompanyIds.length > 0 && selectedCompanyIds.length < realizadoData.companies.length && (
                   <span className="ml-2 text-blue-600">
-                    • {realizadoData.companies.find(c => c.id === selectedCompanyId)?.name}
+                    • {selectedCompanyIds.length} empresa(s) selecionada(s)
+                  </span>
+                )}
+                {selectedMonths.length > 0 && selectedMonths.length < realizadoData.monthlyRevenue.length && (
+                  <span className="ml-2 text-blue-600">
+                    • {selectedMonths.length} mês(es) selecionado(s)
                   </span>
                 )}
               </p>
@@ -600,6 +872,90 @@ export default function DashboardRealizadoMesPage() {
               </ResponsiveContainer>
             </div>
           </div>
+
+          {/* Gráfico de Linha - Faturamento por Empresa */}
+          {filteredData && filteredData.companies.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 p-6">
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-gray-900">Faturamento Mensal por Empresa</h3>
+                <p className="text-sm text-gray-500">
+                  Evolução do faturamento de cada empresa ao longo dos meses
+                </p>
+              </div>
+              
+              <div className="h-[500px] min-h-[500px] w-full" style={{ minWidth: 0 }}>
+                <ResponsiveContainer width="100%" height="100%" minHeight={500} minWidth={0}>
+                  <LineChart data={lineChartData}>
+                    <defs>
+                      {filteredData.companies.map((company, index) => {
+                        const colors = getCompanyColor(index);
+                        return (
+                          <linearGradient key={company.id} id={`lineGradient-${company.id}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={colors.hex} stopOpacity={0.8}/>
+                            <stop offset="100%" stopColor={colors.hex} stopOpacity={0.1}/>
+                          </linearGradient>
+                        );
+                      })}
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                    <XAxis 
+                      dataKey="month" 
+                      stroke="#9ca3af"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis 
+                      stroke="#9ca3af"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(value) => formatCompact(value)}
+                    />
+                    <Tooltip 
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className="bg-white/95 backdrop-blur-sm p-4 border border-gray-200 rounded-xl shadow-xl">
+                              <p className="font-semibold text-gray-900 mb-2">{label}</p>
+                              {payload.map((entry: any, index: number) => (
+                                <p key={index} className="text-sm flex items-center gap-2">
+                                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }}></span>
+                                  <span className="text-gray-600">{entry.name}:</span>
+                                  <span className="font-medium text-gray-900">{formatCurrency(entry.value)}</span>
+                                </p>
+                              ))}
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Legend 
+                      wrapperStyle={{ paddingTop: '20px' }}
+                      iconType="line"
+                    />
+                    {filteredData.companies.map((company, index) => {
+                      const colors = getCompanyColor(index);
+                      return (
+                        <Line
+                          key={company.id}
+                          type="monotone"
+                          dataKey={company.name}
+                          name={company.name}
+                          stroke={colors.hex}
+                          strokeWidth={2.5}
+                          dot={{ fill: colors.hex, r: 4 }}
+                          activeDot={{ r: 6 }}
+                          connectNulls
+                        />
+                      );
+                    })}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

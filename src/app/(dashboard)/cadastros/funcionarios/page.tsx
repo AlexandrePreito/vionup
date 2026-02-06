@@ -271,13 +271,16 @@ export default function FuncionariosPage() {
 
   // Alternar status ativo/inativo
   const handleToggleStatus = async (employee: Employee) => {
+    // Garantir que is_active seja um boolean (tratar null/undefined como false)
+    const currentStatus = employee.is_active ?? false;
+    const newStatus = !currentStatus;
+    
     try {
       const res = await fetch(`/api/employees/${employee.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...employee,
-          is_active: !employee.is_active
+          is_active: newStatus
         })
       });
 
@@ -287,7 +290,8 @@ export default function FuncionariosPage() {
         return;
       }
 
-      fetchEmployees();
+      // Atualizar lista de funcionários
+      await fetchEmployees();
     } catch (error) {
       console.error('Erro ao alterar status:', error);
       alert('Erro ao alterar status');

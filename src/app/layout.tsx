@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Meta10 - Sistema de Gestão",
-  description: "Sistema de gestão empresarial Meta10",
+  title: "Vion Up!",
+  description: "Sistema de gestão empresarial Vion Up!",
 };
 
 export default function RootLayout({

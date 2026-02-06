@@ -5,31 +5,71 @@ import { getAuthenticatedUser } from '@/lib/auth/get-user';
 // GET - Listar grupos
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const includeInactive = searchParams.get('include_inactive') === 'true';
+    // Verificar se o Supabase está configurado
+    if (!supabaseAdmin) {
+      console.error('API /groups - Supabase não está configurado');
+      return NextResponse.json(
+        { error: 'Serviço não configurado' },
+        { status: 500 }
+      );
+    }
+
+    // Verificar se a URL é válida
+    let searchParams: URLSearchParams;
+    let includeInactive = false;
     
-    // Obter usuário logado
-    const user = await getAuthenticatedUser(request);
+    try {
+      const url = new URL(request.url);
+      searchParams = url.searchParams;
+      includeInactive = searchParams.get('include_inactive') === 'true';
+    } catch (urlError: any) {
+      console.error('API /groups - Erro ao processar URL:', urlError);
+      return NextResponse.json(
+        { error: 'URL inválida', details: process.env.NODE_ENV === 'development' ? urlError.message : undefined },
+        { status: 400 }
+      );
+    }
+    
+    // Obter usuário logado (com tratamento de erro)
+    let user = null;
+    try {
+      user = await getAuthenticatedUser(request);
+    } catch (authError: any) {
+      console.error('API /groups - Erro ao obter usuário autenticado:', authError);
+      // Continuar sem usuário se houver erro na autenticação
+      // Isso permite que a API funcione mesmo sem autenticação em alguns casos
+    }
     
     console.log('API /groups - Usuário identificado:', user ? { id: user.id, role: user.role, company_group_id: user.company_group_id } : 'null');
     console.log('API /groups - Headers x-user-id:', request.headers.get('x-user-id'));
 
     // Primeiro, verificar se há grupos no banco (debug)
-    const { data: allGroupsDebug, error: debugError } = await supabaseAdmin
-      .from('company_groups')
-      .select('id, name, is_active')
-      .limit(10);
+    let allGroupsDebug: any[] = [];
+    let debugError: any = null;
     
-    console.log('API /groups - DEBUG: Total de grupos no banco (sem filtros):', allGroupsDebug?.length || 0);
-    if (allGroupsDebug && allGroupsDebug.length > 0) {
-      console.log('API /groups - DEBUG: Grupos encontrados:', allGroupsDebug.map((g: any) => ({ 
-        id: g.id, 
-        name: g.name, 
-        is_active: g.is_active 
-      })));
-    }
-    if (debugError) {
-      console.error('API /groups - DEBUG: Erro ao buscar grupos:', debugError);
+    try {
+      const debugResult = await supabaseAdmin
+        .from('company_groups')
+        .select('id, name, is_active')
+        .limit(10);
+      
+      allGroupsDebug = debugResult.data || [];
+      debugError = debugResult.error;
+      
+      console.log('API /groups - DEBUG: Total de grupos no banco (sem filtros):', allGroupsDebug.length);
+      if (allGroupsDebug.length > 0) {
+        console.log('API /groups - DEBUG: Grupos encontrados:', allGroupsDebug.map((g: any) => ({ 
+          id: g.id, 
+          name: g.name, 
+          is_active: g.is_active 
+        })));
+      }
+      if (debugError) {
+        console.error('API /groups - DEBUG: Erro ao buscar grupos:', debugError);
+      }
+    } catch (debugErr: any) {
+      console.error('API /groups - Erro ao executar query de debug:', debugErr);
+      debugError = debugErr;
     }
 
     let query = supabaseAdmin
@@ -95,13 +135,26 @@ export async function GET(request: NextRequest) {
     // Debug: verificar query antes de executar
     console.log('API /groups - Executando query...');
     
-    const { data, error } = await query;
+    let data: any[] = [];
+    let error: any = null;
+    
+    try {
+      const result = await query;
+      data = result.data || [];
+      error = result.error;
+    } catch (queryError: any) {
+      console.error('API /groups - Erro ao executar query:', queryError);
+      error = queryError;
+    }
 
     if (error) {
       console.error('API /groups - Erro na query:', error);
       console.error('API /groups - Detalhes do erro:', JSON.stringify(error, null, 2));
       return NextResponse.json(
-        { error: 'Erro ao buscar grupos', details: error.message },
+        { 
+          error: 'Erro ao buscar grupos', 
+          details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        },
         { status: 500 }
       );
     }
@@ -112,16 +165,27 @@ export async function GET(request: NextRequest) {
     // Debug: verificar se há grupos no banco (sem filtro de is_active)
     if (!data || data.length === 0) {
       console.log('API /groups - Nenhum grupo encontrado, verificando se há grupos no banco...');
-      const { data: allGroups, error: allGroupsError } = await supabaseAdmin
-        .from('company_groups')
-        .select('id, name, is_active')
-        .order('name', { ascending: true });
+      let allGroups: any[] = [];
+      let allGroupsError: any = null;
+      
+      try {
+        const allGroupsResult = await supabaseAdmin
+          .from('company_groups')
+          .select('id, name, is_active')
+          .order('name', { ascending: true });
+        
+        allGroups = allGroupsResult.data || [];
+        allGroupsError = allGroupsResult.error;
+      } catch (allGroupsErr: any) {
+        console.error('API /groups - Erro ao buscar todos os grupos:', allGroupsErr);
+        allGroupsError = allGroupsErr;
+      }
       
       if (allGroupsError) {
         console.error('API /groups - Erro ao buscar todos os grupos:', allGroupsError);
       } else {
-        console.log('API /groups - Total de grupos no banco (sem filtro):', allGroups?.length || 0);
-        if (allGroups && allGroups.length > 0) {
+        console.log('API /groups - Total de grupos no banco (sem filtro):', allGroups.length);
+        if (allGroups.length > 0) {
           console.log('API /groups - Grupos encontrados:', allGroups.map((g: any) => ({ 
             id: g.id, 
             name: g.name, 
@@ -137,22 +201,44 @@ export async function GET(request: NextRequest) {
 
     // Se não há grupos, retornar informações de debug
     if (!data || data.length === 0) {
-      const { data: allGroupsCheck, error: checkError } = await supabaseAdmin
-        .from('company_groups')
-        .select('id, name, is_active')
-        .limit(5);
+      let allGroupsCheck: any[] = [];
+      let checkError: any = null;
       
-      console.log('API /groups - Verificação final: Total de grupos no banco:', allGroupsCheck?.length || 0);
+      try {
+        const checkResult = await supabaseAdmin
+          .from('company_groups')
+          .select('id, name, is_active')
+          .limit(5);
+        
+        allGroupsCheck = checkResult.data || [];
+        checkError = checkResult.error;
+      } catch (checkErr: any) {
+        console.error('API /groups - Erro ao verificar grupos:', checkErr);
+        checkError = checkErr;
+      }
+      
+      console.log('API /groups - Verificação final: Total de grupos no banco:', allGroupsCheck.length);
       
       // Se há grupos no banco mas não foram retornados, e includeInactive=true, retornar todos
-      if (allGroupsCheck && allGroupsCheck.length > 0 && includeInactive) {
+      if (allGroupsCheck.length > 0 && includeInactive) {
         console.log('API /groups - Retornando todos os grupos do banco (includeInactive=true)');
-        const { data: allGroupsData, error: allGroupsError } = await supabaseAdmin
-          .from('company_groups')
-          .select('*')
-          .order('name', { ascending: true });
+        let allGroupsData: any[] = [];
+        let allGroupsError: any = null;
         
-        if (!allGroupsError && allGroupsData) {
+        try {
+          const allGroupsResult = await supabaseAdmin
+            .from('company_groups')
+            .select('*')
+            .order('name', { ascending: true });
+          
+          allGroupsData = allGroupsResult.data || [];
+          allGroupsError = allGroupsResult.error;
+        } catch (allGroupsErr: any) {
+          console.error('API /groups - Erro ao buscar todos os grupos:', allGroupsErr);
+          allGroupsError = allGroupsErr;
+        }
+        
+        if (!allGroupsError && allGroupsData.length > 0) {
           return NextResponse.json({ groups: allGroupsData });
         }
       }
@@ -162,8 +248,8 @@ export async function GET(request: NextRequest) {
         debug: {
           userRole: user?.role || 'undefined',
           includeInactive,
-          totalGroupsInDb: allGroupsCheck?.length || 0,
-          groupsInDb: allGroupsCheck || [],
+          totalGroupsInDb: allGroupsCheck.length,
+          groupsInDb: allGroupsCheck,
           error: checkError ? checkError.message : null
         }
       });

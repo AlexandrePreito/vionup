@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Search, Package, Loader2, CheckCircle, XCircle, ChevronLeft, ChevronRight, Link2, Percent, Boxes } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Package, Loader2, CheckCircle, XCircle, ChevronLeft, ChevronRight, Link2, Percent, Boxes, ChevronDown, ChevronUp, FolderTree, X, Folder, Layers, GitBranch, Circle } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { RawMaterial, CompanyGroup, Company, ExternalProduct } from '@/types';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
 
-const ITEMS_PER_PAGE = 20;
+interface RawMaterialNode extends RawMaterial {
+  children: RawMaterialNode[];
+}
 
 export default function MateriasPrimasPage() {
   const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
@@ -15,13 +17,12 @@ export default function MateriasPrimasPage() {
   const [externalProducts, setExternalProducts] = useState<ExternalProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   
   // Modal de Cadastro/Edição
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<RawMaterial | null>(null);
-  const [modalTab, setModalTab] = useState<'dados' | 'venda' | 'estoque'>('dados');
+  const [parentMaterial, setParentMaterial] = useState<RawMaterial | null>(null);
   const [formData, setFormData] = useState({
     company_group_id: '',
     company_id: '',
@@ -31,7 +32,9 @@ export default function MateriasPrimasPage() {
     min_stock: 0,
     current_stock: 0,
     category: '',
-    is_resale: false
+    is_resale: false,
+    parent_id: null as string | null,
+    gramatura: 0
   });
   const [saving, setSaving] = useState(false);
   
@@ -146,24 +149,107 @@ export default function MateriasPrimasPage() {
     }
   }, [selectedGroupId]);
 
-  // Filtrar matérias-primas
-  const filteredItems = rawMaterials.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase()) ||
-      item.category?.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = !filterCategory || item.category === filterCategory;
-    return matchesSearch && matchesCategory;
-  });
-
-  // Paginação
-  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const endIndex = startIndex + ITEMS_PER_PAGE;
-  const paginatedItems = filteredItems.slice(startIndex, endIndex);
-
-  // Resetar página quando filtrar
+  // Expandir automaticamente quando carregar matérias-primas
   useEffect(() => {
-    setCurrentPage(1);
-  }, [search, selectedGroupId, filterCategory]);
+    if (rawMaterials.length > 0) {
+      // Expandir todos os nós por padrão
+      const allIds = new Set(rawMaterials.map(r => r.id));
+      setExpandedNodes(allIds);
+    }
+  }, [rawMaterials]);
+
+  // Montar árvore de matérias-primas
+  const buildTree = (materials: RawMaterial[]): RawMaterialNode[] => {
+    const materialMap = new Map<string, RawMaterialNode>();
+    const roots: RawMaterialNode[] = [];
+
+    // Primeiro, criar todos os nós
+    materials.forEach(mat => {
+      materialMap.set(mat.id, { 
+        ...mat, 
+        children: []
+      });
+    });
+
+    // Depois, construir a árvore e adicionar informações do pai
+    materials.forEach(mat => {
+      const node = materialMap.get(mat.id)!;
+      if (mat.parent_id) {
+        const parent = materialMap.get(mat.parent_id);
+        if (parent) {
+          parent.children.push(node);
+          // Se o nó é nível 3, adicionar o loss_factor do pai (nível 2)
+          if (node.level === 3 && parent.level === 2) {
+            (node as any).parent_loss_factor = parent.loss_factor;
+          }
+        }
+      } else {
+        roots.push(node);
+      }
+    });
+
+    // Ordenar filhos por nome
+    const sortChildren = (nodes: RawMaterialNode[]) => {
+      nodes.sort((a, b) => a.name.localeCompare(b.name));
+      nodes.forEach(node => sortChildren(node.children));
+    };
+    roots.forEach(root => sortChildren(root.children));
+
+    return roots;
+  };
+
+  const tree = buildTree(rawMaterials);
+
+  // Filtrar árvore por termo de busca
+  const filterTree = (nodes: RawMaterialNode[], term: string): RawMaterialNode[] => {
+    if (!term.trim()) return nodes;
+    
+    const searchLower = term.toLowerCase();
+    
+    const filterNode = (node: RawMaterialNode): RawMaterialNode | null => {
+      const nameMatches = node.name.toLowerCase().includes(searchLower);
+      const categoryMatches = node.category?.toLowerCase().includes(searchLower);
+      
+      const filteredChildren = node.children
+        .map(child => filterNode(child))
+        .filter((child): child is RawMaterialNode => child !== null);
+      
+      // Incluir se o próprio nó corresponde ou tem filhos que correspondem
+      if (nameMatches || categoryMatches || filteredChildren.length > 0) {
+        return { ...node, children: filteredChildren };
+      }
+      
+      return null;
+    };
+    
+    return nodes
+      .map(node => filterNode(node))
+      .filter((node): node is RawMaterialNode => node !== null);
+  };
+
+  const filteredTree = filterTree(tree, search);
+
+  // Toggle expandir/colapsar
+  const toggleNode = (id: string) => {
+    const newExpanded = new Set(expandedNodes);
+    if (newExpanded.has(id)) {
+      newExpanded.delete(id);
+    } else {
+      newExpanded.add(id);
+    }
+    setExpandedNodes(newExpanded);
+  };
+
+  // Expandir todos
+  const expandAll = () => {
+    const allIds = new Set(rawMaterials.map(r => r.id));
+    setExpandedNodes(allIds);
+  };
+
+  // Colapsar todos
+  const collapseAll = () => {
+    setExpandedNodes(new Set());
+  };
 
   // Categorias únicas
   const categories = [...new Set(rawMaterials.map(r => r.category).filter(Boolean))];
@@ -179,9 +265,10 @@ export default function MateriasPrimasPage() {
     }, 0);
   };
 
-  // Abrir modal para criar
-  const handleCreate = () => {
+  // Criar matéria-prima raiz
+  const handleCreateRoot = () => {
     setEditingItem(null);
+    setParentMaterial(null);
     setFormData({
       company_group_id: selectedGroupId,
       company_id: '',
@@ -191,36 +278,51 @@ export default function MateriasPrimasPage() {
       min_stock: 0,
       current_stock: 0,
       category: '',
-      is_resale: false
+      is_resale: false,
+      parent_id: null,
+      gramatura: 0
     });
-    setModalTab('dados');
-    setModalLinkedVendas([]);
-    setModalLinkedEstoque([]);
-    setSearchVenda('');
-    setSearchEstoque('');
+    setIsModalOpen(true);
+  };
+
+  // Criar sub-matéria-prima
+  const handleCreateChild = (parent: RawMaterial) => {
+    setEditingItem(null);
+    setParentMaterial(parent);
+    const nextLevel = (parent.level || 1) + 1;
+    setFormData({
+      company_group_id: selectedGroupId,
+      company_id: '',
+      name: '',
+      unit: 'kg',
+      loss_factor: nextLevel === 2 ? 0 : 0,
+      min_stock: 0,
+      current_stock: 0,
+      category: parent.category || '',
+      is_resale: false,
+      parent_id: parent.id,
+      gramatura: nextLevel === 3 ? 0 : 0
+    });
     setIsModalOpen(true);
   };
 
   // Abrir modal para editar
   const handleEdit = (item: RawMaterial) => {
     setEditingItem(item);
+    setParentMaterial(null);
     setFormData({
       company_group_id: item.company_group_id,
       company_id: item.company_id || '',
       name: item.name,
-      unit: item.unit,
+      unit: 'kg',
       loss_factor: item.loss_factor,
       min_stock: item.min_stock,
       current_stock: item.current_stock,
       category: item.category || '',
-      is_resale: item.is_resale
+      is_resale: item.is_resale,
+      parent_id: item.parent_id || null,
+      gramatura: item.gramatura || 0
     });
-    setModalTab('dados');
-    setSearchVenda('');
-    setSearchEstoque('');
-    // Carregar vínculos existentes
-    fetchModalLinkedVendas(item.id);
-    fetchModalLinkedEstoque(item.id);
     setIsModalOpen(true);
   };
 
@@ -237,10 +339,17 @@ export default function MateriasPrimasPage() {
         ? `/api/raw-materials/${editingItem.id}`
         : '/api/raw-materials';
 
+      const payload = {
+        ...formData,
+        parent_id: (formData.parent_id && formData.parent_id.trim() !== '') ? formData.parent_id : null,
+        company_id: (formData.company_id && formData.company_id.trim() !== '') ? formData.company_id : null,
+        category: (formData.category && formData.category.trim() !== '') ? formData.category : null
+      };
+
       const res = await fetch(url, {
         method: editingItem ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payload)
       });
 
       const data = await res.json();
@@ -252,6 +361,11 @@ export default function MateriasPrimasPage() {
 
       setIsModalOpen(false);
       fetchRawMaterials();
+      
+      // Expandir pai se estava criando filho
+      if (parentMaterial) {
+        setExpandedNodes(prev => new Set([...prev, parentMaterial.id]));
+      }
     } catch (error) {
       console.error('Erro ao salvar:', error);
       alert('Erro ao salvar matéria-prima');
@@ -496,6 +610,167 @@ export default function MateriasPrimasPage() {
     return modalLinkedEstoque.some(ls => ls.external_stock_id === stockId);
   };
 
+  // Renderizar nó da árvore
+  const renderTreeNode = (node: RawMaterialNode, depth: number = 0, isLast: boolean = false) => {
+    const hasChildren = node.children.length > 0;
+    const isExpanded = expandedNodes.has(node.id);
+    const canAddChild = node.level < 3;
+    const linkedStock = getLinkedStockTotal(node);
+    
+    return (
+      <div key={node.id} className="relative">
+        {/* Linha vertical conectando aos irmãos */}
+        {depth > 0 && (
+          <div 
+            className="absolute left-0 top-0 w-px bg-gray-200"
+            style={{ 
+              left: `${(depth - 1) * 28 + 20}px`,
+              height: isLast ? '20px' : '100%'
+            }}
+          />
+        )}
+        
+        {/* Linha horizontal */}
+        {depth > 0 && (
+          <div 
+            className="absolute top-5 h-px bg-gray-200"
+            style={{ 
+              left: `${(depth - 1) * 28 + 20}px`,
+              width: '16px'
+            }}
+          />
+        )}
+
+        <div 
+          className={`relative flex items-center py-2.5 px-3 hover:bg-blue-50 rounded-lg group border border-transparent hover:border-blue-100 transition-all ${
+            !node.is_active ? 'opacity-50' : ''
+          }`}
+        >
+          {/* Parte esquerda com indentação */}
+          <div 
+            className="flex items-center gap-2 flex-1 min-w-0"
+            style={{ marginLeft: `${depth * 28}px` }}
+          >
+            {/* Botão expandir/colapsar */}
+            <button
+              onClick={() => toggleNode(node.id)}
+              className={`p-1 rounded hover:bg-gray-200 flex-shrink-0 ${hasChildren ? '' : 'invisible'}`}
+            >
+              {isExpanded ? (
+                <ChevronDown size={18} className="text-gray-600" />
+              ) : (
+                <ChevronRight size={18} className="text-gray-600" />
+              )}
+            </button>
+
+            {/* Ícone - diferente por nível (hierarquia) */}
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+              node.level === 1 ? 'bg-purple-100' :
+              node.level === 2 ? 'bg-blue-100' :
+              'bg-amber-100'
+            }`}>
+              {node.level === 1 ? (
+                <FolderTree size={18} className="text-purple-600" />
+              ) : node.level === 2 ? (
+                <Layers size={18} className="text-blue-600" />
+              ) : (
+                <Package size={18} className="text-amber-600" />
+              )}
+            </div>
+
+            {/* Nome e Info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-gray-900">{node.name}</span>
+                {node.is_resale && (
+                  <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded">Revenda</span>
+                )}
+              </div>
+              {node.category && (
+                <p className="text-xs text-gray-500 truncate">{node.category}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Colunas fixas à direita (sem indentação) */}
+          <div className="flex items-center gap-4 flex-shrink-0 pr-2">
+            {/* Fator de Correção - coluna separada */}
+            <div className="w-28 flex justify-center items-center">
+              {node.level === 2 && (
+                <span className="inline-flex items-center gap-1 text-orange-600 bg-orange-50 px-2 py-1 rounded text-xs whitespace-nowrap">
+                  <Percent size={12} />
+                  {node.loss_factor}%
+                </span>
+              )}
+              {node.level === 3 && (node as any).parent_loss_factor !== undefined && (
+                <span className="inline-flex items-center gap-1 text-orange-600 bg-orange-50 px-2 py-1 rounded text-xs whitespace-nowrap">
+                  <Percent size={12} />
+                  {(node as any).parent_loss_factor}%
+                </span>
+              )}
+            </div>
+
+            {/* Gramatura - coluna separada */}
+            <div className="w-24 flex justify-center items-center">
+              {node.level === 3 && node.gramatura && (
+                <span className="text-xs text-gray-700 font-medium whitespace-nowrap">
+                  {node.gramatura}g
+                </span>
+              )}
+            </div>
+
+            {/* Badge nível - coluna separada */}
+            <div className="w-16 flex justify-center items-center">
+              <span className={`text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap ${
+                node.level === 1 ? 'bg-purple-100 text-purple-700' :
+                node.level === 2 ? 'bg-blue-100 text-blue-700' :
+                'bg-amber-100 text-amber-700'
+              }`}>
+                N{node.level}
+              </span>
+            </div>
+
+            {/* Ações */}
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {canAddChild && (
+                <button
+                  onClick={() => handleCreateChild(node)}
+                  className="p-1.5 rounded-lg text-green-600 hover:bg-green-100 transition-colors"
+                  title="Adicionar sub-matéria-prima"
+                >
+                  <Plus size={16} />
+                </button>
+              )}
+              <button
+                onClick={() => handleEdit(node)}
+                className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-100 transition-colors"
+                title="Editar"
+              >
+                <Pencil size={14} />
+              </button>
+              <button
+                onClick={() => handleDelete(node)}
+                className="p-1.5 rounded-lg text-red-500 hover:bg-red-100 transition-colors"
+                title="Excluir"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Filhos */}
+        {hasChildren && isExpanded && (
+          <div className="relative">
+            {node.children.map((child, index) => 
+              renderTreeNode(child, depth + 1, index === node.children.length - 1)
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (loading && rawMaterials.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -541,7 +816,7 @@ export default function MateriasPrimasPage() {
               <Link2 size={18} className="mr-2" />
               Estoque
             </Button>
-            <Button onClick={handleCreate}>
+            <Button onClick={handleCreateRoot}>
               <Plus size={20} className="mr-2" />
               Nova Matéria-Prima
             </Button>
@@ -581,163 +856,70 @@ export default function MateriasPrimasPage() {
             </select>
           )}
 
-          <select
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Todas as categorias</option>
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
-          </select>
+          {rawMaterials.length > 0 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={expandAll}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                Expandir todos
+              </button>
+              <span className="text-gray-300">|</span>
+              <button
+                onClick={collapseAll}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                Colapsar todos
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Tabela */}
-        {paginatedItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-            <Package size={48} className="mb-4 text-gray-300" />
-            <p className="text-lg font-medium">Nenhuma matéria-prima encontrada</p>
-            <p className="text-sm text-gray-400">
-              {search || filterCategory
-                ? 'Tente ajustar os filtros'
-                : 'Crie sua primeira matéria-prima'
-              }
-            </p>
+        {/* Árvore de Matérias-Primas */}
+        {loading ? (
+          <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
+            <Loader2 size={48} className="mx-auto text-gray-300 mb-4 animate-spin" />
+            <p className="text-gray-500">Carregando matérias-primas...</p>
+          </div>
+        ) : !selectedGroupId ? (
+          <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
+            <Package size={48} className="mx-auto text-gray-300 mb-4" />
+            <h2 className="text-lg font-medium text-gray-900 mb-2">Selecione um grupo</h2>
+            <p className="text-gray-500">Escolha um grupo para visualizar e gerenciar as matérias-primas</p>
+          </div>
+        ) : search && filteredTree.length === 0 ? (
+          <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
+            <Search size={48} className="mx-auto text-gray-300 mb-4" />
+            <h2 className="text-lg font-medium text-gray-900 mb-2">Nenhum resultado</h2>
+            <p className="text-gray-500">Nenhuma matéria-prima encontrada para "{search}"</p>
+            <button 
+              onClick={() => setSearch('')}
+              className="mt-4 text-blue-600 hover:underline"
+            >
+              Limpar busca
+            </button>
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Nome</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Categoria</th>
-                  <th className="text-center px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Unidade</th>
-                  <th className="text-center px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Perda</th>
-                  <th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Estoque Mín.</th>
-                  <th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Estoque Atual</th>
-                  <th className="text-center px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Produtos</th>
-                  <th className="text-center px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {paginatedItems.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${item.is_resale ? 'bg-purple-100' : 'bg-blue-100'}`}>
-                          <Package size={20} className={item.is_resale ? 'text-purple-600' : 'text-blue-600'} />
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{item.name}</p>
-                          {item.is_resale && (
-                            <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded">Revenda</span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{item.category || '-'}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600 text-center">{item.unit}</td>
-                    <td className="px-6 py-4 text-center">
-                      {item.loss_factor > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-orange-600 bg-orange-50 px-2 py-1 rounded text-sm">
-                          <Percent size={14} />
-                          {item.loss_factor}%
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600 text-right">{item.min_stock} {item.unit}</td>
-                    <td className="px-6 py-4 text-right">
-                      {(() => {
-                        const linkedStock = getLinkedStockTotal(item);
-                        return (
-                          <span className={`font-medium ${linkedStock < item.min_stock ? 'text-red-600' : 'text-green-600'}`}>
-                            {linkedStock.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.unit}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={() => handleOpenLinkModal(item)}
-                        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded transition-colors"
-                      >
-                        <Link2 size={16} />
-                        <span className="text-sm font-medium">
-                          {item.raw_material_products?.length || 0}
-                        </span>
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      {item.is_active ? (
-                        <CheckCircle size={20} className="inline text-green-500" />
-                      ) : (
-                        <XCircle size={20} className="inline text-gray-400" />
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleEdit(item)}
-                          className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                          title="Editar"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item)}
-                          className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-red-600"
-                          title="Excluir"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Paginação */}
-            {totalPages > 1 && (
-              <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
-                <div className="text-sm text-gray-600">
-                  Mostrando {startIndex + 1} a {Math.min(endIndex, filteredItems.length)} de {filteredItems.length}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <span className="text-sm text-gray-600">
-                    Página {currentPage} de {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages}
-                    className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Árvore */}
+            <div className="p-4 space-y-1">
+              {filteredTree.map((node, index) => renderTreeNode(node, 0, index === filteredTree.length - 1))}
+            </div>
+            
+            {/* Total de matérias-primas */}
+            <div className="px-6 py-2 bg-blue-50 border-t border-blue-100 text-sm text-blue-700">
+              Total: <strong>{rawMaterials.length}</strong> matérias-primas
+            </div>
           </div>
         )}
       </div>
 
-      {/* Modal de Cadastro/Edição com Abas */}
+      {/* Modal de Cadastro/Edição */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-2xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+          <div className="bg-white rounded-2xl w-full max-w-md mx-4 overflow-hidden flex flex-col">
             {/* Header */}
-            <div className="p-6 border-b border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-gray-900">
                   {editingItem ? 'Editar Matéria-Prima' : 'Nova Matéria-Prima'}
@@ -746,291 +928,156 @@ export default function MateriasPrimasPage() {
                   onClick={() => setIsModalOpen(false)}
                   className="p-2 hover:bg-gray-100 rounded-lg"
                 >
-                  <XCircle size={20} className="text-gray-500" />
+                  <X size={20} className="text-gray-500" />
                 </button>
               </div>
-
-              {/* Abas */}
-              <div className="flex gap-1 mt-4">
-                <button
-                  onClick={() => setModalTab('dados')}
-                  className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors ${
-                    modalTab === 'dados'
-                      ? 'bg-blue-100 text-blue-700 border-b-2 border-blue-600'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  Dados
-                </button>
-                {editingItem && (
-                  <>
-                    <button
-                      onClick={() => setModalTab('venda')}
-                      className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors flex items-center gap-2 ${
-                        modalTab === 'venda'
-                          ? 'bg-green-100 text-green-700 border-b-2 border-green-600'
-                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                      }`}
-                    >
-                      Prod. Venda
-                      <span className="bg-green-200 text-green-800 px-1.5 py-0.5 rounded text-xs">
-                        {modalLinkedVendas.length}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => setModalTab('estoque')}
-                      className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors flex items-center gap-2 ${
-                        modalTab === 'estoque'
-                          ? 'bg-orange-100 text-orange-700 border-b-2 border-orange-600'
-                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                      }`}
-                    >
-                      Prod. Estoque
-                      <span className="bg-orange-200 text-orange-800 px-1.5 py-0.5 rounded text-xs">
-                        {modalLinkedEstoque.length}
-                      </span>
-                    </button>
-                  </>
-                )}
-              </div>
+              {parentMaterial && (
+                <p className="text-sm text-gray-500 mt-2">
+                  Sub-matéria-prima de: <span className="font-medium">{parentMaterial.name}</span>
+                </p>
+              )}
             </div>
 
-            {/* Conteúdo da aba */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {/* Aba Dados */}
-              {modalTab === 'dados' && (
-                <form onSubmit={(e) => { e.preventDefault(); handleSave(); }} className="space-y-4">
-                  {/* Nome e Categoria */}
-                  <div className="grid grid-cols-2 gap-4">
+            {/* Conteúdo */}
+            <div className="px-6 py-4">
+              {(() => {
+                // Determinar o nível atual
+                let currentLevel = 1;
+                
+                if (parentMaterial) {
+                  // Criando filho de um pai específico
+                  currentLevel = (parentMaterial.level || 1) + 1;
+                } else if (editingItem) {
+                  // Editando item existente
+                  currentLevel = editingItem.level || 1;
+                } else {
+                  // Criando item raiz (nível 1) - sempre quando clicar em "Nova Matéria-Prima"
+                  currentLevel = 1;
+                }
+
+                return (
+                  <form onSubmit={(e) => { e.preventDefault(); handleSave(); }} className="space-y-4">
+                    {/* Nome - todos os níveis */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Nome *</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Nome <span className="text-red-500">*</span>
+                      </label>
                       <input
                         type="text"
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Ex: Picanha"
+                        placeholder={
+                          currentLevel === 1 ? "Ex: Bovino" :
+                          currentLevel === 2 ? "Ex: Cupim" :
+                          "Ex: CUPIM 300g"
+                        }
                         required
+                        autoFocus
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
-                      <input
-                        type="text"
-                        value={formData.category}
-                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Ex: Carnes"
-                        list="categories-list"
-                      />
-                      <datalist id="categories-list">
-                        {categories.map((cat) => (
-                          <option key={cat} value={cat} />
-                        ))}
-                      </datalist>
-                    </div>
-                  </div>
 
-                  {/* Unidade e Perda */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Unidade</label>
-                      <select
-                        value={formData.unit}
-                        onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    {/* Pai - apenas ao editar nível 2 ou 3 */}
+                    {editingItem && (currentLevel === 2 || currentLevel === 3) && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Matéria-Prima Pai
+                        </label>
+                        <select
+                          value={formData.parent_id || ''}
+                          onChange={(e) => {
+                            const newParentId = e.target.value || null;
+                            setFormData({ 
+                              ...formData, 
+                              parent_id: newParentId
+                            });
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="">Nenhuma (raiz - Nível 1)</option>
+                          {rawMaterials
+                            .filter(m => m.id !== editingItem.id)
+                            .filter(m => m.parent_id !== editingItem.id)
+                            .filter(m => {
+                              // Para nível 2, só pode ter pai nível 1
+                              // Para nível 3, só pode ter pai nível 2
+                              if (currentLevel === 2) {
+                                return (m.level || 1) === 1;
+                              } else if (currentLevel === 3) {
+                                return (m.level || 1) === 2;
+                              }
+                              return false;
+                            })
+                            .map((mat) => (
+                              <option key={mat.id} value={mat.id}>
+                                {mat.name} {mat.level === 2 && mat.loss_factor > 0 ? `(${mat.loss_factor}%)` : ''} {mat.level === 3 && mat.gramatura ? `(${mat.gramatura}g)` : ''}
+                              </option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {currentLevel === 2 
+                            ? "Selecione uma matéria-prima de nível 1 como pai" 
+                            : "Selecione uma matéria-prima de nível 2 como pai"}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Nível 2: Fator de Correção */}
+                    {currentLevel === 2 && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          % Fator de Correção
+                        </label>
+                        <input
+                          type="number"
+                          value={formData.loss_factor}
+                          onChange={(e) => setFormData({ ...formData, loss_factor: parseFloat(e.target.value) || 0 })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Ex: 20"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Percentual de perda/correção (apenas nível 2)</p>
+                      </div>
+                    )}
+
+                    {/* Nível 3: Gramatura */}
+                    {currentLevel === 3 && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Gramatura (g)
+                        </label>
+                        <input
+                          type="number"
+                          value={formData.gramatura}
+                          onChange={(e) => setFormData({ ...formData, gramatura: parseFloat(e.target.value) || 0 })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Ex: 300"
+                          min="0"
+                          step="1"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Peso em gramas (apenas nível 3). Tudo será convertido para kg automaticamente.</p>
+                      </div>
+                    )}
+
+                    {/* Botões */}
+                    <div className="flex gap-2 pt-4 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsModalOpen(false)}
+                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                       >
-                        <option value="kg">Quilograma (kg)</option>
-                        <option value="g">Grama (g)</option>
-                        <option value="un">Unidade (un)</option>
-                        <option value="lt">Litro (lt)</option>
-                        <option value="ml">Mililitro (ml)</option>
-                        <option value="cx">Caixa (cx)</option>
-                        <option value="pc">Pacote (pc)</option>
-                      </select>
+                        Cancelar
+                      </button>
+                      <Button type="submit" isLoading={saving}>
+                        {editingItem ? 'Salvar' : 'Criar'}
+                      </Button>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Fator de Perda (%)</label>
-                      <input
-                        type="number"
-                        value={formData.loss_factor}
-                        onChange={(e) => setFormData({ ...formData, loss_factor: parseFloat(e.target.value) || 0 })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Ex: 20"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Estoque Mínimo */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Estoque Mínimo</label>
-                    <input
-                      type="number"
-                      value={formData.min_stock}
-                      onChange={(e) => setFormData({ ...formData, min_stock: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Ex: 10"
-                      min="0"
-                      step="0.01"
-                    />
-                  </div>
-
-                  {/* Botões */}
-                  <div className="flex gap-2 pt-4 justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setIsModalOpen(false)}
-                      className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      Cancelar
-                    </button>
-                    <Button type="submit" isLoading={saving}>
-                      {editingItem ? 'Salvar' : 'Criar'}
-                    </Button>
-                  </div>
-                </form>
-              )}
-
-              {/* Aba Prod. Venda */}
-              {modalTab === 'venda' && editingItem && (
-                <div className="space-y-4">
-                  {/* Produtos Vinculados */}
-                  <div>
-                    <h3 className="font-semibold text-gray-900 mb-3">Produtos Vinculados ({modalLinkedVendas.length})</h3>
-                    <p className="text-xs text-gray-500 mb-3">Use a tela de Conciliação para adicionar novos vínculos</p>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {modalLinkedVendas.length === 0 ? (
-                        <p className="text-gray-400 text-sm py-4 text-center">Nenhum produto vinculado</p>
-                      ) : (
-                        modalLinkedVendas.map((lp) => {
-                          const productInfo = getExternalProductInfo(lp.external_product_id);
-                          return (
-                            <div
-                              key={lp.id}
-                              className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg"
-                            >
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-gray-900 truncate">
-                                  {productInfo.name}
-                                </p>
-                                <div className="flex items-center gap-2 text-xs text-gray-500">
-                                  <span>{lp.external_product_id}</span>
-                                  {productInfo.company && (
-                                    <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
-                                      Emp: {productInfo.company}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    defaultValue={lp.quantity_per_unit}
-                                    onBlur={(e) => {
-                                      const newQty = parseFloat(e.target.value) || 0;
-                                      if (newQty > 0 && newQty !== lp.quantity_per_unit) {
-                                        handleModalUpdateVendaQty(lp.id, newQty);
-                                      }
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        const newQty = parseFloat((e.target as HTMLInputElement).value) || 0;
-                                        if (newQty > 0 && newQty !== lp.quantity_per_unit) {
-                                          handleModalUpdateVendaQty(lp.id, newQty);
-                                        }
-                                        (e.target as HTMLInputElement).blur();
-                                      }
-                                    }}
-                                    className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                                    step="0.001"
-                                    min="0.001"
-                                  />
-                                  <span className="text-sm text-gray-600">{formData.unit}</span>
-                                </div>
-                                <button
-                                  onClick={() => handleModalUnlinkVenda(lp.id)}
-                                  className="p-1.5 text-red-500 hover:bg-red-100 rounded transition-colors"
-                                  title="Desvincular"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Aba Prod. Estoque */}
-              {modalTab === 'estoque' && editingItem && (
-                <div className="space-y-4">
-                  {/* Estoques Vinculados */}
-                  <div>
-                    <h3 className="font-semibold text-gray-900 mb-3">Estoques Vinculados ({modalLinkedEstoque.length})</h3>
-                    <p className="text-xs text-gray-500 mb-3">Use a tela de Conciliação para adicionar novos vínculos</p>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {modalLinkedEstoque.length === 0 ? (
-                        <p className="text-gray-400 text-sm py-4 text-center">Nenhum estoque vinculado</p>
-                      ) : (
-                        modalLinkedEstoque.map((ls) => (
-                          <div
-                            key={ls.id}
-                            className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-gray-900 truncate">
-                                {ls.external_stock?.product_name || ls.external_stock?.external_product_id || 'N/A'}
-                              </p>
-                              <div className="flex items-center gap-2 text-xs text-gray-500">
-                                <span>{ls.external_stock?.external_product_id}</span>
-                                {ls.external_stock?.product_group && (
-                                  <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
-                                    {ls.external_stock?.product_group}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className={`text-sm font-medium ${
-                                (ls.external_stock?.quantity || 0) < 0 ? 'text-red-600' : 'text-teal-600'
-                              }`}>
-                                {(ls.external_stock?.quantity || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} {ls.external_stock?.unit || formData.unit}
-                              </span>
-                              <button
-                                onClick={() => handleModalUnlinkEstoque(ls.id)}
-                                className="p-1.5 text-red-500 hover:bg-red-100 rounded transition-colors"
-                                title="Desvincular"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
+                  </form>
+                );
+              })()}
             </div>
-
-            {/* Footer com botões para abas de vínculo */}
-            {(modalTab === 'venda' || modalTab === 'estoque') && (
-              <div className="p-4 border-t border-gray-200 flex justify-end gap-3">
-                <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
-                  Fechar
-                </Button>
-                <Button onClick={handleSave} isLoading={saving}>
-                  Salvar
-                </Button>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -1050,7 +1097,7 @@ export default function MateriasPrimasPage() {
                 onClick={() => setIsLinkModalOpen(false)}
                 className="p-2 hover:bg-gray-100 rounded-lg"
               >
-                <XCircle size={20} className="text-gray-500" />
+                  <X size={20} className="text-gray-500" />
               </button>
             </div>
 

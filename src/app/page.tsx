@@ -164,6 +164,7 @@ export default function HomePage() {
 
   useEffect(() => {
     setMounted(true);
+    document.title = 'Vion Up!';
     
     const featureInterval = setInterval(() => {
       setActiveFeature(prev => (prev + 1) % 4);

@@ -1,6 +1,6 @@
 'use client';
 
-import { Package, UserCircle, Clock, ShoppingCart, Building2, Building, Users, Database, RefreshCw, Settings, ShoppingBag, Target, LayoutDashboard, Upload } from 'lucide-react';
+import { Package, UserCircle, Clock, ShoppingCart, Building2, Building, Users, Database, RefreshCw, Settings, ShoppingBag, Target, LayoutDashboard, Upload, Star } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSidebar } from '@/contexts/sidebar-context';
 import { useAuth } from '@/contexts/AuthContext';
@@ -47,12 +47,17 @@ export function Header() {
     { label: 'Funcionário', href: '/dashboard/funcionario', icon: LayoutDashboard }
   ];
 
+  const npsItems = [
+    { label: 'Dashboard', href: '/nps', icon: Star }
+  ];
+
   const isCadastrosActive = cadastrosItems.some(item => isActive(item.href));
   const isConfigActive = configItems.some(item => isActive(item.href));
   const isPowerBIActive = powerbiItems.some(item => isActive(item.href)) || pathname.startsWith('/dashboard/importar');
   const isComprasActive = comprasItems.some(item => isActive(item.href));
   const isMetasActive = metasItems.some(item => isActive(item.href));
-  const isDashboardActive = dashboardItems.some(item => isActive(item.href));
+  const isDashboardActive = pathname.startsWith('/dashboard/') && !pathname.startsWith('/dashboard/importar');
+  const isNPSActive = npsItems.some(item => isActive(item.href)) || pathname.startsWith('/nps/');
 
   return (
     <header className={`h-16 bg-white border-b border-gray-200 fixed top-0 right-0 z-30 shadow-sm transition-all duration-300 ${isExpanded ? 'left-64' : 'left-16'}`}>
@@ -66,7 +71,7 @@ export function Header() {
           <button
             onClick={() => {
               setActiveSection('dashboard');
-              router.push('/dashboard/previsao');
+              router.push('/dashboard/realizado');
             }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
               activeSection === 'dashboard' || isDashboardActive
@@ -120,6 +125,21 @@ export function Header() {
             }`}
           >
             <span className="text-sm font-medium">Cadastros</span>
+          </button>
+
+          {/* NPS */}
+          <button
+            onClick={() => {
+              setActiveSection('nps');
+              router.push('/nps');
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+              activeSection === 'nps' || isNPSActive
+                ? 'bg-blue-50 text-blue-600'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <span className="text-sm font-medium">NPS</span>
           </button>
 
           {/* Importar - Apenas para master */}

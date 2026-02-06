@@ -1,0 +1,209 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const body = await req.json();
+    const { action } = body;
+
+    if (action === "list_queue") {
+      const { data } = await supabase
+        .from("sync_queue")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      return new Response(
+        JSON.stringify({ queue: data }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (action === "add_to_queue") {
+      const { connection_id, config_id, company_group_id, start_date, end_date, sync_type } = body;
+      const startDt = new Date(start_date);
+      const endDt = new Date(end_date);
+      const totalDays = Math.ceil((endDt.getTime() - startDt.getTime()) / (86400000)) + 1;
+
+      const { data, error } = await supabase
+        .from("sync_queue")
+        .insert({
+          connection_id,
+          config_id,
+          company_group_id,
+          start_date,
+          end_date,
+          sync_type: sync_type || "full",
+          total_days: totalDays,
+          status: "pending",
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return new Response(
+        JSON.stringify({ success: true, queue_item: data }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (action === "process_queue") {
+      const { data: queueItem } = await supabase.rpc("get_next_sync_queue_item");
+
+      if (!queueItem || !queueItem.id) {
+        return new Response(
+          JSON.stringify({ status: "empty", message: "Nenhum item na fila" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ status: "processing", queue_item: queueItem }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (action === "get_config") {
+      const { config_id } = body;
+      const { data: config } = await supabase
+        .from("powerbi_sync_configs")
+        .select("*, connection:powerbi_connections(*)")
+        .eq("id", config_id)
+        .single();
+
+      return new Response(
+        JSON.stringify({ config }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (action === "save_records") {
+      const { records, entity_type, table_name } = body;
+      if (!records || !entity_type) throw new Error("records e entity_type obrigatórios");
+
+      // Mapear entity_type para nome da tabela
+      const tableMap: Record<string, string> = {
+        products: "external_products",
+        employees: "external_employees",
+        companies: "external_companies",
+        sales: "external_sales",
+        cash_flow: "external_cash_flow",
+        cash_flow_statement: "external_cash_flow_statement",
+        categories: "external_categories",
+        stock: "external_stock"
+      };
+
+      const targetTable = table_name || tableMap[entity_type];
+      
+      if (!targetTable) {
+        throw new Error(`Tipo de entidade não suportado: ${entity_type}`);
+      }
+
+      // Verificar se existe RPC específico para esta entidade
+      const rpcMap: Record<string, string> = {
+        sales: "bulk_insert_sales",
+        cash_flow: "bulk_insert_cash_flow",
+        cash_flow_statement: "bulk_insert_cash_flow_statement",
+      };
+
+      const rpcName = rpcMap[entity_type];
+
+      if (rpcName) {
+        // Usar RPC se disponível
+        const { data, error } = await supabase.rpc(rpcName, { data: records });
+        if (error) throw error;
+        return new Response(
+          JSON.stringify({ success: true, inserted: data?.inserted || records.length }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } else {
+        // Salvar diretamente na tabela usando upsert
+        const conflictKey = targetTable === "external_cash_flow_statement" 
+          ? "company_group_id,external_id" 
+          : "company_group_id,external_id";
+
+        // Processar em lotes de 50
+        const batchSize = 50;
+        let totalInserted = 0;
+
+        for (let i = 0; i < records.length; i += batchSize) {
+          const batch = records.slice(i, i + batchSize);
+          const { error: batchError } = await supabase
+            .from(targetTable)
+            .upsert(batch, {
+              onConflict: conflictKey,
+              ignoreDuplicates: false
+            });
+
+          if (batchError) {
+            console.error(`Erro ao salvar lote ${Math.floor(i / batchSize) + 1}:`, batchError);
+            throw new Error(`Erro ao salvar lote: ${batchError.message}`);
+          }
+
+          totalInserted += batch.length;
+        }
+
+        return new Response(
+          JSON.stringify({ success: true, inserted: totalInserted }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    if (action === "update_progress") {
+      const { queue_id, current_date, processed_days, processed_records } = body;
+      await supabase.rpc("update_sync_queue_progress", {
+        p_queue_id: queue_id,
+        p_current_date: current_date,
+        p_processed_days: processed_days,
+        p_processed_records: processed_records,
+      });
+
+      return new Response(
+        JSON.stringify({ success: true }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (action === "finish_queue") {
+      const { queue_id, status, total_records, error_message } = body;
+      await supabase.rpc("finish_sync_queue_item", {
+        p_queue_id: queue_id,
+        p_status: status,
+        p_total_records: total_records,
+        p_error_message: error_message || null,
+      });
+
+      return new Response(
+        JSON.stringify({ success: true }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    return new Response(
+      JSON.stringify({ error: "Ação não reconhecida" }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+
+  } catch (error) {
+    console.error("Erro na Edge Function:", error);
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});

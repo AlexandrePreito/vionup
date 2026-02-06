@@ -106,37 +106,81 @@ export async function GET(request: NextRequest) {
           console.log('Faturamento total:', totalRevenue);
         }
 
-        // Buscar quantidade de vendas distintas (COUNT DISTINCT de external_id)
+        // Buscar quantidade de vendas distintas (COUNT DISTINCT de venda_id da tabela external_sales)
+        // Usando função RPC para fazer COUNT DISTINCT diretamente no banco (sem limite de registros)
         try {
           const startDate = new Date(yearNum, monthNum - 1, 1);
           const endDate = new Date(yearNum, monthNum, 0);
           const startDateStr = startDate.toISOString().split('T')[0];
           const endDateStr = endDate.toISOString().split('T')[0];
 
-          // Buscar external_ids únicos de forma mais eficiente
-          // Limitar a busca para evitar timeout
-          const { data: allSales, error: salesError } = await supabaseAdmin
-            .from('external_cash_flow')
-            .select('external_id')
-            .eq('company_group_id', companyGroupId)
-            .in('external_company_id', externalCodes)
-            .gte('transaction_date', startDateStr)
-            .lte('transaction_date', endDateStr)
-            .limit(100000);
+          console.log(`Buscando vendas distintas para ${externalCodes.length} empresa(s) externa(s)...`);
+          console.log(`Período: ${startDateStr} a ${endDateStr}`);
+          
+          // Usar função RPC para contar diretamente no banco
+          const { data: countResult, error: countError } = await supabaseAdmin.rpc('count_distinct_sales', {
+            p_company_group_id: companyGroupId,
+            p_external_company_ids: externalCodes,
+            p_start_date: startDateStr,
+            p_end_date: endDateStr
+          });
 
-          if (salesError) {
-            console.error('Erro ao buscar vendas distintas:', salesError);
-            console.error('Detalhes do erro:', JSON.stringify(salesError, null, 2));
-            // Continua com 0 se houver erro
-            distinctSalesCount = 0;
-          } else if (allSales && allSales.length > 0) {
-            // Contar external_ids únicos
-            const uniqueIds = new Set(allSales.map((s: any) => s.external_id));
-            distinctSalesCount = uniqueIds.size;
-            console.log(`Vendas distintas encontradas: ${distinctSalesCount} (de ${allSales.length} registros)`);
+          if (countError) {
+            console.error('Erro ao contar vendas distintas via RPC:', countError);
+            console.error('Detalhes do erro:', JSON.stringify(countError, null, 2));
+            
+            // Fallback: tentar método alternativo se RPC não existir
+            console.log('Tentando método alternativo (busca em lotes)...');
+            const allUniqueIds = new Set<string>();
+            let offset = 0;
+            const batchSize = 10000;
+            let hasMore = true;
+            let totalProcessed = 0;
+            
+            while (hasMore) {
+              const { data: batch, error: batchError } = await supabaseAdmin
+                .from('external_sales')
+                .select('venda_id')
+                .eq('company_group_id', companyGroupId)
+                .in('external_company_id', externalCodes)
+                .gte('sale_date', startDateStr)
+                .lte('sale_date', endDateStr)
+                .not('venda_id', 'is', null)
+                .neq('venda_id', '')
+                .range(offset, offset + batchSize - 1);
+              
+              if (batchError) {
+                console.error('Erro ao buscar lote:', batchError);
+                break;
+              }
+              
+              if (batch && batch.length > 0) {
+                batch.forEach((s: any) => {
+                  if (s.venda_id && s.venda_id.trim() !== '') {
+                    allUniqueIds.add(s.venda_id.trim());
+                  }
+                });
+                
+                totalProcessed += batch.length;
+                
+                if (batch.length < batchSize) {
+                  hasMore = false;
+                } else {
+                  offset += batchSize;
+                  if (totalProcessed % 50000 === 0) {
+                    console.log(`Processados ${totalProcessed} registros, ${allUniqueIds.size} vendas distintas até agora...`);
+                  }
+                }
+              } else {
+                hasMore = false;
+              }
+            }
+            
+            distinctSalesCount = allUniqueIds.size;
+            console.log(`Vendas distintas encontradas (método alternativo): ${distinctSalesCount} (de ${totalProcessed} registros processados)`);
           } else {
-            console.log('Nenhuma venda encontrada no período');
-            distinctSalesCount = 0;
+            distinctSalesCount = countResult || 0;
+            console.log(`Vendas distintas encontradas: ${distinctSalesCount}`);
           }
         } catch (countError: any) {
           console.error('Erro ao contar vendas distintas:', countError);
@@ -289,9 +333,18 @@ export async function GET(request: NextRequest) {
             confidence = 'medium';
           }
 
+          // Verificar se o mês já foi fechado
+          const isMonthClosed = remainingDays === 0;
+          
+          // Se o mês está fechado, usar o realizado para determinar se bateu a meta
+          // Se não está fechado, usar a projeção
+          const willMeetGoal = isMonthClosed 
+            ? totalRevenue >= companyRevenueGoal 
+            : projectedTotal >= companyRevenueGoal;
+
           tendency = {
             projectedTotal: Math.round(projectedTotal * 100) / 100,
-            willMeetGoal: projectedTotal >= companyRevenueGoal,
+            willMeetGoal,
             avgWeekday: Math.round(avgWeekday * 100) / 100,
             avgWeekend: Math.round(avgWeekend * 100) / 100,
             remainingDays,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getAuthenticatedUser } from '@/lib/auth/get-user';
 
 // GET - Buscar configuração específica
 export async function GET(
@@ -7,6 +8,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verificar autenticação
+    const user = await getAuthenticatedUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
     const { id } = await params;
 
     const { data, error } = await supabaseAdmin
@@ -40,6 +46,11 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verificar autenticação
+    const user = await getAuthenticatedUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
     const { id } = await params;
     const body = await request.json();
 
@@ -53,7 +64,8 @@ export async function PUT(
       date_field,
       initial_date,
       incremental_days,
-      is_incremental
+      is_incremental,
+      days_per_batch
     } = body;
 
     const updateData: Record<string, any> = {};
@@ -67,6 +79,48 @@ export async function PUT(
     if (initial_date !== undefined) updateData.initial_date = initial_date;
     if (incremental_days !== undefined) updateData.incremental_days = incremental_days;
     if (is_incremental !== undefined) updateData.is_incremental = is_incremental;
+    if (days_per_batch !== undefined) updateData.days_per_batch = days_per_batch;
+
+    // Validação de campos críticos
+    if (updateData.dax_query !== undefined) {
+      if (typeof updateData.dax_query !== 'string' || updateData.dax_query.trim().length < 10) {
+        return NextResponse.json(
+          { error: 'dax_query deve ser uma query DAX válida (mínimo 10 caracteres)' },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (updateData.field_mapping !== undefined) {
+      if (!updateData.field_mapping || typeof updateData.field_mapping !== 'object' || Object.keys(updateData.field_mapping).length === 0) {
+        return NextResponse.json(
+          { error: 'field_mapping deve ser um objeto com pelo menos um mapeamento' },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (updateData.days_per_batch !== undefined) {
+      const dpb = Number(updateData.days_per_batch);
+      if (isNaN(dpb) || dpb < 1 || dpb > 365) {
+        return NextResponse.json(
+          { error: 'days_per_batch deve ser entre 1 e 365' },
+          { status: 400 }
+        );
+      }
+      updateData.days_per_batch = dpb;
+    }
+
+    if (updateData.incremental_days !== undefined) {
+      const id = Number(updateData.incremental_days);
+      if (isNaN(id) || id < 1 || id > 3650) {
+        return NextResponse.json(
+          { error: 'incremental_days deve ser entre 1 e 3650' },
+          { status: 400 }
+        );
+      }
+      updateData.incremental_days = id;
+    }
 
     const { data, error } = await supabaseAdmin
       .from('powerbi_sync_configs')
@@ -93,6 +147,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verificar autenticação
+    const user = await getAuthenticatedUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
     const { id } = await params;
 
     const { error } = await supabaseAdmin

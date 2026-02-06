@@ -52,6 +52,13 @@ interface SaleModeGoal {
   status: 'achieved' | 'ontrack' | 'behind';
 }
 
+interface QualityData {
+  goal: number;
+  realized: number;
+  progress: number;
+  status: 'achieved' | 'ontrack' | 'behind';
+}
+
 interface DashboardData {
   company: {
     id: string;
@@ -106,6 +113,15 @@ const MONTHS = [
   { value: 12, label: 'Dezembro' }
 ];
 
+const COMPANY_COLORS = [
+  { bg: 'from-blue-500 to-cyan-500', light: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-500', hex: '#3b82f6' },
+  { bg: 'from-emerald-500 to-teal-500', light: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-500', hex: '#10b981' },
+  { bg: 'from-purple-500 to-pink-500', light: 'bg-purple-50', text: 'text-purple-600', border: 'border-purple-500', hex: '#8b5cf6' },
+  { bg: 'from-amber-500 to-orange-500', light: 'bg-amber-50', text: 'text-amber-600', border: 'border-amber-500', hex: '#f59e0b' },
+  { bg: 'from-rose-500 to-red-500', light: 'bg-rose-50', text: 'text-rose-600', border: 'border-rose-500', hex: '#f43f5e' },
+  { bg: 'from-indigo-500 to-violet-500', light: 'bg-indigo-50', text: 'text-indigo-600', border: 'border-indigo-500', hex: '#6366f1' },
+];
+
 export default function DashboardEmpresaPage() {
   const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -114,6 +130,8 @@ export default function DashboardEmpresaPage() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [loading, setLoading] = useState(false);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [qualityData, setQualityData] = useState<QualityData | null>(null);
+  const [loadingQuality, setLoadingQuality] = useState(false);
 
   // Buscar empresas quando grupo mudar
   useEffect(() => {
@@ -160,14 +178,95 @@ export default function DashboardEmpresaPage() {
     }
   };
 
+  // Buscar dados de qualidade
+  const fetchQualityData = async () => {
+    if (!selectedCompany || !selectedGroupId) {
+      setQualityData(null);
+      return;
+    }
+
+    setLoadingQuality(true);
+    try {
+      // Buscar meta de qualidade
+      const goalRes = await fetch(
+        `/api/quality-goals?group_id=${selectedGroupId}&company_id=${selectedCompany}&year=${selectedYear}&month=${selectedMonth}`
+      );
+      
+      // Buscar realizado de qualidade
+      const resultRes = await fetch(
+        `/api/quality-results?group_id=${selectedGroupId}&company_id=${selectedCompany}&year=${selectedYear}&month=${selectedMonth}`
+      );
+
+      if (goalRes.ok && resultRes.ok) {
+        const goalData = await goalRes.json();
+        const resultData = await resultRes.json();
+
+        // Pegar a primeira meta (deve haver apenas uma por empresa/mês)
+        const goal = goalData.goals?.[0];
+        
+        // Só mostrar o card se houver meta cadastrada
+        if (goal && goal.target_percentage) {
+          // Pegar o primeiro resultado (pode haver múltiplos, mas pegamos o mais recente)
+          const result = resultData.results?.[0];
+
+          // O realizado é a porcentagem final do resultado
+          let realizedPercentage = 0;
+          if (result) {
+            if (result.final_percentage !== undefined && result.final_percentage !== null) {
+              // Usar a porcentagem final diretamente
+              realizedPercentage = result.final_percentage;
+            } else if (result.total_achieved !== undefined && result.total_possible !== undefined && result.total_possible > 0) {
+              // Calcular a partir de achieved/total
+              realizedPercentage = Math.round((result.total_achieved / result.total_possible) * 100 * 100) / 100;
+            }
+          }
+          
+          const goalPercentage = goal.target_percentage || 100;
+          
+          // Calcular progresso: quanto do objetivo foi atingido
+          // Se a meta é 96% e o realizado é 96%, então progresso = 100%
+          const progress = goalPercentage > 0 ? Math.round((realizedPercentage / goalPercentage) * 100) : 0;
+          
+          // Como o realizado é lançado apenas uma vez, só há dois status:
+          // - "achieved" se atingiu ou superou a meta (>= 100% do objetivo)
+          // - "behind" se não atingiu (< 100% do objetivo)
+          let status: 'achieved' | 'ontrack' | 'behind' = 'behind';
+          if (progress >= 100) {
+            status = 'achieved';
+          }
+
+          setQualityData({
+            goal: goalPercentage,
+            realized: Math.round(realizedPercentage * 10) / 10, // Porcentagem realizada
+            progress,
+            status
+          });
+        } else {
+          // Não há meta cadastrada - não mostrar o card
+          setQualityData(null);
+        }
+      } else {
+        // Erro na requisição - não mostrar o card
+        setQualityData(null);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar dados de qualidade:', error);
+      setQualityData(null);
+    } finally {
+      setLoadingQuality(false);
+    }
+  };
+
   // Buscar automaticamente quando empresa ou período mudar
   useEffect(() => {
     if (selectedCompany) {
       fetchDashboard();
+      fetchQualityData();
     } else {
       setDashboardData(null);
+      setQualityData(null);
     }
-  }, [selectedCompany, selectedYear, selectedMonth]);
+  }, [selectedCompany, selectedYear, selectedMonth, selectedGroupId]);
 
   // Referência para controlar se confetti já foi mostrado
   const confettiShownRef = useRef<string>('');
@@ -233,6 +332,11 @@ export default function DashboardEmpresaPage() {
       return 'R$ 0,00';
     }
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  // Obter cor da empresa (LED color)
+  const getCompanyColor = (index: number) => {
+    return COMPANY_COLORS[index % COMPANY_COLORS.length];
   };
 
   // Obter cor do status
@@ -374,20 +478,40 @@ export default function DashboardEmpresaPage() {
           {/* Card da Empresa + Meta Faturamento */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {/* Card da Empresa - Minimalista */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 relative overflow-hidden flex items-center">
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 rounded-bl-full" />
               
-              <div className="relative flex items-center gap-4">
-                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg flex-shrink-0">
-                  <Building size={28} className="text-white" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">
+              <div className="relative">
+                <div className="mb-4">
+                  <h2 
+                    className="text-lg font-bold"
+                    style={{ 
+                      color: companies.findIndex(c => c.id === dashboardData.company.id) >= 0 
+                        ? getCompanyColor(companies.findIndex(c => c.id === dashboardData.company.id)).hex 
+                        : '#1f2937'
+                    }}
+                  >
                     {dashboardData.company.name}
                   </h2>
                   <div className="flex items-center gap-2 text-sm text-gray-500">
                     <Calendar size={14} />
                     <span>{MONTHS[dashboardData.period.month - 1]?.label} {dashboardData.period.year}</span>
+                  </div>
+                </div>
+                
+                {/* Quantidade de Vendas e Ticket Médio */}
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Quantidade de Vendas</p>
+                    <p className="text-xl font-bold text-gray-900">
+                      {dashboardData.sales.count.toLocaleString('pt-BR')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Ticket Médio</p>
+                    <p className="text-xl font-bold text-gray-900">
+                      {formatCurrency(dashboardData.sales.averageTicket)}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -451,6 +575,64 @@ export default function DashboardEmpresaPage() {
             </div>
           </div>
 
+          {/* Meta de Qualidade */}
+          {qualityData && (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-purple-500/5 to-pink-500/5 rounded-bl-full" />
+              
+              <div className="relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-12 h-12 rounded-xl ${getStatusBgColor(qualityData.status)} flex items-center justify-center`}>
+                      <Award className={`w-6 h-6 ${getStatusColor(qualityData.status)}`} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Meta de Qualidade</h3>
+                      <p className="text-sm text-gray-500">Avaliação de qualidade</p>
+                    </div>
+                  </div>
+                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${getStatusBgColor(qualityData.status)}`}>
+                    {getStatusIcon(qualityData.status)}
+                    <span className={`text-sm font-medium ${getStatusColor(qualityData.status)}`}>
+                      {qualityData.status === 'achieved' ? 'Atingida!' : 'Não Atingida'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6 mb-4">
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Realizado</p>
+                    <p className={`text-3xl font-bold ${getStatusColor(qualityData.status)}`}>
+                      {qualityData.realized.toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-500 mb-1">Meta</p>
+                    <p className="text-3xl font-bold text-gray-700">
+                      {qualityData.goal.toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mb-2">
+                  <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${getProgressBarColor(qualityData.status)}`}
+                      style={{ width: `${Math.min(qualityData.progress, 100)}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Progresso</span>
+                  <span className={`font-semibold ${getStatusColor(qualityData.status)}`}>
+                    {qualityData.progress}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Card de Tendência */}
           {dashboardData.tendency && dashboardData.revenue.goal > 0 && (
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
@@ -491,12 +673,18 @@ export default function DashboardEmpresaPage() {
                         <p className={`font-semibold ${
                           dashboardData.tendency.willMeetGoal ? 'text-emerald-700' : 'text-orange-700'
                         }`}>
-                          {dashboardData.tendency.willMeetGoal 
-                            ? '✨ Vai bater a meta!' 
-                            : '⚠️ Risco de não bater a meta'}
+                          {dashboardData.tendency.remainingDays === 0
+                            ? (dashboardData.tendency.willMeetGoal 
+                                ? '✅ Meta batida!' 
+                                : '❌ Meta não batida')
+                            : (dashboardData.tendency.willMeetGoal 
+                                ? '✨ Vai bater a meta!' 
+                                : '⚠️ Risco de não bater a meta')}
                         </p>
                         <p className="text-sm text-gray-600">
-                          Projeção para o final do mês
+                          {dashboardData.tendency.remainingDays === 0
+                            ? 'Resultado final do mês'
+                            : 'Projeção para o final do mês'}
                         </p>
                       </div>
                     </div>

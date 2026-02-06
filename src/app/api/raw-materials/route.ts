@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
       .from('raw_materials')
       .select(includeProducts ? `
         *,
+        parent:raw_materials!parent_id(id, name, level),
         raw_material_products (
           id,
           external_product_id,
@@ -28,12 +29,14 @@ export async function GET(request: NextRequest) {
         )
       ` : `
         *,
+        parent:raw_materials!parent_id(id, name, level),
         raw_material_stock (
           *,
           external_stock (*)
         )
       `)
       .eq('company_group_id', groupId)
+      .order('level', { ascending: true })
       .order('name', { ascending: true });
 
     if (companyId) {
@@ -67,7 +70,9 @@ export async function POST(request: NextRequest) {
       min_stock, 
       current_stock,
       category,
-      is_resale 
+      is_resale,
+      parent_id,
+      gramatura
     } = body;
 
     if (!company_group_id || !name) {
@@ -77,18 +82,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let level = 1;
+
+    // Se tem parent_id, buscar informações do pai para calcular level
+    if (parent_id) {
+      const { data: parentMaterial, error: parentError } = await supabaseAdmin
+        .from('raw_materials')
+        .select('level')
+        .eq('id', parent_id)
+        .single();
+
+      if (parentError || !parentMaterial) {
+        return NextResponse.json(
+          { error: 'Matéria-prima pai não encontrada' },
+          { status: 400 }
+        );
+      }
+
+      level = (parentMaterial.level || 1) + 1;
+
+      // Limite de 3 níveis
+      if (level > 3) {
+        return NextResponse.json(
+          { error: 'Não é possível criar mais de 3 níveis de hierarquia' },
+          { status: 400 }
+        );
+      }
+    }
+
     const { data, error } = await supabaseAdmin
       .from('raw_materials')
       .insert({
         company_group_id,
-        company_id: company_id || null,
+        company_id: (company_id && company_id.trim() !== '') ? company_id : null,
         name,
-        unit: unit || 'kg',
-        loss_factor: loss_factor || 0,
-        min_stock: min_stock || 0,
-        current_stock: current_stock || 0,
-        category: category || null,
-        is_resale: is_resale || false
+        unit: 'kg', // Sempre kg
+        loss_factor: level === 2 ? (loss_factor || 0) : 0,
+        min_stock: 0, // Não usado nos níveis 1 e 2
+        current_stock: 0,
+        category: (category && category.trim() !== '') ? category : null,
+        is_resale: is_resale || false,
+        parent_id: (parent_id && parent_id.trim() !== '') ? parent_id : null,
+        level: level,
+        gramatura: level === 3 ? (gramatura || null) : null
       })
       .select()
       .single();

@@ -8,20 +8,18 @@ export async function GET(request: NextRequest) {
     const groupId = searchParams.get('group_id');
     const unmappedOnly = searchParams.get('unmapped_only') === 'true';
 
-    // Buscar todos os registros (Supabase tem limite de 1000 por padrão)
-    // Fazer paginação para buscar todos
+    // Buscar registros com limite máximo para evitar timeout
+    // Limite máximo de 10.000 registros (10 páginas de 1000)
     const allData: any[] = [];
     const pageSize = 1000;
+    const maxPages = 10; // Limite máximo de 10.000 registros
     let page = 0;
     let hasMore = true;
 
-    while (hasMore) {
+    while (hasMore && page < maxPages) {
       let query = supabaseAdmin
         .from('external_products')
-        .select(`
-          *,
-          company_group:company_groups(id, name, slug)
-        `)
+        .select('id, external_id, external_code, name, category, product_group, type, company_group_id, created_at')
         .order('name', { ascending: true })
         .range(page * pageSize, (page + 1) * pageSize - 1);
 
@@ -34,7 +32,10 @@ export async function GET(request: NextRequest) {
       if (error) {
         console.error('Erro ao buscar produtos externos:', error);
         return NextResponse.json(
-          { error: 'Erro ao buscar produtos externos' },
+          { 
+            error: 'Erro ao buscar produtos externos',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+          },
           { status: 500 }
         );
       }
@@ -51,6 +52,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Avisar se atingiu o limite
+    if (page >= maxPages && hasMore) {
+      console.warn(`API /external-products - Limite de ${maxPages * pageSize} registros atingido`);
+    }
+
     // Se solicitado apenas não mapeados
     if (unmappedOnly && allData.length > 0) {
       const { data: mappings } = await supabaseAdmin
@@ -63,10 +69,13 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ externalProducts: allData });
-  } catch (error) {
-    console.error('Erro interno:', error);
+  } catch (error: any) {
+    console.error('Erro interno na API /external-products:', error);
     return NextResponse.json(
-      { error: 'Erro interno do servidor' },
+      { 
+        error: 'Erro interno do servidor',
+        details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+      },
       { status: 500 }
     );
   }
@@ -106,10 +115,7 @@ export async function POST(request: NextRequest) {
         onConflict: 'company_group_id,external_id',
         ignoreDuplicates: false 
       })
-      .select(`
-        *,
-        company_group:company_groups(id, name, slug)
-      `);
+      .select('*');
 
     if (error) {
       console.error('Erro ao criar produtos externos:', error);
@@ -120,10 +126,13 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ externalProducts: data }, { status: 201 });
-  } catch (error) {
-    console.error('Erro interno:', error);
+  } catch (error: any) {
+    console.error('Erro interno na API /external-products:', error);
     return NextResponse.json(
-      { error: 'Erro interno do servidor' },
+      { 
+        error: 'Erro interno do servidor',
+        details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+      },
       { status: 500 }
     );
   }
@@ -156,10 +165,13 @@ export async function DELETE(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Erro interno:', error);
+  } catch (error: any) {
+    console.error('Erro interno na API /external-products:', error);
     return NextResponse.json(
-      { error: 'Erro interno do servidor' },
+      { 
+        error: 'Erro interno do servidor',
+        details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+      },
       { status: 500 }
     );
   }

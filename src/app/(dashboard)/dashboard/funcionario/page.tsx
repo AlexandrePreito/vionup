@@ -54,6 +54,13 @@ interface ProductGoal {
   status: 'achieved' | 'ontrack' | 'behind';
 }
 
+interface ResearchData {
+  goal: number;
+  realized: number;
+  progress: number;
+  status: 'achieved' | 'ontrack' | 'behind';
+}
+
 interface DashboardData {
   employee: Employee;
   ranking: {
@@ -71,6 +78,10 @@ interface DashboardData {
     realized: number;
     progress: number;
     status: 'achieved' | 'ontrack' | 'behind';
+  };
+  sales: {
+    count: number;
+    averageTicket: number;
   };
   tendency: {
     projectedTotal: number;
@@ -117,6 +128,8 @@ export default function DashboardFuncionarioPage() {
   const [loading, setLoading] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [researchData, setResearchData] = useState<ResearchData | null>(null);
+  const [loadingResearch, setLoadingResearch] = useState(false);
 
   // Buscar empresas quando grupo mudar
   useEffect(() => {
@@ -169,32 +182,231 @@ export default function DashboardFuncionarioPage() {
     
     setLoading(true);
     try {
+      console.log('📊 Buscando dashboard do funcionário:', {
+        employee_id: selectedEmployee,
+        year: selectedYear,
+        month: selectedMonth,
+        group_id: selectedGroupId
+      });
+      
       const res = await fetch(
         `/api/dashboard/employee?employee_id=${selectedEmployee}&year=${selectedYear}&month=${selectedMonth}&group_id=${selectedGroupId}`
       );
+      
       if (res.ok) {
         const data = await res.json();
+        console.log('✅ Dados recebidos:', data);
+        console.log('💰 Faturamento:', data.revenue?.realized);
+        console.log('📦 Vendas:', data.sales?.count);
         setDashboardData(data);
       } else {
-        console.error('Erro ao buscar dashboard');
+        const errorData = await res.json().catch(() => ({}));
+        console.error('❌ Erro ao buscar dashboard:', res.status, errorData);
+        alert(`Erro ao buscar dados: ${errorData.error || 'Erro desconhecido'}`);
         setDashboardData(null);
       }
     } catch (error) {
-      console.error('Erro ao buscar dashboard:', error);
+      console.error('❌ Erro ao buscar dashboard:', error);
+      alert('Erro de conexão ao buscar dados do funcionário');
       setDashboardData(null);
     } finally {
       setLoading(false);
     }
   };
 
+  // Buscar dados de pesquisa
+  const fetchResearchData = async () => {
+    console.log('🔍 fetchResearchData chamado:', {
+      selectedEmployee,
+      selectedGroupId,
+      selectedYear,
+      selectedMonth
+    });
+    
+    if (!selectedEmployee || !selectedGroupId) {
+      console.log('⚠️ Dados insuficientes para buscar pesquisa');
+      setResearchData(null);
+      return;
+    }
+
+    setLoadingResearch(true);
+    try {
+      // Calcular datas do período
+      const startDate = new Date(selectedYear, selectedMonth - 1, 1);
+      const endDate = new Date(selectedYear, selectedMonth, 0); // Último dia do mês
+      const dataInicio = startDate.toISOString().split('T')[0];
+      const dataFim = endDate.toISOString().split('T')[0];
+      
+      console.log('📅 Período de pesquisa:', {
+        selectedYear,
+        selectedMonth,
+        dataInicio,
+        dataFim,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString()
+      });
+
+      // Buscar meta de pesquisa (quantidade por funcionário)
+      // IMPORTANTE: As metas de pesquisa são salvas na tabela sales_goals via /api/goals
+      // Não usar /api/research-goals que busca em research_goals
+      let goalRes = await fetch(
+        `/api/goals?group_id=${selectedGroupId}&employee_id=${selectedEmployee}&year=${selectedYear}&month=${selectedMonth}&type=research_quantity_employee`
+      );
+      
+      let goalData: any = null;
+      if (goalRes.ok) {
+        goalData = await goalRes.json();
+        console.log('📊 Metas do funcionário (com type e employee_id):', goalData.goals);
+        
+        // Se não encontrou, buscar sem filtro de tipo
+        if (!goalData.goals || goalData.goals.length === 0) {
+          console.log('⚠️ Nenhuma meta encontrada com type. Buscando todas as metas do funcionário...');
+          goalRes = await fetch(
+            `/api/goals?group_id=${selectedGroupId}&employee_id=${selectedEmployee}&year=${selectedYear}&month=${selectedMonth}`
+          );
+          if (goalRes.ok) {
+            goalData = await goalRes.json();
+            console.log('📊 Todas as metas do funcionário (sem type):', goalData.goals);
+            
+            // Filtrar apenas metas de pesquisa
+            if (goalData.goals && goalData.goals.length > 0) {
+              const researchGoals = goalData.goals.filter((g: any) => 
+                g.goal_type === 'research_quantity_employee'
+              );
+              console.log('📊 Metas de pesquisa do funcionário:', researchGoals);
+              goalData.goals = researchGoals;
+            }
+          }
+        }
+      } else {
+        console.log('❌ Erro na busca de metas:', goalRes.status);
+      }
+      
+      // Buscar realizado (quantidade de respostas NPS do funcionário no período)
+      const responseRes = await fetch(
+        `/api/nps/respostas?employee_id=${selectedEmployee}&data_inicio=${dataInicio}&data_fim=${dataFim}&limit=1000`
+      );
+
+      if (goalRes.ok && responseRes.ok) {
+        // goalData já foi buscado acima
+        if (!goalData) {
+          goalData = await goalRes.json();
+        }
+        const responseData = await responseRes.json();
+
+        console.log('📊 Dados de pesquisa:', {
+          goals: goalData.goals,
+          goalsCount: goalData.goals?.length || 0,
+          respostasCount: responseData.respostas?.length || 0,
+          pagination: responseData.pagination,
+          urlGoal: `/api/goals?group_id=${selectedGroupId}&employee_id=${selectedEmployee}&year=${selectedYear}&month=${selectedMonth}&type=research_quantity_employee`
+        });
+
+        // Pegar a primeira meta (deve haver apenas uma por funcionário/mês/tipo)
+        const goal = goalData.goals?.[0];
+        
+        console.log('📊 Meta encontrada:', goal);
+        console.log('📊 Todas as metas retornadas:', goalData.goals);
+        
+        // Se não encontrou com o tipo específico, tentar sem o tipo para ver todas as metas
+        if (!goal) {
+          console.log('⚠️ Nenhuma meta encontrada com type=research_quantity_employee. Tentando buscar todas...');
+          const allGoalsRes = await fetch(
+            `/api/research-goals?group_id=${selectedGroupId}&employee_id=${selectedEmployee}&year=${selectedYear}&month=${selectedMonth}`
+          );
+          if (allGoalsRes.ok) {
+            const allGoalsData = await allGoalsRes.json();
+            console.log('📊 Todas as metas do funcionário (sem filtro de tipo):', allGoalsData.goals);
+          }
+        }
+        
+        // Só mostrar o card se houver meta cadastrada
+        if (goal && goal.goal_value) {
+          // Contar quantidade de respostas
+          // Se houver paginação, usar o total da paginação, senão usar o length
+          const realized = responseData.pagination?.total || responseData.respostas?.length || 0;
+          const goalValue = goal.goal_value || 0;
+          const progress = goalValue > 0 ? Math.round((realized / goalValue) * 100) : 0;
+          
+          // Calcular dia atual e total de dias do mês
+          // Verificar se o mês/ano selecionado é o mês/ano atual
+          const today = new Date();
+          const isCurrentMonth = today.getFullYear() === selectedYear && today.getMonth() + 1 === selectedMonth;
+          
+          // Se for o mês atual, usar o dia de hoje; senão, considerar como se fosse o último dia
+          const currentDay = isCurrentMonth ? today.getDate() : new Date(selectedYear, selectedMonth, 0).getDate();
+          const lastDayOfMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+          const isLastDayOfMonth = isCurrentMonth ? (currentDay === lastDayOfMonth) : true;
+          
+          // Calcular progresso esperado até hoje (baseado nos dias que já passaram)
+          // Exemplo: se estamos no dia 15 de um mês de 30 dias, esperamos 50% do progresso
+          const expectedProgress = Math.round((currentDay / lastDayOfMonth) * 100);
+          
+          console.log('📊 Cálculo:', {
+            realized,
+            goalValue,
+            progress,
+            currentDay,
+            lastDayOfMonth,
+            isLastDayOfMonth,
+            expectedProgress
+          });
+          
+          // Lógica de status:
+          // - Se progresso >= 100%: "achieved" (atingida)
+          // - Se é o último dia do mês: só pode ser "achieved" ou "behind" (não "ontrack")
+          // - Se não é o último dia e progresso >= progresso esperado: "ontrack" (no caminho)
+          // - Se não é o último dia e progresso < progresso esperado: "behind" (atrasado)
+          let status: 'achieved' | 'ontrack' | 'behind' = 'behind';
+          if (progress >= 100) {
+            status = 'achieved';
+          } else if (!isLastDayOfMonth && progress >= expectedProgress) {
+            // Só mostra "ontrack" se não for o último dia e estiver no caminho
+            status = 'ontrack';
+          } else {
+            status = 'behind';
+          }
+
+          setResearchData({
+            goal: goalValue,
+            realized,
+            progress,
+            status
+          });
+        } else {
+          console.log('⚠️ Meta não encontrada ou sem goal_value:', goal);
+          // Não há meta cadastrada - não mostrar o card
+          setResearchData(null);
+        }
+      } else {
+        console.error('❌ Erro nas requisições:', {
+          goalResStatus: goalRes.status,
+          goalResOk: goalRes.ok,
+          responseResStatus: responseRes.status,
+          responseResOk: responseRes.ok
+        });
+        // Erro na requisição - não mostrar o card
+        setResearchData(null);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar dados de pesquisa:', error);
+      setResearchData(null);
+    } finally {
+      setLoadingResearch(false);
+    }
+  };
+
   // Buscar automaticamente quando funcionário ou período mudar
   useEffect(() => {
-    if (selectedEmployee) {
+    if (selectedEmployee && selectedGroupId) {
       fetchDashboard();
+      fetchResearchData();
     } else {
       setDashboardData(null);
+      setResearchData(null);
     }
-  }, [selectedEmployee, selectedYear, selectedMonth]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEmployee, selectedYear, selectedMonth, selectedGroupId]);
 
   // Referência para controlar se confetti já foi mostrado para este funcionário/período
   const confettiShownRef = useRef<string>('');
@@ -256,7 +468,10 @@ export default function DashboardFuncionarioPage() {
   }, [dashboardData, selectedEmployee, selectedYear, selectedMonth]);
 
   // Formatar valor em R$
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: number | null | undefined) => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return 'R$ 0,00';
+    }
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
@@ -513,6 +728,22 @@ export default function DashboardFuncionarioPage() {
                     <Calendar size={14} />
                     <span>{MONTHS[dashboardData.period.month - 1]?.label} {dashboardData.period.year}</span>
                   </div>
+                  
+                  {/* Quantidade de Vendas e Ticket Médio */}
+                  <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Quantidade de Vendas</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        {dashboardData.sales.count.toLocaleString('pt-BR')}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Ticket Médio</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        {formatCurrency(dashboardData.sales.averageTicket)}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -581,6 +812,65 @@ export default function DashboardFuncionarioPage() {
               </div>
             </div>
           </div>
+
+          {/* Meta de Pesquisa */}
+          {researchData && (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-purple-500/5 to-pink-500/5 rounded-bl-full" />
+              
+              <div className="relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-12 h-12 rounded-xl ${getStatusBgColor(researchData.status)} flex items-center justify-center`}>
+                      <Target className={`w-6 h-6 ${getStatusColor(researchData.status)}`} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Meta de Pesquisa</h3>
+                      <p className="text-sm text-gray-500">Quantidade de pesquisas NPS</p>
+                    </div>
+                  </div>
+                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${getStatusBgColor(researchData.status)}`}>
+                    {getStatusIcon(researchData.status)}
+                    <span className={`text-sm font-medium ${getStatusColor(researchData.status)}`}>
+                      {researchData.status === 'achieved' ? 'Atingida!' : 
+                       researchData.status === 'ontrack' ? 'No Caminho' : 'Atenção'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6 mb-4">
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Realizado</p>
+                    <p className={`text-3xl font-bold ${getStatusColor(researchData.status)}`}>
+                      {formatNumber(researchData.realized)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-500 mb-1">Meta</p>
+                    <p className="text-3xl font-bold text-gray-700">
+                      {formatNumber(researchData.goal)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mb-2">
+                  <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${getProgressBarColor(researchData.status)}`}
+                      style={{ width: `${Math.min(researchData.progress, 100)}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Progresso</span>
+                  <span className={`font-semibold ${getStatusColor(researchData.status)}`}>
+                    {researchData.progress}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Card de Tendência */}
           {dashboardData.tendency && dashboardData.revenue.goal > 0 && dashboardData.revenue.status !== 'achieved' && (

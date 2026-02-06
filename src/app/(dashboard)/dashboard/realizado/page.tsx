@@ -465,8 +465,7 @@ export default function DashboardRealizadoMensalPage() {
                   {/* Header do card */}
                   <div className="relative mb-2">
                     <div>
-                      <h3 className="text-sm font-medium text-gray-500">Empresa</h3>
-                      <p className="text-lg font-bold text-gray-900">{company.name}</p>
+                      <p className="text-lg font-bold" style={{ color: colors.hex }}>{company.name}</p>
                     </div>
                   </div>
 

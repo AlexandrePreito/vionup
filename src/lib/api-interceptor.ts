@@ -25,9 +25,12 @@ function initializeInterceptor() {
       if (storedUser) {
         const user = JSON.parse(storedUser);
         userId = user.id;
-        console.log('Interceptor - User ID encontrado:', userId, 'Role:', user.role);
+        // Log apenas na primeira inicialização ou em caso de erro
       } else {
-        console.warn('Interceptor - Nenhum usuário no localStorage (chave: meta10_user)');
+        // Log apenas se realmente não houver usuário (não a cada requisição)
+        if (Math.random() < 0.01) { // Log apenas 1% das vezes para não poluir
+          console.warn('Interceptor - Nenhum usuário no localStorage (chave: meta10_user)');
+        }
       }
     } catch (error) {
       console.error('Interceptor - Erro ao obter usuário do localStorage:', error);
@@ -39,9 +42,7 @@ function initializeInterceptor() {
     // Adicionar user_id ao header se disponível
     if (userId) {
       headers.set('x-user-id', userId);
-      console.log('Interceptor - Header x-user-id adicionado:', userId);
-    } else {
-      console.warn('Interceptor - Nenhum userId disponível para adicionar ao header');
+      // Removido log repetitivo - apenas adiciona o header silenciosamente
     }
 
     // Criar novo init com headers atualizados

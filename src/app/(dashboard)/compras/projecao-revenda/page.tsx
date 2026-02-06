@@ -299,17 +299,30 @@ export default function ProjecaoRevendaPage() {
       const res = await fetch(url);
       
       if (!res.ok) {
-        const error = await res.json();
-        alert(error.error || 'Erro ao buscar projeção');
+        const error = await res.json().catch(() => ({ error: 'Erro desconhecido' }));
+        const errorMessage = error.error || 'Erro ao buscar projeção';
+        
+        // Mensagem específica para timeout
+        if (errorMessage.includes('timeout') || res.status === 500) {
+          alert('A consulta está demorando muito. Tente reduzir o período de histórico ou filtrar por empresa específica.');
+        } else {
+          alert(errorMessage);
+        }
         return;
       }
       
       const data = await res.json();
       setProjection(data.projection || []);
       setSummary(data.summary || null);
-    } catch (error) {
-      console.error('Erro ao buscar projeção:', error);
-      alert('Erro ao buscar projeção');
+    } catch (error: any) {
+      console.error('Erro na API de projeção:', error);
+      
+      // Verificar se é timeout
+      if (error?.message?.includes('timeout') || error?.code === '57014') {
+        alert('A consulta está demorando muito (timeout). Tente:\n- Reduzir o período de histórico\n- Filtrar por empresa específica\n- Aguardar alguns minutos e tentar novamente');
+      } else {
+        alert('Erro ao buscar projeção. Tente novamente.');
+      }
     } finally {
       setLoading(false);
     }

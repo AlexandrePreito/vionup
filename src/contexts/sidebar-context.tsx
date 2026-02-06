@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 
-type ActiveSection = 'cadastros' | 'config' | 'powerbi' | 'compras' | 'metas' | 'dashboard' | null;
+type ActiveSection = 'cadastros' | 'config' | 'powerbi' | 'compras' | 'metas' | 'dashboard' | 'nps' | null;
 
 interface SidebarContextType {
   activeSection: ActiveSection;
@@ -33,6 +33,8 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
       setActiveSection('metas');
     } else if (pathname.startsWith('/dashboard')) {
       setActiveSection('dashboard');
+    } else if (pathname.startsWith('/nps')) {
+      setActiveSection('nps');
     }
   }, [pathname]);
 

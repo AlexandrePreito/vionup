@@ -69,23 +69,37 @@ export async function GET(request: NextRequest) {
       .eq('company_group_id', companyGroupId);
 
     const mappedExternalEmployeeUuids = mappings?.map((m: any) => m.external_employee_id) || [];
+    console.log('Mapeamentos encontrados:', mappings?.length || 0);
+    console.log('UUIDs externos mapeados:', mappedExternalEmployeeUuids);
 
     let externalEmployeeCodes: string[] = [];
     if (mappedExternalEmployeeUuids.length > 0) {
-      const { data: externalEmployees } = await supabaseAdmin
+      const { data: externalEmployees, error: extEmpError } = await supabaseAdmin
         .from('external_employees')
         .select('id, external_id, name')
         .in('id', mappedExternalEmployeeUuids);
       
-      externalEmployeeCodes = externalEmployees?.map((e: any) => e.external_id) || [];
+      if (extEmpError) {
+        console.error('Erro ao buscar funcionários externos:', extEmpError);
+      } else {
+        console.log('Funcionários externos encontrados:', externalEmployees?.length || 0);
+        externalEmployeeCodes = externalEmployees?.map((e: any) => e.external_id) || [];
+        console.log('Códigos externos:', externalEmployeeCodes);
+      }
+    } else {
+      console.warn('⚠️ Nenhum mapeamento encontrado para o funcionário!');
+      console.warn('Verifique se há registros em employee_mappings para este funcionário.');
     }
-
-    console.log('Códigos externos:', externalEmployeeCodes);
+    console.log('Company Group ID:', companyGroupId);
+    console.log('Ano:', yearNum, 'Mês:', monthNum);
 
     // 3. Buscar faturamento usando a MATERIALIZED VIEW otimizada
     let totalRevenue = 0;
+    let distinctSalesCount = 0;
+    let averageTicket = 0;
     
     if (externalEmployeeCodes.length > 0) {
+      console.log('Buscando vendas na materialized view...');
       const { data: salesSummary, error: salesError } = await supabaseAdmin
         .from('mv_employee_sales_summary')
         .select('total_revenue, total_quantity, total_sales')
@@ -96,9 +110,129 @@ export async function GET(request: NextRequest) {
 
       if (salesError) {
         console.error('Erro ao buscar vendas da materialized view:', salesError);
-      } else if (salesSummary && salesSummary.length > 0) {
-        totalRevenue = salesSummary.reduce((sum: number, s: any) => sum + (s.total_revenue || 0), 0);
-        console.log('Faturamento total (via MATERIALIZED VIEW):', totalRevenue);
+        console.error('Detalhes:', JSON.stringify(salesError, null, 2));
+      } else {
+        console.log('Resultado da materialized view:', salesSummary);
+        if (salesSummary && salesSummary.length > 0) {
+          totalRevenue = salesSummary.reduce((sum: number, s: any) => sum + (s.total_revenue || 0), 0);
+          console.log('Faturamento total (via MATERIALIZED VIEW):', totalRevenue);
+        } else {
+          console.log('⚠️ Materialized view não retornou dados. Tentando buscar diretamente na tabela external_sales...');
+          
+          // Fallback: buscar diretamente na tabela external_sales
+          const startDate = new Date(yearNum, monthNum - 1, 1);
+          const endDate = new Date(yearNum, monthNum, 0);
+          const startDateStr = startDate.toISOString().split('T')[0];
+          const endDateStr = endDate.toISOString().split('T')[0];
+          
+          const { data: directSales, error: directError } = await supabaseAdmin
+            .from('external_sales')
+            .select('total_value')
+            .eq('company_group_id', companyGroupId)
+            .in('external_employee_id', externalEmployeeCodes)
+            .gte('sale_date', startDateStr)
+            .lte('sale_date', endDateStr)
+            .limit(10000);
+          
+          if (directError) {
+            console.error('Erro ao buscar vendas diretamente:', directError);
+          } else {
+            console.log(`Encontrados ${directSales?.length || 0} registros na tabela external_sales`);
+            if (directSales && directSales.length > 0) {
+              totalRevenue = directSales.reduce((sum: number, s: any) => sum + (s.total_value || 0), 0);
+              console.log('Faturamento total (via tabela direta):', totalRevenue);
+            }
+          }
+        }
+      }
+
+      // Buscar quantidade de vendas distintas (COUNT DISTINCT de venda_id)
+      // Usando função RPC para fazer COUNT DISTINCT diretamente no banco (sem limite de registros)
+      try {
+        const startDate = new Date(yearNum, monthNum - 1, 1);
+        const endDate = new Date(yearNum, monthNum, 0);
+        const startDateStr = startDate.toISOString().split('T')[0];
+        const endDateStr = endDate.toISOString().split('T')[0];
+
+        console.log(`Buscando vendas distintas do funcionário...`);
+        console.log(`Período: ${startDateStr} a ${endDateStr}`);
+        
+        // Usar função RPC para contar diretamente no banco
+        const { data: countResult, error: countError } = await supabaseAdmin.rpc('count_distinct_employee_sales', {
+          p_company_group_id: companyGroupId,
+          p_external_employee_ids: externalEmployeeCodes,
+          p_start_date: startDateStr,
+          p_end_date: endDateStr
+        });
+
+        if (countError) {
+          console.error('Erro ao contar vendas distintas via RPC:', countError);
+          console.error('Detalhes do erro:', JSON.stringify(countError, null, 2));
+          
+          // Fallback: tentar método alternativo se RPC não existir
+          console.log('Tentando método alternativo (busca em lotes)...');
+          const allUniqueIds = new Set<string>();
+          let offset = 0;
+          const batchSize = 10000;
+          let hasMore = true;
+          let totalProcessed = 0;
+          
+          while (hasMore) {
+            const { data: batch, error: batchError } = await supabaseAdmin
+              .from('external_sales')
+              .select('venda_id')
+              .eq('company_group_id', companyGroupId)
+              .in('external_employee_id', externalEmployeeCodes)
+              .gte('sale_date', startDateStr)
+              .lte('sale_date', endDateStr)
+              .not('venda_id', 'is', null)
+              .neq('venda_id', '')
+              .range(offset, offset + batchSize - 1);
+            
+            if (batchError) {
+              console.error('Erro ao buscar lote:', batchError);
+              break;
+            }
+            
+            if (batch && batch.length > 0) {
+              batch.forEach((s: any) => {
+                if (s.venda_id && s.venda_id.trim() !== '') {
+                  allUniqueIds.add(s.venda_id.trim());
+                }
+              });
+              
+              totalProcessed += batch.length;
+              
+              if (batch.length < batchSize) {
+                hasMore = false;
+              } else {
+                offset += batchSize;
+                if (totalProcessed % 50000 === 0) {
+                  console.log(`Processados ${totalProcessed} registros, ${allUniqueIds.size} vendas distintas até agora...`);
+                }
+              }
+            } else {
+              hasMore = false;
+            }
+          }
+          
+          distinctSalesCount = allUniqueIds.size;
+          console.log(`Vendas distintas encontradas (método alternativo): ${distinctSalesCount} (de ${totalProcessed} registros processados)`);
+        } else {
+          distinctSalesCount = countResult || 0;
+          console.log(`Vendas distintas encontradas: ${distinctSalesCount}`);
+        }
+
+        // Calcular ticket médio
+        if (distinctSalesCount > 0) {
+          averageTicket = totalRevenue / distinctSalesCount;
+          console.log('Ticket médio calculado:', averageTicket);
+        }
+      } catch (countError: any) {
+        console.error('Erro ao contar vendas distintas:', countError);
+        console.error('Stack:', countError?.stack);
+        // Continua com 0 se houver erro
+        distinctSalesCount = 0;
       }
     }
 
@@ -430,6 +564,10 @@ export async function GET(request: NextRequest) {
         realized: Math.round(totalRevenue * 100) / 100,
         progress: Math.round(revenueProgress * 10) / 10,
         status: revenueProgress >= 100 ? 'achieved' : revenueProgress >= 70 ? 'ontrack' : 'behind'
+      },
+      sales: {
+        count: distinctSalesCount || 0,
+        averageTicket: Math.round(averageTicket * 100) / 100 || 0
       },
       tendency,
       products: productGoalsWithRealized,

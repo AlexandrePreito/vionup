@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { 
   Plus, Pencil, Trash2, Search, Target, Loader2, 
   ChevronLeft, ChevronRight, Building, UserCircle, 
-  Clock, ShoppingCart, Hash, Download, Copy, GitBranch, Upload, FileSpreadsheet
+  Clock, ShoppingCart, Hash, Download, Copy, GitBranch, Upload, FileSpreadsheet, RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { CompanyGroup, Company } from '@/types';
@@ -94,6 +94,7 @@ export default function MetasPage() {
     goal_unit: 'currency'
   });
   const [saving, setSaving] = useState(false);
+  const [refreshingEmployees, setRefreshingEmployees] = useState(false);
 
 
   // Derivar valor
@@ -147,6 +148,21 @@ export default function MetasPage() {
       setEmployees(activeEmployees);
     } catch (error) {
       console.error('Erro ao buscar funcionários:', error);
+    }
+  };
+
+  // Atualizar lista de funcionários (sem fechar modal)
+  const handleRefreshEmployees = async () => {
+    if (!selectedGroupId) return;
+    
+    setRefreshingEmployees(true);
+    try {
+      await fetchEmployees(selectedGroupId);
+    } catch (error) {
+      console.error('Erro ao atualizar funcionários:', error);
+      alert('Erro ao atualizar lista de funcionários');
+    } finally {
+      setRefreshingEmployees(false);
     }
   };
 
@@ -1614,7 +1630,18 @@ export default function MetasPage() {
 
                   {/* Botões de seleção de funcionários */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Funcionários</label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-700">Funcionários</label>
+                      <button
+                        type="button"
+                        onClick={handleRefreshEmployees}
+                        disabled={refreshingEmployees}
+                        className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Atualizar lista de funcionários"
+                      >
+                        <RefreshCw size={16} className={refreshingEmployees ? 'animate-spin' : ''} />
+                      </button>
+                    </div>
                     <div className="flex flex-wrap gap-2 mb-3">
                       <Button
                         variant="secondary"

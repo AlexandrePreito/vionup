@@ -8,6 +8,8 @@ export async function GET(request: NextRequest) {
     const year = searchParams.get('year');
     const month = searchParams.get('month');
     const type = searchParams.get('type');
+    const companyId = searchParams.get('company_id');
+    const employeeId = searchParams.get('employee_id');
 
     if (!groupId) {
       return NextResponse.json({ error: 'group_id é obrigatório' }, { status: 400 });
@@ -31,6 +33,12 @@ export async function GET(request: NextRequest) {
     }
     if (type) {
       query = query.eq('goal_type', type);
+    }
+    if (companyId) {
+      query = query.eq('company_id', companyId);
+    }
+    if (employeeId) {
+      query = query.eq('employee_id', employeeId);
     }
 
     const { data: goals, error } = await query;

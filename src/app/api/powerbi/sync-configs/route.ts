@@ -59,7 +59,8 @@ export async function POST(request: NextRequest) {
       date_field,
       initial_date,
       incremental_days = 7,
-      is_incremental = false
+      is_incremental = false,
+      days_per_batch = 7
     } = body;
 
     // Validação básica
@@ -107,7 +108,8 @@ export async function POST(request: NextRequest) {
         date_field,
         initial_date,
         incremental_days,
-        is_incremental
+        is_incremental,
+        days_per_batch
       })
       .select()
       .single();
