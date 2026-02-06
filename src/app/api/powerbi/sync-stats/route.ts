@@ -152,7 +152,7 @@ export async function GET(request: NextRequest) {
                 const companyMap = new Map<string, any>();
 
                 for (const code of uniqueCodes) {
-                  const uuid = codeToUuid.get(code);
+                  const uuid = codeToUuid.get(code as string);
                   if (!uuid) continue;
 
                   const company = uuidToCompany.get(uuid);
@@ -211,7 +211,7 @@ export async function GET(request: NextRequest) {
 
                   // Preencher stats usando os dados agregados
                   for (const [code, agg] of aggregated) {
-                    const uuid = codeToUuid.get(code);
+                    const uuid = codeToUuid.get(code as string);
                     if (!uuid) continue;
                     const company = uuidToCompany.get(uuid);
                     if (!company) continue;
