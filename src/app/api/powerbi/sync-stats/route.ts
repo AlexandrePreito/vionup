@@ -51,9 +51,9 @@ export async function GET(request: NextRequest) {
       // Para sincronização incremental, mostrar apenas os últimos N dias
       const daysBack = config.incremental_days || 7;
       const today = new Date();
-      dateFilterStart = new Date(today);
-      dateFilterStart.setDate(dateFilterStart.getDate() - daysBack);
-      dateFilterStart = dateFilterStart.toISOString().split('T')[0];
+      const tempDate = new Date(today);
+      tempDate.setDate(tempDate.getDate() - daysBack);
+      dateFilterStart = tempDate.toISOString().split('T')[0];
       dateFilterEnd = today.toISOString().split('T')[0];
     } else if (config.initial_date) {
       // Para sincronização completa, usar o período da configuração até hoje
@@ -62,9 +62,9 @@ export async function GET(request: NextRequest) {
     } else {
       // Fallback: últimos 30 dias se não houver configuração de data
       const today = new Date();
-      dateFilterStart = new Date(today);
-      dateFilterStart.setDate(dateFilterStart.getDate() - 30);
-      dateFilterStart = dateFilterStart.toISOString().split('T')[0];
+      const tempDate = new Date(today);
+      tempDate.setDate(tempDate.getDate() - 30);
+      dateFilterStart = tempDate.toISOString().split('T')[0];
       dateFilterEnd = today.toISOString().split('T')[0];
     }
 
