@@ -349,11 +349,11 @@ export async function GET(request: NextRequest) {
       }
       
       // Dados de estoque
-      const currentStock = productStock?.quantity || 0;
-      const minStock = productStock?.min_quantity || 0;
-      const unit = productStock?.unit || 'un';
-      const conversionFactor = productStock?.conversion_factor || 1;
-      const purchaseUnit = productStock?.purchase_unit || unit;
+      const currentStock = (productStock as any)?.quantity || 0;
+      const minStock = (productStock as any)?.min_quantity || 0;
+      const unit = (productStock as any)?.unit || 'un';
+      const conversionFactor = (productStock as any)?.conversion_factor || 1;
+      const purchaseUnit = (productStock as any)?.purchase_unit || unit;
 
       // Calcular necessidade de compra
       // Necessidade = Consumo Projetado + Estoque Mínimo - Estoque Atual

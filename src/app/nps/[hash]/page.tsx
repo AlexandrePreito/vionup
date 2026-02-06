@@ -132,7 +132,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
     const perguntasParaExibir: Array<{ item: any; isConfirmacao: boolean }> = [];
     
     perguntas.forEach((item) => {
-      const requerConfirmacao = item.pergunta.requer_confirmacao_uso;
+      const requerConfirmacao = (item.pergunta as any).requer_confirmacao_uso;
       const confirmacao = confirmacoesUso[item.pergunta.id];
       
       // Se requer confirmação, adicionar step de confirmação
