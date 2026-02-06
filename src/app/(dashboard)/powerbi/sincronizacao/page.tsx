@@ -509,7 +509,7 @@ export default function PowerBISincronizacaoPage() {
     if (!importFile || !importEntityType) return;
 
     const config = configs[importEntityType];
-    if (!config?.company_group_id) {
+    if (!config) {
       toast.error('Configuração não encontrada. Configure a entidade primeiro.');
       return;
     }
