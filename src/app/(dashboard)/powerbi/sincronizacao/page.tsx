@@ -521,7 +521,7 @@ export default function PowerBISincronizacaoPage() {
       const formData = new FormData();
       formData.append('file', importFile);
       formData.append('entity_type', importEntityType);
-      formData.append('company_group_id', config.company_group_id || selectedGroupId || '');
+      formData.append('company_group_id', selectedGroupId || '');
       formData.append('config_id', config.id);
       formData.append('delete_existing', String(importDeleteExisting));
       if (importStartDate) formData.append('start_date', importStartDate);
