@@ -325,7 +325,7 @@ export default function RespostasNPSPage() {
           
           if (rp.nota !== null) {
             nota = String(rp.nota);
-            total = 5;
+            total = String(5);
           }
           
           if (rp.texto_resposta) {
