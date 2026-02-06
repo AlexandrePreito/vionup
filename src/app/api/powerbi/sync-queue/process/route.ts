@@ -257,7 +257,7 @@ function injectDateFilter(
 }
 
 interface ProcessResult {
-  status: 'processing' | 'completed' | 'empty' | 'day_error';
+  status: 'processing' | 'completed' | 'empty' | 'day_error' | 'cancelled';
   queue_id: string;
   day?: string;
   day_records?: number;
