@@ -324,7 +324,7 @@ export default function RespostasNPSPage() {
           let total = '-';
           
           if (rp.nota !== null) {
-            nota = rp.nota;
+            nota = String(rp.nota);
             total = 5;
           }
           
