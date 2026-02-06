@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 export interface AuthenticatedUser {
   id: string;
-  role: 'master' | 'group_admin' | 'company_admin' | 'user';
+  role: 'master' | 'admin' | 'group_admin' | 'company_admin' | 'user';
   company_group_id?: string | null;
   company_ids?: string[];
 }
@@ -60,7 +60,7 @@ export async function getAuthenticatedUser(request: NextRequest): Promise<Authen
 
     return {
       id: user.id,
-      role: user.role as 'master' | 'group_admin' | 'company_admin' | 'user',
+      role: user.role as 'master' | 'admin' | 'group_admin' | 'company_admin' | 'user',
       company_group_id: user.company_group_id,
       company_ids: companyIds
     };
@@ -88,8 +88,8 @@ export function applyPermissionFilters(
     return query;
   }
 
-  // Admin (group_admin) vê apenas dados do seu grupo
-  if (user.role === 'group_admin') {
+  // Admin (group_admin ou admin) vê apenas dados do seu grupo
+  if (user.role === 'group_admin' || user.role === 'admin') {
     if (user.company_group_id) {
       return query.eq('company_group_id', user.company_group_id);
     }

@@ -127,18 +127,33 @@ export default function DashboardNPSPage() {
   useEffect(() => {
     const fetchCompanies = async () => {
       if (!selectedGroupId) {
+        console.log('NPS Page - selectedGroupId vazio, limpando empresas');
         setCompanies([]);
         setSelectedCompanyId('');
         return;
       }
+      console.log('NPS Page - Buscando empresas para grupo:', selectedGroupId);
       try {
         const res = await fetch(`/api/companies?group_id=${selectedGroupId}`);
         if (res.ok) {
           const data = await res.json();
-          setCompanies(data.companies || data || []);
+          const companiesList = data.companies || data || [];
+          console.log('NPS Page - Empresas retornadas:', companiesList.length);
+          console.log('NPS Page - Empresas:', companiesList.map((c: any) => ({ id: c.id, name: c.name, group_id: c.company_group_id })));
+          
+          // Validação de segurança: filtrar apenas empresas do grupo selecionado
+          const filteredCompanies = companiesList.filter((c: any) => c.company_group_id === selectedGroupId);
+          if (filteredCompanies.length !== companiesList.length) {
+            console.warn('NPS Page - ATENÇÃO: Algumas empresas foram filtradas por não pertencerem ao grupo!');
+            console.warn('NPS Page - Total recebido:', companiesList.length, 'Total filtrado:', filteredCompanies.length);
+          }
+          
+          setCompanies(filteredCompanies);
+        } else {
+          console.error('NPS Page - Erro ao buscar empresas:', res.status, res.statusText);
         }
       } catch (err) {
-        console.error('Erro ao buscar empresas:', err);
+        console.error('NPS Page - Erro ao buscar empresas:', err);
       }
     };
     fetchCompanies();

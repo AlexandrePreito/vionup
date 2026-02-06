@@ -122,8 +122,11 @@ export default function ProjecaoRevendaPage() {
         return;
       }
       const data = await res.json();
-      console.log('Empresas encontradas:', data.companies);
-      setCompanies(data.companies || []);
+      const companiesList = data.companies || [];
+      // Filtro de segurança: garantir que apenas empresas do grupo selecionado sejam exibidas
+      const filteredCompanies = companiesList.filter((c: any) => c.company_group_id === selectedGroupId);
+      console.log('Empresas encontradas:', filteredCompanies);
+      setCompanies(filteredCompanies);
     } catch (error) {
       console.error('Erro ao buscar empresas:', error);
     }

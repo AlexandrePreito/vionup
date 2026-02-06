@@ -132,7 +132,10 @@ export default function MetasPage() {
     try {
       const res = await fetch(`/api/companies?group_id=${groupId}`);
       const data = await res.json();
-      setCompanies(data.companies || []);
+      const companiesList = data.companies || [];
+      // Filtro de segurança: garantir que apenas empresas do grupo selecionado sejam exibidas
+      const filteredCompanies = companiesList.filter((c: any) => c.company_group_id === groupId);
+      setCompanies(filteredCompanies);
     } catch (error) {
       console.error('Erro ao buscar empresas:', error);
     }
@@ -230,6 +233,9 @@ export default function MetasPage() {
   const filteredItems = goals.filter((item: any) => {
     // Excluir metas de produtos (aparecem em /metas/produtos)
     if (item.goal_type === 'employee_product') return false;
+    
+    // Excluir metas de pesquisa de quantidade de funcionário (aparecem em /metas/pesquisas)
+    if (item.goal_type === 'research_quantity_employee') return false;
     
     // Filtro por busca
     const searchLower = search.toLowerCase();

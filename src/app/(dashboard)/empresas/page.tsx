@@ -37,7 +37,12 @@ export default function EmpresasPage() {
         : '/api/companies?include_inactive=true';
       const res = await fetch(url);
       const data = await res.json();
-      setCompanies(data.companies || []);
+      const companiesList = data.companies || [];
+      // Filtro de segurança: garantir que apenas empresas do grupo selecionado sejam exibidas
+      const filteredCompanies = selectedGroupId 
+        ? companiesList.filter((c: any) => c.company_group_id === selectedGroupId)
+        : companiesList;
+      setCompanies(filteredCompanies);
     } catch (error) {
       console.error('Erro ao buscar empresas:', error);
     } finally {

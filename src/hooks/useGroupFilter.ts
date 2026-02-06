@@ -16,8 +16,16 @@ export function useGroupFilter() {
     console.log('useGroupFilter - Buscando grupos...');
     console.log('useGroupFilter - Usuário atual:', currentUser ? { id: currentUser.id, role: currentUser.role } : 'null');
     
+    // Preparar headers com autenticação
+    const headers: HeadersInit = {};
+    if (currentUser?.id) {
+      headers['x-user-id'] = currentUser.id;
+    }
+    
     // Buscar grupos incluindo inativos temporariamente para debug
-    fetch('/api/groups?include_inactive=true')
+    fetch('/api/groups?include_inactive=true', {
+      headers
+    })
       .then(res => {
         console.log('useGroupFilter - Status da resposta:', res.status);
         if (!res.ok) {
@@ -65,9 +73,11 @@ export function useGroupFilter() {
     const isNotMaster = currentUser && currentUser.role !== 'master';
     
     if (isNotMaster && currentUser.company_group_id) {
-      // Usuário não-master: usar grupo fixo
-      console.log('useGroupFilter - Definindo grupo automaticamente (não-master):', currentUser.company_group_id);
-      setSelectedGroupId(currentUser.company_group_id);
+      // Usuário não-master: usar grupo fixo e forçar sempre
+      if (selectedGroupId !== currentUser.company_group_id) {
+        console.log('useGroupFilter - Forçando grupo do usuário (não-master):', currentUser.company_group_id);
+        setSelectedGroupId(currentUser.company_group_id);
+      }
     } else if (currentUser?.role === 'master' && groups.length > 0 && !selectedGroupId) {
       // Master: selecionar primeiro grupo automaticamente se não houver seleção
       console.log('useGroupFilter - Selecionando primeiro grupo automaticamente (master)');
@@ -87,10 +97,24 @@ export function useGroupFilter() {
     ? (currentUser?.company_group?.name || groups.find(g => g.id === fixedGroupId)?.name || '')
     : '';
 
+  // Proteger setSelectedGroupId: usuários não-master não podem alterar
+  const protectedSetSelectedGroupId = (newGroupId: string) => {
+    if (isGroupReadOnly) {
+      console.warn('useGroupFilter - Tentativa de alterar grupo bloqueada (usuário não-master)');
+      console.warn('useGroupFilter - Tentativa de definir:', newGroupId, 'mas usuário tem grupo fixo:', fixedGroupId);
+      // Forçar sempre o grupo do usuário
+      if (fixedGroupId) {
+        setSelectedGroupId(fixedGroupId);
+      }
+      return;
+    }
+    setSelectedGroupId(newGroupId);
+  };
+
   return {
     groups,
     selectedGroupId,
-    setSelectedGroupId,
+    setSelectedGroupId: protectedSetSelectedGroupId,
     isGroupReadOnly,
     fixedGroupId,
     groupName,

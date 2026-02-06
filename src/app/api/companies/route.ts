@@ -28,40 +28,51 @@ export async function GET(request: NextRequest) {
       if (user.role === 'master') {
         // Master vê tudo - usar group_id se informado
         if (groupId) {
+          console.log('API /companies - Master: filtrando por group_id informado:', groupId);
           query = query.eq('company_group_id', groupId);
-        }
-      } else if (user.role === 'group_admin') {
-        // Group Admin vê apenas empresas do seu grupo
-        // Ignorar group_id da query, usar sempre o do usuário
-        if (user.company_group_id) {
-          console.log('API /companies - Filtrando por company_group_id do usuário:', user.company_group_id);
-          query = query.eq('company_group_id', user.company_group_id);
         } else {
-          // Se não tem grupo, não retorna nada
-          console.log('API /companies - Usuário admin sem company_group_id');
-          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+          console.log('API /companies - Master: sem group_id, retornando todas as empresas');
         }
-      } else if (user.role === 'company_admin') {
-        // Company Admin vê apenas empresas do seu grupo (por enquanto)
-        if (user.company_group_id) {
-          query = query.eq('company_group_id', user.company_group_id);
-        } else {
-          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-        }
-      } else if (user.role === 'user') {
-        // User vê apenas empresas vinculadas a ele
-        if (user.company_ids && user.company_ids.length > 0) {
-          query = query.in('id', user.company_ids);
-        } else {
-          // Se não tem empresas, não retorna nada
-          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-        }
-      }
       } else {
-        // Se não tem usuário identificado, não retorna nada
-        console.warn('API /companies - Nenhum usuário identificado, retornando vazio');
-        query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+        // Usuários não-master: IGNORAR group_id da query e usar sempre o do usuário
+        if (groupId && groupId !== user.company_group_id) {
+          console.warn('API /companies - SEGURANÇA: group_id da query ignorado para usuário não-master');
+          console.warn('API /companies - group_id da query:', groupId, 'vs company_group_id do usuário:', user.company_group_id);
+        }
+        
+        if (user.role === 'group_admin') {
+          // Group Admin vê apenas empresas do seu grupo
+          if (user.company_group_id) {
+            console.log('API /companies - group_admin: filtrando por company_group_id do usuário:', user.company_group_id);
+            query = query.eq('company_group_id', user.company_group_id);
+          } else {
+            console.log('API /companies - Usuário admin sem company_group_id');
+            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+          }
+        } else if (user.role === 'company_admin') {
+          // Company Admin vê apenas empresas do seu grupo (por enquanto)
+          if (user.company_group_id) {
+            console.log('API /companies - company_admin: filtrando por company_group_id do usuário:', user.company_group_id);
+            query = query.eq('company_group_id', user.company_group_id);
+          } else {
+            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+          }
+        } else if (user.role === 'user') {
+          // User vê apenas empresas vinculadas a ele
+          if (user.company_ids && user.company_ids.length > 0) {
+            console.log('API /companies - user: filtrando por company_ids:', user.company_ids);
+            query = query.in('id', user.company_ids);
+          } else {
+            console.log('API /companies - user sem company_ids');
+            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+          }
+        }
       }
+    } else {
+      // Se não tem usuário identificado, não retorna nada
+      console.warn('API /companies - Nenhum usuário identificado, retornando vazio');
+      query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+    }
 
     if (!includeInactive) {
       query = query.eq('is_active', true);
@@ -78,7 +89,39 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('API /companies - Empresas retornadas:', data?.length || 0);
-    return NextResponse.json({ companies: data || [] });
+    
+    // Filtro de segurança adicional: garantir que usuários não-master vejam apenas empresas do seu grupo
+    let filteredData = data || [];
+    if (user && user.role !== 'master' && user.company_group_id) {
+      const beforeFilter = filteredData.length;
+      filteredData = filteredData.filter((c: any) => c.company_group_id === user.company_group_id);
+      const afterFilter = filteredData.length;
+      
+      if (beforeFilter !== afterFilter) {
+        console.error('API /companies - ERRO DE SEGURANÇA: Empresas filtradas!', {
+          antes: beforeFilter,
+          depois: afterFilter,
+          grupoEsperado: user.company_group_id
+        });
+      }
+    }
+    
+    if (filteredData.length > 0) {
+      // Log de segurança: verificar se todas as empresas pertencem ao grupo correto
+      const gruposEncontrados = [...new Set(filteredData.map((c: any) => c.company_group_id))];
+      console.log('API /companies - Grupos encontrados nas empresas retornadas:', gruposEncontrados);
+      if (user && user.role !== 'master' && user.company_group_id) {
+        const gruposInvalidos = gruposEncontrados.filter((gid: string) => gid !== user.company_group_id);
+        if (gruposInvalidos.length > 0) {
+          console.error('API /companies - ERRO DE SEGURANÇA: Empresas de grupos diferentes encontradas!', gruposInvalidos);
+          // Remover empresas de grupos inválidos
+          filteredData = filteredData.filter((c: any) => c.company_group_id === user.company_group_id);
+        }
+      }
+    }
+    
+    console.log('API /companies - Empresas finais retornadas:', filteredData.length);
+    return NextResponse.json({ companies: filteredData });
   } catch (error) {
     console.error('Erro interno:', error);
     return NextResponse.json(

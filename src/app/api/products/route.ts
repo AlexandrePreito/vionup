@@ -23,33 +23,40 @@ export async function GET(request: NextRequest) {
     if (user) {
       if (user.role === 'master') {
         // Master vê tudo - usar group_id se informado
-        effectiveGroupId = groupId;
-      } else if (user.role === 'group_admin') {
-        // Group Admin vê apenas produtos do seu grupo
-        // Ignorar group_id da query, usar sempre o do usuário
-        if (user.company_group_id) {
-          console.log('API /products - Filtrando por company_group_id do usuário:', user.company_group_id);
-          effectiveGroupId = user.company_group_id;
+        effectiveGroupId = groupId || null;
+      } else {
+        // Usuários não-master: IGNORAR group_id da query e usar sempre o do usuário
+        if (groupId && groupId !== user.company_group_id) {
+          console.warn('API /products - SEGURANÇA: group_id da query ignorado para usuário não-master');
+          console.warn('API /products - group_id da query:', groupId, 'vs company_group_id do usuário:', user.company_group_id);
         }
-      } else if (user.role === 'company_admin') {
-        // Company Admin vê apenas produtos do seu grupo (por enquanto)
-        effectiveGroupId = user.company_group_id || null;
-      } else if (user.role === 'user') {
-        // User vê apenas produtos de empresas vinculadas a ele
-        // Como produtos não têm company_id direto, precisamos filtrar via company_group_id
-        // Buscar os grupos das empresas do usuário
-        if (user.company_ids && user.company_ids.length > 0) {
-          const { data: userCompanies } = await supabaseAdmin
-            .from('companies')
-            .select('company_group_id')
-            .in('id', user.company_ids);
-          
-          const groupIds = [...new Set(userCompanies?.map((c: any) => c.company_group_id).filter(Boolean) || [])] as string[];
-          if (groupIds.length > 0) {
-            if (groupIds.length === 1) {
-              effectiveGroupId = groupIds[0];
-            } else {
-              effectiveGroupIds = groupIds;
+        
+        if (user.role === 'group_admin' || user.role === 'admin') {
+          // Group Admin ou Admin vê apenas produtos do seu grupo
+          if (user.company_group_id) {
+            console.log('API /products - Filtrando por company_group_id do usuário:', user.company_group_id);
+            effectiveGroupId = user.company_group_id;
+          }
+        } else if (user.role === 'company_admin') {
+          // Company Admin vê apenas produtos do seu grupo (por enquanto)
+          effectiveGroupId = user.company_group_id || null;
+        } else if (user.role === 'user') {
+          // User vê apenas produtos de empresas vinculadas a ele
+          // Como produtos não têm company_id direto, precisamos filtrar via company_group_id
+          // Buscar os grupos das empresas do usuário
+          if (user.company_ids && user.company_ids.length > 0) {
+            const { data: userCompanies } = await supabaseAdmin
+              .from('companies')
+              .select('company_group_id')
+              .in('id', user.company_ids);
+            
+            const groupIds = [...new Set(userCompanies?.map((c: any) => c.company_group_id).filter(Boolean) || [])] as string[];
+            if (groupIds.length > 0) {
+              if (groupIds.length === 1) {
+                effectiveGroupId = groupIds[0];
+              } else {
+                effectiveGroupIds = groupIds;
+              }
             }
           }
         }
@@ -60,8 +67,11 @@ export async function GET(request: NextRequest) {
       // effectiveGroupId permanece null, o que fará retornar vazio
     }
     
+    
     console.log('API /products - effectiveGroupId final:', effectiveGroupId);
     console.log('API /products - effectiveGroupIds final:', effectiveGroupIds);
+    console.log('API /products - user.role:', user?.role);
+    console.log('API /products - user.company_group_id:', user?.company_group_id);
 
     // Buscar todos os registros (Supabase tem limite de 1000 por padrão)
     const allData: any[] = [];
@@ -106,11 +116,14 @@ export async function GET(request: NextRequest) {
 
       if (error) {
         console.error('Erro ao buscar produtos:', error);
+        console.error('Erro detalhado:', JSON.stringify(error, null, 2));
         return NextResponse.json(
           { error: 'Erro ao buscar produtos' },
           { status: 500 }
         );
       }
+
+      console.log(`API /products - Página ${page}: ${data?.length || 0} produtos encontrados`);
 
       if (data && data.length > 0) {
         allData.push(...data);
@@ -125,7 +138,25 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('API /products - Produtos retornados:', allData.length);
-    return NextResponse.json({ products: allData });
+    
+    // Filtro de segurança adicional: garantir que usuários não-master vejam apenas produtos do seu grupo
+    let filteredData = allData;
+    if (user && user.role !== 'master' && user.company_group_id) {
+      const beforeFilter = filteredData.length;
+      filteredData = filteredData.filter((p: any) => p.company_group_id === user.company_group_id);
+      const afterFilter = filteredData.length;
+      
+      if (beforeFilter !== afterFilter) {
+        console.error('API /products - ERRO DE SEGURANÇA: Produtos filtrados!', {
+          antes: beforeFilter,
+          depois: afterFilter,
+          grupoEsperado: user.company_group_id
+        });
+      }
+    }
+    
+    console.log('API /products - Produtos finais retornados:', filteredData.length);
+    return NextResponse.json({ products: filteredData });
   } catch (error) {
     console.error('Erro interno:', error);
     return NextResponse.json(

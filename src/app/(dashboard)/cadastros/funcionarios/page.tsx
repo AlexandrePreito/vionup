@@ -66,7 +66,12 @@ export default function FuncionariosPage() {
       const url = groupId ? `/api/companies?group_id=${groupId}` : '/api/companies';
       const res = await fetch(url);
       const data = await res.json();
-      setCompanies(data.companies || []);
+      const companiesList = data.companies || [];
+      // Filtro de segurança: garantir que apenas empresas do grupo selecionado sejam exibidas
+      const filteredCompanies = groupId 
+        ? companiesList.filter((c: any) => c.company_group_id === groupId)
+        : companiesList;
+      setCompanies(filteredCompanies);
     } catch (error) {
       console.error('Erro ao buscar empresas:', error);
     }
@@ -88,7 +93,6 @@ export default function FuncionariosPage() {
   // Filtrar funcionários
   const filteredEmployees = employees.filter(employee =>
     employee.name.toLowerCase().includes(search.toLowerCase()) ||
-    (employee.code && employee.code.toLowerCase().includes(search.toLowerCase())) ||
     (employee.email && employee.email.toLowerCase().includes(search.toLowerCase()))
   );
 
@@ -516,7 +520,7 @@ export default function FuncionariosPage() {
               <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Buscar por nome, código ou email..."
+                placeholder="Buscar por nome ou email..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -547,7 +551,6 @@ export default function FuncionariosPage() {
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Foto</th>
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Código</th>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Nome</th>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Cargo</th>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Empresa</th>
@@ -570,9 +573,6 @@ export default function FuncionariosPage() {
                           <User size={20} className="text-gray-500" />
                         </div>
                       )}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600 font-mono">
-                      {employee.code || '-'}
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-medium text-gray-900">{employee.name}</div>

@@ -141,7 +141,10 @@ export default function DashboardEmpresaPage() {
         const res = await fetch(`/api/companies?group_id=${selectedGroupId}`);
         if (res.ok) {
           const data = await res.json();
-          setCompanies(data.companies || []);
+          const companiesList = data.companies || [];
+          // Filtro de segurança: garantir que apenas empresas do grupo selecionado sejam exibidas
+          const filteredCompanies = companiesList.filter((c: any) => c.company_group_id === selectedGroupId);
+          setCompanies(filteredCompanies);
           setSelectedCompany('');
           setDashboardData(null);
         }

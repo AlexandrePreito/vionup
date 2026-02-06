@@ -137,7 +137,10 @@ export default function LinksNPSPage() {
       const res = await fetch(`/api/companies?group_id=${selectedGroupId}`);
       if (res.ok) {
         const data = await res.json();
-        setCompanies(data.companies || data || []);
+        const companiesList = data.companies || data || [];
+        // Filtro de segurança: garantir que apenas empresas do grupo selecionado sejam exibidas
+        const filteredCompanies = companiesList.filter((c: any) => c.company_group_id === selectedGroupId);
+        setCompanies(filteredCompanies);
       }
     } catch (err) {
       console.error('Erro ao buscar empresas:', err);
