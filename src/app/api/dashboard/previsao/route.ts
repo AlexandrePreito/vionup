@@ -449,14 +449,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 16. Calcular estatísticas
-    const valoresDiarios = graficoRealizado.filter((d: any) => d.valor > 0).map((d: any) => d.valor);
+    // 16. Calcular estatísticas (apenas até o último dia com dados importados)
+    const valoresDiarios = graficoRealizado
+      .filter((d: any) => d.valor > 0 && d.dia <= ultimoDiaComDados)
+      .map((d: any) => d.valor);
     const media = valoresDiarios.length > 0 ? valoresDiarios.reduce((a: number, b: number) => a + b, 0) / valoresDiarios.length : 0;
     const sorted = [...valoresDiarios].sort((a: any, b: any) => a - b);
     const mediana = sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0;
 
-    // Regressão linear
-    const dadosComValor = graficoRealizado.filter((d: any) => d.valor > 0);
+    // Regressão linear (apenas até o último dia com dados importados)
+    const dadosComValor = graficoRealizado.filter((d: any) => d.valor > 0 && d.dia <= ultimoDiaComDados);
     let slope = 0, intercept = 0;
     let tendencia: 'crescente' | 'decrescente' | 'estável' = 'estável';
 
@@ -537,6 +539,7 @@ export async function GET(request: NextRequest) {
       graficoRealizado,
       projecaoDiaria,
       estatisticas: { media, mediana, tendencia, slope, intercept },
+      ultimoDiaComDados,
       mesAnterior
     });
   } catch (error: any) {

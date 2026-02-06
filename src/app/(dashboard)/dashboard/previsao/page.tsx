@@ -22,8 +22,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-  Legend,
-  LabelList
+  Legend
 } from 'recharts';
 
 interface PrevisaoData {
@@ -207,10 +206,14 @@ export default function PrevisaoPage() {
     mesAnterior: previsaoData.mesAnterior?.grafico.find((g: any) => g.dia === item.dia)?.acumulado || null
   })) || [];
 
-  // Preparar dados do gráfico de análise
+  // Preparar dados do gráfico de análise (tendência apenas até o último dia com dados)
+  const ultimoDiaComDados = (previsaoData as any)?.ultimoDiaComDados || 0;
   const graficoAnaliseData = previsaoData?.graficoRealizado.map((item: any) => ({
     ...item,
-    tendencia: previsaoData.estatisticas.intercept + previsaoData.estatisticas.slope * item.dia,
+    // Mostrar tendência apenas até o último dia com dados importados
+    tendencia: item.dia <= ultimoDiaComDados 
+      ? previsaoData.estatisticas.intercept + previsaoData.estatisticas.slope * item.dia
+      : null,
     mediana: previsaoData.estatisticas.mediana,
     media: previsaoData.estatisticas.media
   })) || [];
@@ -646,17 +649,7 @@ export default function PrevisaoPage() {
                     strokeDasharray="5 5"
                     dot={{ fill: '#10b981', r: 3 }}
                     name="Otimista"
-                  >
-                    <LabelList 
-                      dataKey="otimista" 
-                      position="top" 
-                      formatter={(value: any) => {
-                        if (typeof value !== 'number' || !value) return '';
-                        return formatCurrency(value);
-                      }}
-                      style={{ fontSize: 11, fill: '#10b981', fontWeight: 600 }}
-                    />
-                  </Line>
+                  />
                   {/* Linha Realista */}
                   <Line 
                     type="monotone" 
@@ -666,17 +659,7 @@ export default function PrevisaoPage() {
                     strokeDasharray="5 5"
                     dot={{ fill: '#f59e0b', r: 3 }}
                     name="Realista"
-                  >
-                    <LabelList 
-                      dataKey="realista" 
-                      position="top" 
-                      formatter={(value: any) => {
-                        if (typeof value !== 'number' || !value) return '';
-                        return formatCurrency(value);
-                      }}
-                      style={{ fontSize: 11, fill: '#f59e0b', fontWeight: 600 }}
-                    />
-                  </Line>
+                  />
                   {/* Linha Pessimista */}
                   <Line 
                     type="monotone" 
@@ -686,17 +669,7 @@ export default function PrevisaoPage() {
                     strokeDasharray="5 5"
                     dot={{ fill: '#ef4444', r: 3 }}
                     name="Pessimista"
-                  >
-                    <LabelList 
-                      dataKey="pessimista" 
-                      position="top" 
-                      formatter={(value: any) => {
-                        if (typeof value !== 'number' || !value) return '';
-                        return formatCurrency(value);
-                      }}
-                      style={{ fontSize: 11, fill: '#ef4444', fontWeight: 600 }}
-                    />
-                  </Line>
+                  />
                   {/* Linha Mês Anterior */}
                   {previsaoData.mesAnterior && (
                     <Line 

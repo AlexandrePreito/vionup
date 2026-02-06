@@ -51,6 +51,9 @@ const COLUMN_MAPPINGS: Record<string, Record<string, string>> = {
     'amount': 'amount',
     '[amount]': 'amount',
     'Caixa': 'amount',
+    '[Caixa]': 'amount',
+    'valor': 'amount',
+    '[valor]': 'amount',
     'Periodo': 'period',
     'CaixaItem[Periodo]': 'period',
     'periodo': 'period',
@@ -104,6 +107,22 @@ function parseDate(value: any): string | null {
   return isNaN(parsed.getTime()) ? null : parsed.toISOString().split('T')[0];
 }
 
+/** Converte valor numérico do formato brasileiro para número */
+function parseNumericBR(value: any): number {
+  if (value === null || value === undefined || value === '') return 0;
+  if (typeof value === 'number') return value;
+  
+  // Converter para string e tratar formato brasileiro
+  let str = String(value).trim();
+  
+  // Remover pontos de milhar e trocar vírgula por ponto
+  // Ex: "1.234,56" -> "1234.56"
+  str = str.replace(/\./g, '').replace(',', '.');
+  
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
+}
+
 function simpleHash(str: string): string {
   let h = 0;
   for (let i = 0; i < str.length; i++) {
@@ -135,8 +154,11 @@ export async function POST(req: NextRequest) {
     const entityType = formData.get('entity_type') as string;
     let companyGroupId = formData.get('company_group_id') as string;
     
+    console.log('📤 company_group_id recebido:', companyGroupId);
+    
     if (!companyGroupId || companyGroupId === 'undefined' || companyGroupId === 'null') {
-      return NextResponse.json({ error: 'Selecione um grupo (Fila) antes de importar.' }, { status: 400 });
+      console.log('❌ company_group_id inválido:', companyGroupId);
+      return NextResponse.json({ error: `Selecione um grupo antes de importar. Valor recebido: ${companyGroupId}` }, { status: 400 });
     }
 
     if (!file || !entityType || !companyGroupId) {
@@ -151,12 +173,63 @@ export async function POST(req: NextRequest) {
     const fileName = file.name.toLowerCase();
     const isCSV = fileName.endsWith('.csv') || fileName.endsWith('.txt');
     
-    const wb = isCSV
-      ? XLSX.read(buffer.toString('utf-8'), { type: 'string', raw: false })
-      : XLSX.read(buffer, { type: 'buffer', raw: false });
+    let rows: Record<string, any>[] = [];
     
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet);
+    if (isCSV) {
+      // Parse manual do CSV para tratar separador ; corretamente
+      const text = buffer.toString('utf-8');
+      const lines = text.split('\n').filter(l => l.trim());
+      
+      if (lines.length === 0) {
+        return NextResponse.json({ error: 'Planilha vazia' }, { status: 400 });
+      }
+      
+      // Detectar separador: contar ; e , na primeira linha
+      const firstLine = lines[0];
+      const semicolonCount = (firstLine.match(/;/g) || []).length;
+      const commaCount = (firstLine.match(/,/g) || []).length;
+      const separator = semicolonCount > commaCount ? ';' : ',';
+      
+      console.log(`📤 Separador detectado: "${separator}" (${semicolonCount} ; vs ${commaCount} ,)`);
+      
+      if (separator === ';') {
+        // Parse manual para CSV com separador ;
+        const headers = lines[0].split(';').map(h => h.replace(/^"|"$/g, '').trim());
+        console.log(`📤 Headers detectados (${headers.length}):`, headers);
+        
+        rows = lines.slice(1)
+          .filter(line => line.trim()) // Ignorar linhas vazias
+          .map((line) => {
+            const values = line.split(';').map(v => {
+              // Remover aspas e espaços
+              const cleaned = v.replace(/^"|"$/g, '').trim();
+              // Se estiver vazio, retornar null
+              return cleaned === '' ? null : cleaned;
+            });
+            
+            const obj: Record<string, any> = {};
+            headers.forEach((h, i) => {
+              obj[h] = values[i] !== undefined ? values[i] : null;
+            });
+            return obj;
+          });
+        
+        console.log(`📤 Parse manual: ${rows.length} linhas processadas`);
+        if (rows.length > 0) {
+          console.log(`📤 Primeira linha parseada:`, Object.keys(rows[0]));
+        }
+      } else {
+        // Usar XLSX para CSV com separador ,
+        const wb = XLSX.read(text, { type: 'string', raw: false });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(sheet);
+      }
+    } else {
+      // Arquivo Excel (.xlsx, .xls)
+      const wb = XLSX.read(buffer, { type: 'buffer', raw: false });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(sheet);
+    }
 
     if (!rows?.length) {
       return NextResponse.json({ error: 'Planilha vazia' }, { status: 400 });
@@ -179,15 +252,33 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`📤 Mapeamento:`, detected);
+    console.log(`📤 Colunas do CSV:`, fileColumns);
+    
+    // Log de colunas não mapeadas
+    const unmappedColumns = fileColumns.filter(h => !detected[h]);
+    if (unmappedColumns.length > 0) {
+      console.log('⚠️ Colunas não mapeadas:', unmappedColumns);
+    }
 
     // Verificar obrigatórios
     const mappedFields = new Set(Object.values(detected));
     const missing = REQUIRED_DB_FIELDS[entityType].filter(f => !mappedFields.has(f));
     if (missing.length > 0) {
+      // Mensagem específica para amount em cash_flow
+      if (entityType === 'cash_flow' && missing.includes('amount')) {
+        return NextResponse.json({
+          error: `Campo 'amount' não encontrado no CSV. Colunas disponíveis: ${fileColumns.join(', ')}`,
+          detected_columns: fileColumns,
+          detected_mapping: detected,
+          missing_fields: missing,
+        }, { status: 400 });
+      }
+      
       return NextResponse.json({
         error: `Campos obrigatórios não encontrados: ${missing.join(', ')}`,
         detected_columns: fileColumns,
         detected_mapping: detected,
+        missing_fields: missing,
       }, { status: 400 });
     }
 
@@ -208,8 +299,7 @@ export async function POST(req: NextRequest) {
           if (!v && i < 5) warnings.push(`Linha ${i+2}: data inválida "${fc}"`);
         }
         if (numericFields.includes(dbf)) {
-          v = typeof v === 'string' ? parseFloat(v.replace(',', '.')) : Number(v);
-          if (isNaN(v)) v = 0;
+          v = parseNumericBR(v);
         }
         rec[dbf] = v;
       }
