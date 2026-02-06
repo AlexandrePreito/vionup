@@ -1335,7 +1335,7 @@ export default function PowerBISincronizacaoPage() {
         <div className="flex items-center gap-3">
           {/* Botão Fila */}
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => setIsQueuePanelOpen(true)}
             className="relative"
