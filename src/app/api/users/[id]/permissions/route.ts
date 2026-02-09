@@ -9,17 +9,32 @@ export async function GET(
   try {
     const { id: userId } = await params;
 
-    const { data, error } = await supabaseAdmin
+    // Buscar permissões de módulos
+    const { data: modulePerms, error: moduleError } = await supabaseAdmin
       .from('user_module_permissions')
       .select('module_id, can_view, can_edit')
       .eq('user_id', userId);
 
-    if (error) {
-      console.error('Erro ao buscar permissões:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (moduleError) {
+      console.error('Erro ao buscar permissões de módulos:', moduleError);
+      return NextResponse.json({ error: moduleError.message }, { status: 500 });
     }
 
-    return NextResponse.json({ permissions: data || [] });
+    // Buscar permissões de páginas
+    const { data: pagePerms, error: pageError } = await supabaseAdmin
+      .from('user_page_permissions')
+      .select('page_id, can_view, can_edit')
+      .eq('user_id', userId);
+
+    if (pageError) {
+      console.error('Erro ao buscar permissões de páginas:', pageError);
+      return NextResponse.json({ error: pageError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ 
+      permissions: modulePerms || [],
+      pagePermissions: pagePerms || []
+    });
   } catch (error: any) {
     console.error('Erro:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -33,25 +48,26 @@ export async function PUT(
 ) {
   try {
     const { id: userId } = await params;
-    const { permissions } = await request.json();
+    const { permissions, pagePermissions } = await request.json();
 
     console.log('Atualizando permissões para usuário:', userId);
-    console.log('Permissões recebidas:', permissions);
+    console.log('Permissões de módulos recebidas:', permissions);
+    console.log('Permissões de páginas recebidas:', pagePermissions);
 
-    // Remover permissões antigas
-    const { error: deleteError } = await supabaseAdmin
+    // Remover permissões antigas de módulos
+    const { error: deleteModuleError } = await supabaseAdmin
       .from('user_module_permissions')
       .delete()
       .eq('user_id', userId);
 
-    if (deleteError) {
-      console.error('Erro ao deletar permissões antigas:', deleteError);
-      return NextResponse.json({ error: deleteError.message }, { status: 500 });
+    if (deleteModuleError) {
+      console.error('Erro ao deletar permissões antigas de módulos:', deleteModuleError);
+      return NextResponse.json({ error: deleteModuleError.message }, { status: 500 });
     }
 
-    // Inserir novas permissões
+    // Inserir novas permissões de módulos
     if (permissions && permissions.length > 0) {
-      const inserts = permissions
+      const moduleInserts = permissions
         .filter((p: any) => p.can_view || p.can_edit)
         .map((p: any) => ({
           user_id: userId,
@@ -60,16 +76,52 @@ export async function PUT(
           can_edit: p.can_edit || false
         }));
 
-      console.log('Inserindo permissões:', inserts);
+      console.log('Inserindo permissões de módulos:', moduleInserts);
 
-      if (inserts.length > 0) {
-        const { error: insertError } = await supabaseAdmin
+      if (moduleInserts.length > 0) {
+        const { error: insertModuleError } = await supabaseAdmin
           .from('user_module_permissions')
-          .insert(inserts);
+          .insert(moduleInserts);
 
-        if (insertError) {
-          console.error('Erro ao inserir permissões:', insertError);
-          return NextResponse.json({ error: insertError.message }, { status: 500 });
+        if (insertModuleError) {
+          console.error('Erro ao inserir permissões de módulos:', insertModuleError);
+          return NextResponse.json({ error: insertModuleError.message }, { status: 500 });
+        }
+      }
+    }
+
+    // Remover permissões antigas de páginas
+    const { error: deletePageError } = await supabaseAdmin
+      .from('user_page_permissions')
+      .delete()
+      .eq('user_id', userId);
+
+    if (deletePageError) {
+      console.error('Erro ao deletar permissões antigas de páginas:', deletePageError);
+      return NextResponse.json({ error: deletePageError.message }, { status: 500 });
+    }
+
+    // Inserir novas permissões de páginas
+    if (pagePermissions && pagePermissions.length > 0) {
+      const pageInserts = pagePermissions
+        .filter((p: any) => p.can_view || p.can_edit)
+        .map((p: any) => ({
+          user_id: userId,
+          page_id: p.page_id,
+          can_view: p.can_view || false,
+          can_edit: p.can_edit || false
+        }));
+
+      console.log('Inserindo permissões de páginas:', pageInserts);
+
+      if (pageInserts.length > 0) {
+        const { error: insertPageError } = await supabaseAdmin
+          .from('user_page_permissions')
+          .insert(pageInserts);
+
+        if (insertPageError) {
+          console.error('Erro ao inserir permissões de páginas:', insertPageError);
+          return NextResponse.json({ error: insertPageError.message }, { status: 500 });
         }
       }
     }

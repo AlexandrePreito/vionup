@@ -106,7 +106,9 @@ export async function GET(request: NextRequest) {
           revenue: 0,
           transactions: 0,
           averageTicket: 0,
-          trend: 0
+          trend: 0,
+          mom: 0,
+          yoy: 0
         })) || [],
         summary: {
           totalRevenue: 0,
@@ -184,7 +186,7 @@ export async function GET(request: NextRequest) {
       console.log('API /realizado - Nenhum external_id encontrado, retornando cash flow vazio');
     }
 
-    // 4. Buscar cash flow do mês anterior para comparação (com paginação)
+    // 4. Buscar cash flow do mês anterior para comparação MoM (com paginação)
     let prevCashFlowData: any[] = [];
     
     if (allExternalIds.length > 0) {
@@ -231,11 +233,69 @@ export async function GET(request: NextRequest) {
       console.log('API /realizado - Nenhum external_id encontrado, retornando cash flow anterior vazio');
     }
 
-    // Calcular total do mês anterior por empresa
+    // Calcular total do mês anterior por empresa (para MoM)
     const prevRevenueByExtId = new Map<string, number>();
     prevCashFlowData?.forEach(cf => {
       const extId = cf.external_company_id;
       prevRevenueByExtId.set(extId, (prevRevenueByExtId.get(extId) || 0) + (Number(cf.amount) || 0));
+    });
+
+    // 4.1. Buscar cash flow do mesmo mês do ano anterior para comparação YoY (com paginação)
+    // Usando yoyYear para evitar conflito com prevYear (usado para MoM na linha 34)
+    const yoyYear = year - 1;
+    const prevYearStartDate = `${yoyYear}-${String(month).padStart(2, '0')}-01`;
+    const prevYearLastDay = new Date(yoyYear, month, 0).getDate();
+    const prevYearEndDate = `${yoyYear}-${String(month).padStart(2, '0')}-${String(prevYearLastDay).padStart(2, '0')}`;
+    
+    let prevYearCashFlowData: any[] = [];
+    
+    if (allExternalIds.length > 0) {
+      const allPrevYearCashFlow: any[] = [];
+      const pageSize = 1000;
+      let page = 0;
+      let hasMore = true;
+      const maxPages = 100;
+
+      console.log('API /realizado - Buscando cash flow do mesmo mês do ano anterior');
+
+      while (hasMore && page < maxPages) {
+        let query = supabase
+          .from('external_cash_flow')
+          .select('external_company_id, amount')
+          .eq('company_group_id', groupId)
+          .gte('transaction_date', prevYearStartDate)
+          .lte('transaction_date', prevYearEndDate)
+          .in('external_company_id', allExternalIds)
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.error('Erro ao buscar cash flow do ano anterior:', error);
+          hasMore = false;
+        } else {
+          if (data && data.length > 0) {
+            allPrevYearCashFlow.push(...data);
+            if (data.length < pageSize) {
+              hasMore = false;
+            } else {
+              page++;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+      }
+
+      console.log('API /realizado - Total de registros de cash flow do ano anterior:', allPrevYearCashFlow.length);
+      prevYearCashFlowData = allPrevYearCashFlow;
+    }
+
+    // Calcular total do mesmo mês do ano anterior por empresa (para YoY)
+    const prevYearRevenueByExtId = new Map<string, number>();
+    prevYearCashFlowData?.forEach(cf => {
+      const extId = cf.external_company_id;
+      prevYearRevenueByExtId.set(extId, (prevYearRevenueByExtId.get(extId) || 0) + (Number(cf.amount) || 0));
     });
 
     // 5. Processar dados por empresa
@@ -246,9 +306,13 @@ export async function GET(request: NextRequest) {
       const revenue = companyCashFlow.reduce((sum, cf) => sum + (Number(cf.amount) || 0), 0);
       const transactions = companyCashFlow.length;
       
-      // Calcular tendência vs mês anterior
-      const prevRevenue = externalIds.reduce((sum, extId) => sum + (prevRevenueByExtId.get(extId) || 0), 0);
-      const trend = prevRevenue > 0 ? ((revenue - prevRevenue) / prevRevenue) * 100 : 0;
+      // Calcular MoM (Month over Month) - comparação com mês anterior
+      const prevMonthRevenue = externalIds.reduce((sum, extId) => sum + (prevRevenueByExtId.get(extId) || 0), 0);
+      const mom = prevMonthRevenue > 0 ? ((revenue - prevMonthRevenue) / prevMonthRevenue) * 100 : 0;
+      
+      // Calcular YoY (Year over Year) - comparação com mesmo mês do ano anterior
+      const prevYearRevenue = externalIds.reduce((sum, extId) => sum + (prevYearRevenueByExtId.get(extId) || 0), 0);
+      const yoy = prevYearRevenue > 0 ? ((revenue - prevYearRevenue) / prevYearRevenue) * 100 : 0;
       
       return {
         id: company.id,
@@ -256,7 +320,9 @@ export async function GET(request: NextRequest) {
         revenue,
         transactions,
         averageTicket: transactions > 0 ? revenue / transactions : 0,
-        trend: Math.round(trend * 10) / 10
+        trend: Math.round(mom * 10) / 10, // Manter trend para compatibilidade (agora é MoM)
+        mom: Math.round(mom * 10) / 10,
+        yoy: Math.round(yoy * 10) / 10
       };
     }).sort((a, b) => b.revenue - a.revenue) || [];
 
@@ -401,6 +467,71 @@ export async function GET(request: NextRequest) {
       ? Math.round(((totalRevenue - prevTotalRevenue) / prevTotalRevenue) * 1000) / 10
       : 0;
 
+    // 11. Buscar faturamento por dia e por empresa (para tabela)
+    let dailyRevenueByCompany: Array<{
+      day: number;
+      date: string;
+      dayOfWeek: string;
+      companies: Array<{ companyId: string; companyName: string; revenue: number }>;
+    }> = [];
+
+    if (allExternalIds.length > 0 && cashFlowData && cashFlowData.length > 0) {
+      // Criar estrutura de dados: dia -> empresa -> faturamento
+      const dailyMap = new Map<string, Map<string, number>>();
+      
+      // Inicializar todos os dias do mês
+      for (let day = 1; day <= lastDay; day++) {
+        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        dailyMap.set(dateStr, new Map<string, number>());
+      }
+
+      // Preencher com dados reais do cashFlowData
+      cashFlowData.forEach((cf: any) => {
+        const dateStr = typeof cf.transaction_date === 'string' 
+          ? cf.transaction_date.split('T')[0] 
+          : new Date(cf.transaction_date).toISOString().split('T')[0];
+        
+        const extId = cf.external_company_id;
+        const amount = Number(cf.amount) || 0;
+
+        // Encontrar qual empresa pertence a este external_id
+        for (const [companyId, externalIds] of companyToExternalIds.entries()) {
+          if (externalIds.includes(extId)) {
+            const dayMap = dailyMap.get(dateStr);
+            if (dayMap) {
+              const current = dayMap.get(companyId) || 0;
+              dayMap.set(companyId, current + amount);
+            }
+            break;
+          }
+        }
+      });
+
+      // Converter para array
+      dailyRevenueByCompany = Array.from(dailyMap.entries()).map(([dateStr, companyMap]) => {
+        const dateObj = new Date(dateStr + 'T12:00:00');
+        const day = dateObj.getDate();
+        const dayOfWeekIndex = dateObj.getDay();
+        const dayOfWeek = DAYS_OF_WEEK[dayOfWeekIndex] || 'Dom';
+        
+        const companies = Array.from(companyMap.entries()).map(([companyId, revenue]) => {
+          const company = companiesData.find(c => c.id === companyId);
+          return {
+            companyId,
+            companyName: company?.name || 'Desconhecida',
+            revenue: Math.round(revenue * 100) / 100
+          };
+        }).sort((a, b) => a.companyName.localeCompare(b.companyName));
+
+        return {
+          day,
+          date: dateStr,
+          dayOfWeek,
+          companies
+        };
+      }).sort((a, b) => a.day - b.day);
+    }
+
     return NextResponse.json({
       period: { year, month },
       companies: companiesData,
@@ -415,7 +546,8 @@ export async function GET(request: NextRequest) {
       dailyRevenue,
       saleModeRevenue,
       shiftRevenue,
-      weekdayAverage
+      weekdayAverage,
+      dailyRevenueByCompany
     });
 
   } catch (error: any) {

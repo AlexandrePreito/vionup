@@ -159,7 +159,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
     const perguntasParaExibir = getPerguntasParaExibir();
     steps += perguntasParaExibir.length; // Cada pergunta (confirmação ou avaliação) é um step
     const ehCliente = linkData?.pesquisa.tipo === 'cliente';
-    if (ehCliente) steps += 1; // Step de frequência + como conheceu
+    if (ehCliente) steps += 2; // Step de frequência + step de como conheceu (separados)
     steps += 1; // Comentário (sempre)
     
     return steps;
@@ -184,10 +184,16 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
       return 'perguntas';
     }
     
-    // Step após perguntas: Extras (se cliente)
-    const stepExtras = stepFimPerguntas + 1;
-    if (ehCliente && step === stepExtras) {
-      return 'extras';
+    // Steps após perguntas: Extras (se cliente) - separados em dois steps
+    const stepFrequencia = stepFimPerguntas + 1;
+    const stepComoConheceu = stepFimPerguntas + 2;
+    
+    if (ehCliente && step === stepFrequencia) {
+      return 'frequencia';
+    }
+    
+    if (ehCliente && step === stepComoConheceu) {
+      return 'como_conheceu';
     }
     
     // Último step: Comentário
@@ -234,8 +240,10 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
         
         // Se não é obrigatória, pode prosseguir
         return true;
-      case 'extras':
-        return frequenciaVisita !== null && comoConheceuId !== null;
+      case 'frequencia':
+        return frequenciaVisita !== null;
+      case 'como_conheceu':
+        return comoConheceuId !== null;
       case 'comentario':
         return comentario.trim().length >= 5;
       default:
@@ -402,7 +410,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6">
-      <div className="max-w-lg mx-auto">
+      <div className="max-w-2xl mx-auto">
 
         {/* Card */}
         <div className="bg-white rounded-lg sm:rounded-xl shadow-sm overflow-hidden">
@@ -422,11 +430,11 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
                 </p>
                 {linkData?.company && (
                   <div className="space-y-1 mb-6">
-                    <p className="text-base sm:text-lg font-bold text-gray-900">
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">
                       {linkData.company.name}
                     </p>
                     {linkData?.employee && (
-                      <p className="text-sm sm:text-base font-bold text-gray-700">
+                      <p className="text-base sm:text-lg font-bold text-gray-700">
                         {linkData.employee.name}
                       </p>
                     )}
@@ -435,8 +443,8 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
               </div>
               <div className="space-y-5">
                 <div>
-                  <label className="block text-sm sm:text-base font-bold text-gray-900 mb-2">
-                    NOME *
+                  <label className="block text-sm sm:text-base font-bold text-gray-500 mb-2">
+                    NOME
                   </label>
                   <input
                     type="text"
@@ -448,8 +456,8 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
                   />
                 </div>
                 <div>
-                  <label className="block text-sm sm:text-base font-bold text-gray-900 mb-2">
-                    CELULAR *
+                  <label className="block text-sm sm:text-base font-bold text-gray-500 mb-2">
+                    CELULAR
                   </label>
                   <input
                     type="tel"
@@ -469,11 +477,11 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
               {/* Nome da empresa e atendente dentro do card */}
               {linkData?.company && (
                 <div className="text-center mb-4">
-                  <p className="text-base sm:text-lg font-bold text-gray-900">
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
                     {linkData.company.name}
                   </p>
                   {linkData?.employee && (
-                    <p className="text-sm sm:text-base font-bold text-gray-700 mt-1">
+                    <p className="text-base sm:text-lg font-bold text-gray-700 mt-1">
                       {linkData.employee.name}
                     </p>
                   )}
@@ -493,8 +501,27 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
                 </div>
               </div>
               <div className="text-center mb-8">
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Como foi sua experiência?</h2>
-                <p className="text-sm sm:text-base text-gray-600">De 1 a 5, o quanto você recomendaria?</p>
+                {/* Buscar pergunta NPS do banco ou usar padrão */}
+                {(() => {
+                  const perguntasParaExibir = getPerguntasParaExibir();
+                  // Procurar por uma pergunta NPS específica (primeira pergunta de estrelas ou primeira pergunta em geral)
+                  const perguntaNPS = perguntasParaExibir.find(p => 
+                    p.item.pergunta.tipo_resposta === 'estrelas' && 
+                    (p.item.pergunta.categoria?.toLowerCase().includes('nps') || 
+                     p.item.pergunta.texto?.toLowerCase().includes('experiência') ||
+                     p.item.pergunta.texto?.toLowerCase().includes('experiencia') ||
+                     p.item.pergunta.texto?.toLowerCase().includes('recomendaria'))
+                  ) || perguntasParaExibir.find(p => p.item.pergunta.tipo_resposta === 'estrelas') || perguntasParaExibir[0];
+                  
+                  const textoPergunta = perguntaNPS?.item.pergunta.texto || 'Como foi sua experiência?';
+                  
+                  return (
+                    <>
+                      <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">{textoPergunta}</h2>
+                      <p className="text-base sm:text-lg text-gray-600">De 1 a 5, o quanto você recomendaria?</p>
+                    </>
+                  );
+                })()}
               </div>
               
               <div className="flex justify-center mb-6">
@@ -528,19 +555,19 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
             if (isConfirmacao) {
               return (
                 <div className="p-6 sm:p-8">
-                  {/* Nome da empresa e atendente dentro do card */}
-                  {linkData?.company && (
-                    <div className="text-center mb-4">
-                      <p className="text-base sm:text-lg font-bold text-gray-900">
-                        {linkData.company.name}
+                {/* Nome da empresa e atendente dentro do card */}
+                {linkData?.company && (
+                  <div className="text-center mb-4">
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                      {linkData.company.name}
+                    </p>
+                    {linkData?.employee && (
+                      <p className="text-base sm:text-lg font-bold text-gray-700 mt-1">
+                        {linkData.employee.name}
                       </p>
-                      {linkData?.employee && (
-                        <p className="text-sm sm:text-base font-bold text-gray-700 mt-1">
-                          {linkData.employee.name}
-                        </p>
-                      )}
-                    </div>
-                  )}
+                    )}
+                  </div>
+                )}
                   {/* Progress - Dentro do card */}
                   <div className="mb-6">
                     <div className="flex items-center justify-between mb-2">
@@ -558,7 +585,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
                     <p className="text-base sm:text-lg font-bold text-blue-600 mb-2">
                       {item.pergunta.categoria || 'Confirmação'}
                     </p>
-                    <p className="text-base sm:text-lg text-gray-900 text-center">
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900 text-center">
                       {item.pergunta.texto_confirmacao_uso || 'Você utilizou este serviço/produto?'}
                     </p>
                   </div>
@@ -599,11 +626,11 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
                 {/* Nome da empresa e atendente dentro do card */}
                 {linkData?.company && (
                   <div className="text-center mb-4">
-                    <p className="text-base sm:text-lg font-bold text-gray-900">
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">
                       {linkData.company.name}
                     </p>
                     {linkData?.employee && (
-                      <p className="text-sm sm:text-base font-bold text-gray-700 mt-1">
+                      <p className="text-base sm:text-lg font-bold text-gray-700 mt-1">
                         {linkData.employee.name}
                       </p>
                     )}
@@ -622,40 +649,68 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
                     />
                   </div>
                 </div>
-                <div className="mb-4">
-                  <p className="text-base sm:text-lg font-bold text-blue-600 mb-2">
-                    {item.pergunta.categoria || 'Avaliação'}
-                  </p>
-                  <p className="text-base sm:text-lg text-gray-900 text-center">
-                    {item.pergunta.texto}
-                    {item.obrigatoria && <span className="text-red-500 ml-1">*</span>}
-                  </p>
+                {/* Categoria */}
+                {item.pergunta.categoria && (
+                  <div className="text-center mb-4">
+                    <p className="text-base sm:text-lg font-bold text-blue-600">
+                      {item.pergunta.categoria}
+                    </p>
+                  </div>
+                )}
+                {/* Pergunta principal */}
+                <div className="text-center mb-6">
+                  {item.pergunta.tipo_resposta === 'estrelas' ? (
+                    <>
+                      <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+                        {item.pergunta.texto}
+                      </h2>
+                      <p className="text-base sm:text-lg text-gray-600">
+                        De 1 a 5, o quanto você recomendaria?
+                      </p>
+                    </>
+                  ) : (
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
+                      {item.pergunta.texto}
+                    </h2>
+                  )}
                 </div>
-                <div className="flex justify-center mb-3">
+                {/* Estrelas */}
+                <div className="flex justify-center mb-6">
                   <StarRating
                     value={respostasPerguntas[item.pergunta.id] || null}
                     onChange={(v) => setRespostasPerguntas(prev => ({ ...prev, [item.pergunta.id]: v }))}
                     size={40}
                   />
                 </div>
-                <p className="text-xs sm:text-sm text-gray-500 text-center italic">
-                  Avalie sua experiência: 1 estrela para "não gostei" e 5 estrelas para "excelente".
-                </p>
+                {/* Feedback quando selecionar estrelas */}
+                {respostasPerguntas[item.pergunta.id] !== undefined && (
+                  <div className="text-center">
+                    <span className={`inline-block px-4 py-2 rounded-full text-sm font-medium ${
+                      respostasPerguntas[item.pergunta.id] >= 4 
+                        ? 'bg-green-100 text-green-700' 
+                        : respostasPerguntas[item.pergunta.id] === 3 
+                          ? 'bg-yellow-100 text-yellow-700' 
+                          : 'bg-red-100 text-red-700'
+                    }`}>
+                      {respostasPerguntas[item.pergunta.id] >= 4 ? '😊 Que bom que gostou!' : respostasPerguntas[item.pergunta.id] === 3 ? '😐 Podemos melhorar!' : '😔 Sentimos muito!'}
+                    </span>
+                  </div>
+                )}
               </div>
             );
           })()}
 
-          {/* ===== STEP: EXTRAS (Frequência + Como Conheceu) ===== */}
-          {currentContent === 'extras' && (
-            <div className="p-6 sm:p-8 space-y-8">
+          {/* ===== STEP: FREQUÊNCIA ===== */}
+          {currentContent === 'frequencia' && (
+            <div className="p-6 sm:p-8">
               {/* Nome da empresa e atendente dentro do card */}
               {linkData?.company && (
                 <div className="text-center mb-4">
-                  <p className="text-base sm:text-lg font-bold text-gray-900">
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
                     {linkData.company.name}
                   </p>
                   {linkData?.employee && (
-                    <p className="text-sm sm:text-base font-bold text-gray-700 mt-1">
+                    <p className="text-base sm:text-lg font-bold text-gray-700 mt-1">
                       {linkData.employee.name}
                     </p>
                   )}
@@ -675,51 +730,82 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
                 </div>
               </div>
               {/* Frequência de Visita */}
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 text-center mb-4">
+              <div className="text-center mb-6">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">
                   Com que frequência você nos visita?
                 </h2>
-                <div className="grid grid-cols-2 gap-3">
-                  {FREQUENCIA_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setFrequenciaVisita(opt.value)}
-                      className={`p-4 rounded-xl border-2 transition-all ${
-                        frequenciaVisita === opt.value
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <span className="text-2xl mb-1 block">{opt.emoji}</span>
-                      <span className="text-sm font-medium">{opt.label}</span>
-                    </button>
-                  ))}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {FREQUENCIA_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setFrequenciaVisita(opt.value)}
+                    className={`p-4 rounded-xl border-2 transition-all ${
+                      frequenciaVisita === opt.value
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <span className="text-2xl mb-1 block">{opt.emoji}</span>
+                    <span className="text-sm font-medium">{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ===== STEP: COMO CONHECEU ===== */}
+          {currentContent === 'como_conheceu' && (
+            <div className="p-6 sm:p-8">
+              {/* Nome da empresa e atendente dentro do card */}
+              {linkData?.company && (
+                <div className="text-center mb-4">
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                    {linkData.company.name}
+                  </p>
+                  {linkData?.employee && (
+                    <p className="text-base sm:text-lg font-bold text-gray-700 mt-1">
+                      {linkData.employee.name}
+                    </p>
+                  )}
+                </div>
+              )}
+              {/* Progress - Dentro do card */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm sm:text-base text-gray-600 font-medium">Pergunta {step} de {totalSteps}</span>
+                  <span className="text-sm sm:text-base font-semibold text-gray-600">{Math.round((step / totalSteps) * 100)}%</span>
+                </div>
+                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-orange-500 to-pink-500 rounded-full transition-all duration-500"
+                    style={{ width: `${(step / totalSteps) * 100}%` }}
+                  />
                 </div>
               </div>
-
               {/* Como Conheceu */}
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 text-center mb-4">
+              <div className="text-center mb-6">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">
                   Como conheceu a gente?
                 </h2>
-                <div className="grid grid-cols-2 gap-3">
-                  {opcoesOrigem.map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setComoConheceuId(opt.id)}
-                      className={`p-4 rounded-xl border-2 transition-all ${
-                        comoConheceuId === opt.id
-                          ? 'border-pink-500 bg-pink-50 text-pink-700'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <span className="text-2xl mb-1 block">{opt.icone}</span>
-                      <span className="text-sm font-medium">{opt.texto}</span>
-                    </button>
-                  ))}
-                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {opcoesOrigem.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setComoConheceuId(opt.id)}
+                    className={`p-4 rounded-xl border-2 transition-all ${
+                      comoConheceuId === opt.id
+                        ? 'border-pink-500 bg-pink-50 text-pink-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <span className="text-2xl mb-1 block">{opt.icone}</span>
+                    <span className="text-sm font-medium">{opt.texto}</span>
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -730,11 +816,11 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
               {/* Nome da empresa e atendente dentro do card */}
               {linkData?.company && (
                 <div className="text-center mb-4">
-                  <p className="text-base sm:text-lg font-bold text-gray-900">
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
                     {linkData.company.name}
                   </p>
                   {linkData?.employee && (
-                    <p className="text-sm sm:text-base font-bold text-gray-700 mt-1">
+                    <p className="text-base sm:text-lg font-bold text-gray-700 mt-1">
                       {linkData.employee.name}
                     </p>
                   )}
@@ -754,10 +840,10 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
                 </div>
               </div>
               <div className="text-center mb-6">
-                <h2 className="text-xl sm:text-2xl font-bold text-blue-600 mb-4">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">
                   Sua opinião é muito importante
                 </h2>
-                <p className="text-sm sm:text-base text-gray-900 leading-relaxed mb-6">
+                <p className="text-base sm:text-lg text-gray-600 leading-relaxed mb-6">
                   Gostaríamos muito de conhecer sua opinião. Quais pontos você acredita que podemos melhorar? Há algo que gostaria de destacar como elogio?
                 </p>
               </div>
@@ -785,29 +871,33 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
           )}
 
           {/* Navigation */}
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-4">
-            <button
-              type="button"
-              onClick={prevStep}
-              disabled={step === 1}
-              className={`flex items-center gap-2 px-4 py-2.5 sm:py-3 rounded-lg transition-all text-sm sm:text-base ${
-                step === 1
-                  ? 'text-gray-300 cursor-not-allowed'
-                  : 'text-gray-700 hover:bg-gray-200 bg-white border border-gray-300'
-              }`}
-            >
-              <ChevronLeft size={18} />
-              <span className="hidden sm:inline">Anterior</span>
-            </button>
+          <div className={`px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center gap-4 ${
+            step === 1 ? 'justify-center' : 'justify-between'
+          }`}>
+            {step > 1 && (
+              <button
+                type="button"
+                onClick={prevStep}
+                disabled={step === 1}
+                className={`flex items-center gap-2 px-4 py-2.5 sm:py-3 rounded-lg transition-all text-sm sm:text-base ${
+                  step === 1
+                    ? 'text-gray-300 cursor-not-allowed'
+                    : 'text-gray-700 hover:bg-gray-200 bg-white border border-gray-300'
+                }`}
+              >
+                <ChevronLeft size={18} />
+                <span className="hidden sm:inline">Anterior</span>
+              </button>
+            )}
 
             <button
               type="button"
               onClick={nextStep}
               disabled={!canProceed() || submitting}
-              className={`flex items-center gap-2 px-6 sm:px-8 py-2.5 sm:py-3 rounded-lg font-semibold text-sm sm:text-base transition-all ${
+              className={`flex items-center justify-center gap-2 ${step === 1 ? 'w-full' : ''} px-4 py-2.5 sm:py-3 rounded-lg font-semibold text-sm sm:text-base transition-all uppercase ${
                 canProceed() && !submitting
                   ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white hover:from-orange-600 hover:to-pink-600 shadow-md'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-orange-500 to-pink-500 text-white opacity-50 cursor-not-allowed'
               }`}
             >
               {submitting ? (
@@ -826,7 +916,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
                 </>
               ) : (
                 <>
-                  <span>Próximo</span>
+                  <span>AVANÇAR</span>
                   <ChevronRight size={18} />
                 </>
               )}

@@ -25,9 +25,6 @@ export async function GET(request: NextRequest) {
     if (user) {
       if (user.role === 'master') {
         // Master vê tudo - usar filtros informados
-        if (companyId) {
-          query = query.eq('company_id', companyId);
-        }
         if (groupId) {
           // Filtrar por grupo via relacionamento
           query = query.eq('company.company_group_id', groupId);
@@ -55,6 +52,11 @@ export async function GET(request: NextRequest) {
           // Se não tem empresas, não retorna nada
           query = query.eq('id', '00000000-0000-0000-0000-000000000000');
         }
+      }
+      
+      // Aplicar filtro por company_id para todos os roles (após filtros de permissão)
+      if (companyId) {
+        query = query.eq('company_id', companyId);
       }
     } else {
       // Se não tem usuário, não retorna nada

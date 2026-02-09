@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
+import '@/lib/api-interceptor'; // Garantir que o interceptor está carregado
 
 interface CompanyGroup {
   id: string;
@@ -133,22 +134,33 @@ export default function DashboardFuncionarioPage() {
 
   // Buscar empresas quando grupo mudar
   useEffect(() => {
-    if (!selectedGroupId) return;
+    if (!selectedGroupId) {
+      setCompanies([]);
+      return;
+    }
     const fetchCompanies = async () => {
       try {
+        console.log('📋 Buscando empresas para grupo:', selectedGroupId);
         const res = await fetch(`/api/companies?group_id=${selectedGroupId}`);
+        console.log('📋 Status da resposta:', res.status, res.ok);
         if (res.ok) {
           const data = await res.json();
+          console.log('📋 Dados recebidos:', data);
           const companiesList = data.companies || [];
+          console.log('📋 Total de empresas recebidas:', companiesList.length);
           // Filtro de segurança: garantir que apenas empresas do grupo selecionado sejam exibidas
           const filteredCompanies = companiesList.filter((c: any) => c.company_group_id === selectedGroupId);
+          console.log('📋 Empresas filtradas:', filteredCompanies.length);
           setCompanies(filteredCompanies);
           setSelectedCompany('');
           setSelectedEmployee('');
           setEmployees([]);
+        } else {
+          const errorData = await res.json().catch(() => ({}));
+          console.error('❌ Erro ao buscar empresas:', res.status, errorData);
         }
       } catch (error) {
-        console.error('Erro ao buscar empresas:', error);
+        console.error('❌ Erro ao buscar empresas:', error);
       }
     };
     fetchCompanies();

@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
     const prevYear = year - 1;
     const { data: prevYearData } = await supabaseAdmin
       .from('mv_company_cash_flow_summary')
-      .select('external_company_id, total_amount')
+      .select('external_company_id, month, total_amount')
       .eq('company_group_id', groupId)
       .in('external_company_id', allExternalIds)
       .eq('year', prevYear)
@@ -125,12 +125,25 @@ export async function GET(request: NextRequest) {
 
     const prevTotalRevenue = prevYearData?.reduce((sum: number, item: any) => sum + (Number(item.total_amount) || 0), 0) || 0;
 
-    // Agrupar dados do ano anterior por código
+    // Agrupar dados do ano anterior por código (total)
     const prevRevenueByCode: Record<string, number> = {};
+    // Agrupar dados do ano anterior por código e mês (para YoY mensal)
+    const prevMonthlyRevenueByCode: Record<string, Record<number, number>> = {}; // code -> month -> revenue
+    
     if (prevYearData) {
       prevYearData.forEach((item: any) => {
         const code = item.external_company_id;
-        prevRevenueByCode[code] = (prevRevenueByCode[code] || 0) + (Number(item.total_amount) || 0);
+        const month = item.month;
+        const amount = Number(item.total_amount) || 0;
+        
+        // Total por código
+        prevRevenueByCode[code] = (prevRevenueByCode[code] || 0) + amount;
+        
+        // Mensal por código
+        if (!prevMonthlyRevenueByCode[code]) {
+          prevMonthlyRevenueByCode[code] = {};
+        }
+        prevMonthlyRevenueByCode[code][month] = (prevMonthlyRevenueByCode[code][month] || 0) + amount;
       });
     }
 
@@ -160,9 +173,21 @@ export async function GET(request: NextRequest) {
       let revenue = 0;
       let transactions = 0;
       
+      // Calcular revenue mensal por empresa (para MoM)
+      const companyMonthlyRevenue: Record<number, number> = {};
+      for (let m = 1; m <= 12; m++) {
+        companyMonthlyRevenue[m] = 0;
+      }
+      
       externalIds.forEach(code => {
         const codeRevenue = monthlyRevenueByCode[code] || {};
-        revenue += Object.values(codeRevenue).reduce((sum, val) => sum + val, 0);
+        const totalCodeRevenue = Object.values(codeRevenue).reduce((sum, val) => sum + val, 0);
+        revenue += totalCodeRevenue;
+        
+        // Agregar por mês
+        for (let m = 1; m <= 12; m++) {
+          companyMonthlyRevenue[m] = (companyMonthlyRevenue[m] || 0) + (codeRevenue[m] || 0);
+        }
       });
       
       // Calcular transactions aproximado (usando média de ticket)
@@ -171,18 +196,64 @@ export async function GET(request: NextRequest) {
       
       // Calcular tendência vs ano anterior (usar dados já buscados)
       let prevRevenue = 0;
+      const prevCompanyMonthlyRevenue: Record<number, number> = {};
+      for (let m = 1; m <= 12; m++) {
+        prevCompanyMonthlyRevenue[m] = 0;
+      }
+      
       externalIds.forEach(code => {
         prevRevenue += prevRevenueByCode[code] || 0;
+        
+        // Agregar mensal do ano anterior
+        const prevCodeRevenue = prevMonthlyRevenueByCode[code] || {};
+        for (let m = 1; m <= 12; m++) {
+          prevCompanyMonthlyRevenue[m] = (prevCompanyMonthlyRevenue[m] || 0) + (prevCodeRevenue[m] || 0);
+        }
       });
       
       const trend = prevRevenue > 0 ? ((revenue - prevRevenue) / prevRevenue) * 100 : 0;
+      
+      // Calcular MoM (mês atual vs mês anterior) - usar último mês com dados
+      const currentMonth = new Date().getMonth() + 1;
+      let mom = 0;
+      let currentMonthRevenue = 0;
+      let previousMonthRevenue = 0;
+      
+      // Encontrar último mês com dados
+      let lastMonthWithData = 0;
+      for (let m = 12; m >= 1; m--) {
+        if (companyMonthlyRevenue[m] > 0) {
+          lastMonthWithData = m;
+          break;
+        }
+      }
+      
+      if (lastMonthWithData > 0) {
+        currentMonthRevenue = companyMonthlyRevenue[lastMonthWithData] || 0;
+        const prevMonth = lastMonthWithData === 1 ? 12 : lastMonthWithData - 1;
+        previousMonthRevenue = companyMonthlyRevenue[prevMonth] || 0;
+        
+        if (previousMonthRevenue > 0) {
+          mom = ((currentMonthRevenue - previousMonthRevenue) / previousMonthRevenue) * 100;
+        }
+      }
+      
+      // Calcular YoY (ano atual vs ano anterior) - usar último mês com dados
+      let yoy = 0;
+      if (lastMonthWithData > 0) {
+        const currentYearMonthRevenue = companyMonthlyRevenue[lastMonthWithData] || 0;
+        const prevYearMonthRevenue = prevCompanyMonthlyRevenue[lastMonthWithData] || 0;
+        
+        if (prevYearMonthRevenue > 0) {
+          yoy = ((currentYearMonthRevenue - prevYearMonthRevenue) / prevYearMonthRevenue) * 100;
+        }
+      }
       
       // Buscar meta total da empresa
       const companyGoal = companyGoalsMap.get(company.id) || 0;
       const progress = companyGoal > 0 ? (revenue / companyGoal) * 100 : 0;
       
       // Determinar status baseado no progresso e no mês atual
-      const currentMonth = new Date().getMonth() + 1;
       const expectedProgress = (currentMonth / 12) * 100;
       let status: 'achieved' | 'ontrack' | 'behind' = 'behind';
       
@@ -203,7 +274,9 @@ export async function GET(request: NextRequest) {
         trend: Math.round(trend * 10) / 10,
         goal: Math.round(companyGoal * 100) / 100,
         progress: Math.round(progress * 10) / 10,
-        status
+        status,
+        mom: Math.round(mom * 10) / 10,
+        yoy: Math.round(yoy * 10) / 10
       };
     }).sort((a, b) => b.revenue - a.revenue) || [];
 
@@ -273,6 +346,65 @@ export async function GET(request: NextRequest) {
       ? Math.round(((totalRevenue - prevTotalRevenue) / prevTotalRevenue) * 1000) / 10
       : 0;
 
+    // 10. Preparar dados mensais por empresa (para matriz)
+    const monthlyRevenueByCompany: Array<{
+      month: number;
+      monthName: string;
+      companies: Array<{ companyId: string; companyName: string; revenue: number }>;
+    }> = [];
+
+    // Criar estrutura de dados: mês -> empresa -> faturamento
+    const monthlyCompanyMap = new Map<number, Map<string, number>>();
+    
+    // Inicializar todos os meses
+    for (let m = 1; m <= 12; m++) {
+      monthlyCompanyMap.set(m, new Map<string, number>());
+    }
+
+    // Preencher com dados reais
+    companies?.forEach(company => {
+      const externalIds = companyToExternalIds.get(company.id) || [];
+      
+      // Calcular faturamento por mês para esta empresa
+      const companyMonthlyRevenue: Record<number, number> = {};
+      for (let m = 1; m <= 12; m++) {
+        companyMonthlyRevenue[m] = 0;
+      }
+      
+      externalIds.forEach(code => {
+        const codeRevenue = monthlyRevenueByCode[code] || {};
+        for (let m = 1; m <= 12; m++) {
+          companyMonthlyRevenue[m] = (companyMonthlyRevenue[m] || 0) + (codeRevenue[m] || 0);
+        }
+      });
+      
+      // Adicionar ao mapa mensal
+      for (let m = 1; m <= 12; m++) {
+        const monthMap = monthlyCompanyMap.get(m);
+        if (monthMap) {
+          monthMap.set(company.id, Math.round(companyMonthlyRevenue[m] * 100) / 100);
+        }
+      }
+    });
+
+    // Converter para array
+    monthlyRevenueByCompany.push(...Array.from(monthlyCompanyMap.entries()).map(([monthNum, companyMap]) => {
+      const companies = Array.from(companyMap.entries()).map(([companyId, revenue]) => {
+        const company = companiesData.find(c => c.id === companyId);
+        return {
+          companyId,
+          companyName: company?.name || 'Desconhecida',
+          revenue: Math.round(revenue * 100) / 100
+        };
+      }).sort((a, b) => a.companyName.localeCompare(b.companyName));
+
+      return {
+        month: monthNum,
+        monthName: MONTH_NAMES_FULL[monthNum - 1] || `Mês ${monthNum}`,
+        companies
+      };
+    }).sort((a, b) => a.month - b.month));
+
     return NextResponse.json({
       period: { year },
       companies: companiesData,
@@ -285,7 +417,8 @@ export async function GET(request: NextRequest) {
         comparisonLastYear
       },
       monthlyRevenue,
-      monthlyGoals
+      monthlyGoals,
+      monthlyRevenueByCompany
     });
 
   } catch (error: any) {

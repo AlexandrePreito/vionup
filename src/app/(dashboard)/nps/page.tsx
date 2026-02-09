@@ -276,7 +276,7 @@ export default function DashboardNPSPage() {
         </div>
 
         {/* Funcionário */}
-        <div className="w-48">
+        <div className="w-64">
           <label className="block text-sm font-medium text-gray-700 mb-1">Funcionário</label>
           <select
             value={selectedEmployeeId}

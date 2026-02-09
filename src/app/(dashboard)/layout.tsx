@@ -7,6 +7,7 @@ import { Header } from '@/components/layout/header';
 import { SidebarProvider, useSidebar } from '@/contexts/sidebar-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { PageGuard } from '@/components/PageGuard';
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { isExpanded } = useSidebar();
@@ -102,7 +103,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       <Header />
       {isLoading && <LoadingSpinner />}
       <main className={`pt-16 pb-6 px-6 transition-all duration-300 ${isExpanded ? 'ml-64' : 'ml-16'}`}>
-        {children}
+        <PageGuard>
+          {children}
+        </PageGuard>
       </main>
     </div>
   );

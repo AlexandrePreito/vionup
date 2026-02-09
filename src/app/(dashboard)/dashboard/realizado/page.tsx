@@ -20,8 +20,10 @@ import {
   X,
   CheckCircle2,
   Package,
-  AlertCircle
+  AlertCircle,
+  Download
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import {
   AreaChart,
   Area,
@@ -54,6 +56,8 @@ interface Company {
   transactions: number;
   averageTicket: number;
   trend: number;
+  mom?: number;
+  yoy?: number;
 }
 
 interface DailyRevenue {
@@ -98,6 +102,12 @@ interface RealizadoData {
     average: number;
     totalRevenue: number;
     dayCount: number;
+  }>;
+  dailyRevenueByCompany?: Array<{
+    day: number;
+    date: string;
+    dayOfWeek: string;
+    companies: Array<{ companyId: string; companyName: string; revenue: number }>;
   }>;
 }
 
@@ -294,6 +304,79 @@ export default function DashboardRealizadoMensalPage() {
     }
   };
 
+  // Exportar tabela para Excel
+  const handleExportToExcel = () => {
+    if (!filteredData?.dailyRevenueByCompany || !realizadoData) return;
+
+    // Preparar dados para exportação
+    const monthName = MONTHS[filteredData.period.month - 1]?.label || `Mês ${filteredData.period.month}`;
+    const year = filteredData.period.year;
+    
+    // Criar cabeçalhos
+    const headers = ['Dia', 'Dia da Semana', ...realizadoData.companies.map(c => c.name), 'Total'];
+    
+    // Criar linhas de dados
+    const rows = filteredData.dailyRevenueByCompany.map(dayData => {
+      const dayTotal = dayData.companies.reduce((sum, c) => sum + c.revenue, 0);
+      const row: any[] = [
+        dayData.day,
+        dayData.dayOfWeek,
+        ...realizadoData.companies.map(company => {
+          const companyData = dayData.companies.find(c => c.companyId === company.id);
+          return companyData?.revenue || 0;
+        }),
+        dayTotal
+      ];
+      return row;
+    });
+
+    // Adicionar linha de total mensal
+    const monthlyTotals = [
+      'Total Mensal',
+      '',
+      ...realizadoData.companies.map(company => {
+        const monthlyTotal = filteredData.dailyRevenueByCompany!.reduce(
+          (sum, day) => {
+            const companyData = day.companies.find(c => c.companyId === company.id);
+            return sum + (companyData?.revenue || 0);
+          },
+          0
+        );
+        return monthlyTotal;
+      }),
+      filteredData.dailyRevenueByCompany!.reduce(
+        (sum, day) => sum + day.companies.reduce((s, c) => s + c.revenue, 0),
+        0
+      )
+    ];
+    rows.push(monthlyTotals);
+
+    // Criar workbook
+    const wb = XLSX.utils.book_new();
+    
+    // Criar worksheet
+    const wsData = [headers, ...rows];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Ajustar largura das colunas
+    const colWidths = [
+      { wch: 10 }, // Dia
+      { wch: 15 }, // Dia da Semana
+      ...realizadoData.companies.map(() => ({ wch: 18 })), // Colunas das empresas
+      { wch: 18 } // Total
+    ];
+    ws['!cols'] = colWidths;
+
+    // Adicionar worksheet ao workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Faturamento Diário');
+
+    // Gerar nome do arquivo
+    const fileName = `Faturamento_Dia_Filial_${monthName}_${year}.xlsx`;
+
+    // Exportar
+    XLSX.writeFile(wb, fileName);
+  };
+
   // Ícone do modo de venda
   const getSaleModeIcon = (mode: string) => {
     switch (mode.toLowerCase()) {
@@ -474,14 +557,45 @@ export default function DashboardRealizadoMensalPage() {
                     <p className="text-2xl font-bold text-gray-900">{formatCurrency(company.revenue)}</p>
                   </div>
 
-                  {/* Variação */}
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-500 text-sm">Variação</span>
-                    <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                      company.trend >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                    }`}>
-                      {company.trend >= 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
-                      {Math.abs(company.trend).toFixed(1)}%
+                  {/* Quantidade de Vendas e Ticket Médio */}
+                  <div className="mb-4 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 text-sm">Quantidade de Vendas</span>
+                      <span className="text-sm font-semibold text-gray-900">{company.transactions.toLocaleString('pt-BR')}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 text-sm">Ticket Médio</span>
+                      <span className="text-sm font-semibold text-gray-900">{formatCurrency(company.averageTicket)}</span>
+                    </div>
+                  </div>
+
+                  {/* MoM e YoY */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 text-sm">MoM</span>
+                      {company.mom !== undefined && company.mom !== null ? (
+                        <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                          company.mom >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                        }`}>
+                          {company.mom >= 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+                          {Math.abs(company.mom).toFixed(1)}%
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-xs">-</span>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 text-sm">YoY</span>
+                      {company.yoy !== undefined && company.yoy !== null ? (
+                        <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                          company.yoy >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                        }`}>
+                          {company.yoy >= 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+                          {Math.abs(company.yoy).toFixed(1)}%
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-xs">-</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -833,6 +947,124 @@ export default function DashboardRealizadoMensalPage() {
               </div>
             )}
           </div>
+
+          {/* Tabela de Faturamento por Dia e Filial */}
+          {filteredData.dailyRevenueByCompany && filteredData.dailyRevenueByCompany.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 p-6">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Faturamento por Dia e Filial</h3>
+                  <p className="text-sm text-gray-500">
+                    Valor faturado por filial em cada dia de {MONTHS[filteredData.period.month - 1]?.label} {filteredData.period.year}
+                  </p>
+                </div>
+                <button
+                  onClick={handleExportToExcel}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
+                >
+                  <Download size={18} />
+                  Exportar Excel
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-gray-200">
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700 bg-gray-50 sticky left-0 z-10">
+                        Dia
+                      </th>
+                      {realizadoData.companies.map((company, index) => {
+                        const colors = getCompanyColor(index);
+                        return (
+                          <th
+                            key={company.id}
+                            className="text-right py-3 px-4 font-semibold text-gray-700 bg-gray-50 whitespace-nowrap"
+                            style={{ color: colors.hex }}
+                          >
+                            {company.name}
+                          </th>
+                        );
+                      })}
+                      <th className="text-right py-3 px-4 font-semibold text-gray-700 bg-gray-50">
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredData.dailyRevenueByCompany.map((dayData, dayIndex) => {
+                      // Calcular total do dia
+                      const dayTotal = dayData.companies.reduce((sum, c) => sum + c.revenue, 0);
+                      
+                      return (
+                        <tr
+                          key={dayData.date}
+                          className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                            dayIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                          }`}
+                        >
+                          <td className="py-3 px-4 font-medium text-gray-900 bg-white sticky left-0 z-10 border-r border-gray-200">
+                            <div className="flex flex-col">
+                              <span className="font-semibold">Dia {dayData.day}</span>
+                              <span className="text-xs text-gray-500">{dayData.dayOfWeek}</span>
+                            </div>
+                          </td>
+                          {realizadoData.companies.map((company) => {
+                            const companyData = dayData.companies.find(c => c.companyId === company.id);
+                            const revenue = companyData?.revenue || 0;
+                            
+                            return (
+                              <td
+                                key={company.id}
+                                className="text-right py-3 px-4 text-gray-700 whitespace-nowrap"
+                              >
+                                {revenue > 0 ? formatCurrency(revenue) : '-'}
+                              </td>
+                            );
+                          })}
+                          <td className="text-right py-3 px-4 font-semibold text-gray-900">
+                            {formatCurrency(dayTotal)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {/* Linha de total mensal */}
+                    <tr className="border-t-2 border-gray-300 bg-gray-100 font-semibold">
+                      <td className="py-3 px-4 text-gray-900 bg-gray-100 sticky left-0 z-10 border-r border-gray-300">
+                        Total Mensal
+                      </td>
+                      {realizadoData.companies.map((company) => {
+                        const monthlyTotal = filteredData.dailyRevenueByCompany!.reduce(
+                          (sum, day) => {
+                            const companyData = day.companies.find(c => c.companyId === company.id);
+                            return sum + (companyData?.revenue || 0);
+                          },
+                          0
+                        );
+                        
+                        return (
+                          <td
+                            key={company.id}
+                            className="text-right py-3 px-4 text-gray-900"
+                          >
+                            {formatCurrency(monthlyTotal)}
+                          </td>
+                        );
+                      })}
+                      <td className="text-right py-3 px-4 text-gray-900">
+                        {formatCurrency(
+                          filteredData.dailyRevenueByCompany!.reduce(
+                            (sum, day) => sum + day.companies.reduce((s, c) => s + c.revenue, 0),
+                            0
+                          )
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -14,8 +14,10 @@ import {
   X,
   CheckCircle2,
   AlertCircle,
-  Target
+  Target,
+  Download
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import {
   AreaChart,
   Area,
@@ -49,6 +51,8 @@ interface Company {
   goal: number;
   progress: number;
   status: 'achieved' | 'ontrack' | 'behind';
+  mom?: number;
+  yoy?: number;
 }
 
 interface MonthlyRevenue {
@@ -79,6 +83,11 @@ interface RealizadoMesData {
   };
   monthlyRevenue: MonthlyRevenue[];
   monthlyGoals: MonthlyGoal[];
+  monthlyRevenueByCompany?: Array<{
+    month: number;
+    monthName: string;
+    companies: Array<{ companyId: string; companyName: string; revenue: number }>;
+  }>;
 }
 
 const COMPANY_COLORS = [
@@ -346,6 +355,74 @@ export default function DashboardRealizadoMesPage() {
   // Obter cor da empresa
   const getCompanyColor = (index: number) => {
     return COMPANY_COLORS[index % COMPANY_COLORS.length];
+  };
+
+  // Exportar matriz para Excel
+  const handleExportToExcel = () => {
+    if (!filteredData?.monthlyRevenueByCompany || !realizadoData) return;
+
+    const year = filteredData.period.year;
+    
+    // Criar cabeçalhos
+    const headers = ['Mês', ...realizadoData.companies.map(c => c.name), 'Total'];
+    
+    // Criar linhas de dados
+    const rows = filteredData.monthlyRevenueByCompany.map(monthData => {
+      const monthTotal = monthData.companies.reduce((sum, c) => sum + c.revenue, 0);
+      const row: any[] = [
+        monthData.monthName,
+        ...realizadoData.companies.map(company => {
+          const companyData = monthData.companies.find(c => c.companyId === company.id);
+          return companyData?.revenue || 0;
+        }),
+        monthTotal
+      ];
+      return row;
+    });
+
+    // Adicionar linha de total anual
+    const annualTotals = [
+      'Total Anual',
+      ...realizadoData.companies.map(company => {
+        const annualTotal = filteredData.monthlyRevenueByCompany!.reduce(
+          (sum, month) => {
+            const companyData = month.companies.find(c => c.companyId === company.id);
+            return sum + (companyData?.revenue || 0);
+          },
+          0
+        );
+        return annualTotal;
+      }),
+      filteredData.monthlyRevenueByCompany!.reduce(
+        (sum, month) => sum + month.companies.reduce((s, c) => s + c.revenue, 0),
+        0
+      )
+    ];
+    rows.push(annualTotals);
+
+    // Criar workbook
+    const wb = XLSX.utils.book_new();
+    
+    // Criar worksheet
+    const wsData = [headers, ...rows];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Ajustar largura das colunas
+    const colWidths = [
+      { wch: 15 }, // Mês
+      ...realizadoData.companies.map(() => ({ wch: 18 })), // Colunas das empresas
+      { wch: 18 } // Total
+    ];
+    ws['!cols'] = colWidths;
+
+    // Adicionar worksheet ao workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Faturamento Mensal');
+
+    // Gerar nome do arquivo
+    const fileName = `Faturamento_Mes_Filial_${year}.xlsx`;
+
+    // Exportar
+    XLSX.writeFile(wb, fileName);
   };
 
 
@@ -715,6 +792,18 @@ export default function DashboardRealizadoMesPage() {
                       <p className="text-xs text-gray-500 mb-1">Meta</p>
                       <p className="text-lg font-semibold text-gray-700">{formatCurrency(company.goal)}</p>
                     </div>
+
+                    {/* Quantidade de Vendas e Ticket Médio */}
+                    <div className="pt-2 border-t border-gray-200 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-500">Quantidade de Vendas</span>
+                        <span className="text-sm font-semibold text-gray-900">{company.transactions.toLocaleString('pt-BR')}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-500">Ticket Médio</span>
+                        <span className="text-sm font-semibold text-gray-900">{formatCurrency(company.averageTicket)}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
@@ -953,6 +1042,121 @@ export default function DashboardRealizadoMesPage() {
                     })}
                   </LineChart>
                 </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Matriz de Faturamento por Mês e Filial */}
+          {filteredData.monthlyRevenueByCompany && filteredData.monthlyRevenueByCompany.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 p-6">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Faturamento por Mês e Filial</h3>
+                  <p className="text-sm text-gray-500">
+                    Valor faturado por filial em cada mês do ano {filteredData.period.year}
+                  </p>
+                </div>
+                <button
+                  onClick={handleExportToExcel}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
+                >
+                  <Download size={18} />
+                  Exportar Excel
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-gray-200">
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700 bg-gray-50 sticky left-0 z-10">
+                        Mês
+                      </th>
+                      {realizadoData.companies.map((company, index) => {
+                        const colors = getCompanyColor(index);
+                        return (
+                          <th
+                            key={company.id}
+                            className="text-right py-3 px-4 font-semibold text-gray-700 bg-gray-50 whitespace-nowrap"
+                            style={{ color: colors.hex }}
+                          >
+                            {company.name}
+                          </th>
+                        );
+                      })}
+                      <th className="text-right py-3 px-4 font-semibold text-gray-700 bg-gray-50">
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredData.monthlyRevenueByCompany.map((monthData, monthIndex) => {
+                      // Calcular total do mês
+                      const monthTotal = monthData.companies.reduce((sum, c) => sum + c.revenue, 0);
+                      
+                      return (
+                        <tr
+                          key={monthData.month}
+                          className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                            monthIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                          }`}
+                        >
+                          <td className="py-3 px-4 font-medium text-gray-900 bg-white sticky left-0 z-10 border-r border-gray-200">
+                            {monthData.monthName}
+                          </td>
+                          {realizadoData.companies.map((company) => {
+                            const companyData = monthData.companies.find(c => c.companyId === company.id);
+                            const revenue = companyData?.revenue || 0;
+                            
+                            return (
+                              <td
+                                key={company.id}
+                                className="text-right py-3 px-4 text-gray-700 whitespace-nowrap"
+                              >
+                                {revenue > 0 ? formatCurrency(revenue) : '-'}
+                              </td>
+                            );
+                          })}
+                          <td className="text-right py-3 px-4 font-semibold text-gray-900">
+                            {formatCurrency(monthTotal)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {/* Linha de total anual */}
+                    <tr className="border-t-2 border-gray-300 bg-gray-100 font-semibold">
+                      <td className="py-3 px-4 text-gray-900 bg-gray-100 sticky left-0 z-10 border-r border-gray-300">
+                        Total Anual
+                      </td>
+                      {realizadoData.companies.map((company) => {
+                        const annualTotal = filteredData.monthlyRevenueByCompany!.reduce(
+                          (sum, month) => {
+                            const companyData = month.companies.find(c => c.companyId === company.id);
+                            return sum + (companyData?.revenue || 0);
+                          },
+                          0
+                        );
+                        
+                        return (
+                          <td
+                            key={company.id}
+                            className="text-right py-3 px-4 text-gray-900"
+                          >
+                            {formatCurrency(annualTotal)}
+                          </td>
+                        );
+                      })}
+                      <td className="text-right py-3 px-4 text-gray-900">
+                        {formatCurrency(
+                          filteredData.monthlyRevenueByCompany!.reduce(
+                            (sum, month) => sum + month.companies.reduce((s, c) => s + c.revenue, 0),
+                            0
+                          )
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

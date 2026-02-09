@@ -23,6 +23,9 @@ const COLUMN_MAPPINGS: Record<string, Record<string, string>> = {
     'VendaItemGeral[modo_venda_descr]': 'sale_mode',
     'CodigoFuncionario': 'external_employee_id',
     'VendaItemGeral[CodigoFuncionario]': 'external_employee_id',
+    'Periodo': 'period',
+    'VendaItemGeral[Periodo]': 'period',
+    'periodo': 'period',
     'cost': 'cost',
     '[cost]': 'cost',
     'CMV': 'cost',
@@ -310,7 +313,13 @@ export async function POST(req: NextRequest) {
       if (entityType === 'sales') {
         rec.external_company_id = String(rec.external_company_id || 'UNKNOWN');
         rec.external_product_id = String(rec.external_product_id || 'UNKNOWN');
-        rec.period = rec.sale_date?.substring(0, 7) || null;
+        // Se period veio do CSV (mapeado), usar esse valor. Caso contrário, gerar YYYY-MM da data
+        if (!rec.period || rec.period === '') {
+          rec.period = rec.sale_date?.substring(0, 7) || null;
+        } else {
+          // Manter o valor do CSV (ex: "Almoço", "Jantar")
+          rec.period = String(rec.period).trim();
+        }
       } else if (entityType === 'cash_flow') {
         rec.external_company_id = rec.external_company_id ? String(rec.external_company_id) : null;
         // Se period veio do CSV (mapeado), usar esse valor. Caso contrário, gerar YYYY-MM da data

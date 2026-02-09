@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSidebar } from '@/contexts/sidebar-context';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePagePermissions } from '@/hooks/usePagePermissions';
 import {
   Package,
   UserCircle,
@@ -273,6 +274,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { activeSection, isExpanded, setIsExpanded } = useSidebar();
   const { user } = useAuth();
+  const { canViewRoute, loading: permLoading } = usePagePermissions();
 
   const isActive = (href: string, allItemsInGroup?: SidebarItem[]) => {
     if (href === '/') return pathname === '/';
@@ -293,6 +295,23 @@ export function Sidebar() {
     
     // Correspondência exata ou se a rota começa com o href (para sub-rotas)
     return pathname === href || pathname.startsWith(href + '/');
+  };
+
+  // Função helper para filtrar itens por permissão
+  const filterByPermission = (items: (SidebarItem | SidebarGroup)[]): (SidebarItem | SidebarGroup)[] => {
+    if (!user) return [];
+    if (user.role === 'master') return items;
+    
+    return items.map(item => {
+      if ('title' in item && 'items' in item) {
+        const group = item as SidebarGroup;
+        const filteredItems = group.items.filter(gi => canViewRoute(gi.href));
+        if (filteredItems.length === 0) return null;
+        return { ...group, items: filteredItems };
+      }
+      const normalItem = item as SidebarItem;
+      return canViewRoute(normalItem.href) ? normalItem : null;
+    }).filter(Boolean) as (SidebarItem | SidebarGroup)[];
   };
 
   // Determinar quais itens mostrar
@@ -324,6 +343,11 @@ export function Sidebar() {
     sidebarItems = dashboardItems;
   } else if (activeSection === 'nps') {
     sidebarItems = npsItems;
+  }
+
+  // Aplicar filtro de permissões
+  if (!permLoading) {
+    sidebarItems = filterByPermission(sidebarItems);
   }
 
   return (
