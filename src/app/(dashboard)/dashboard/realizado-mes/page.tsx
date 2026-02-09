@@ -1058,10 +1058,10 @@ export default function DashboardRealizadoMesPage() {
                 </div>
                 <button
                   onClick={handleExportToExcel}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
+                  className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                  title="Exportar Excel"
                 >
                   <Download size={18} />
-                  Exportar Excel
                 </button>
               </div>
 

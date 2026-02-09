@@ -179,14 +179,14 @@ const dashboardItems: (SidebarItem | SidebarGroup)[] = [
         tooltip: 'Realizado'
       },
       {
-        href: '/dashboard/previsao',
-        icon: <TrendingUp size={20} />,
-        tooltip: 'Previsão de Vendas'
-      },
-      {
         href: '/dashboard/realizado-mes',
         icon: <Calendar size={20} />,
         tooltip: 'Realizado por Mês'
+      },
+      {
+        href: '/dashboard/previsao',
+        icon: <TrendingUp size={20} />,
+        tooltip: 'Previsão de Vendas'
       }
     ]
   },

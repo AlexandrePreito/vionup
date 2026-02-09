@@ -14,7 +14,8 @@ const COLUMN_MAPPINGS: Record<string, Record<string, string>> = {
     'IdVenda': 'venda_id',
     'VendaItemGeral[idVenda]': 'venda_id',
     'VendaItemGeral[IdVenda]': 'venda_id',
-    'venda_id': 'venda_id',
+    'venda_id': 'sale_uuid',
+    'VendaItemGeral[venda_id]': 'sale_uuid',
     'dt_contabil': 'sale_date',
     'VendaItemGeral[dt_contabil]': 'sale_date',
     'CodigoMaterial': 'external_product_id',
@@ -313,6 +314,7 @@ export async function POST(req: NextRequest) {
       if (entityType === 'sales') {
         rec.external_company_id = String(rec.external_company_id || 'UNKNOWN');
         rec.external_product_id = String(rec.external_product_id || 'UNKNOWN');
+        rec.sale_uuid = rec.sale_uuid || null;
         // Se period veio do CSV (mapeado), usar esse valor. Caso contrário, gerar YYYY-MM da data
         if (!rec.period || rec.period === '') {
           rec.period = rec.sale_date?.substring(0, 7) || null;

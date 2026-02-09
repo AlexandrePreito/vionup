@@ -36,6 +36,12 @@ export async function GET(request: NextRequest) {
     const prevLastDay = new Date(prevYear, prevMonth, 0).getDate();
     const prevEndDate = `${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(prevLastDay).padStart(2, '0')}`;
 
+    // Mesmo mês do ano anterior para comparação YoY
+    const yoyYear = year - 1;
+    const prevYearStartDate = `${yoyYear}-${String(month).padStart(2, '0')}-01`;
+    const prevYearLastDay = new Date(yoyYear, month, 0).getDate();
+    const prevYearEndDate = `${yoyYear}-${String(month).padStart(2, '0')}-${String(prevYearLastDay).padStart(2, '0')}`;
+
     // Constantes para dias da semana (definidas uma única vez no topo)
     const DAYS_OF_WEEK = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
     const WEEKDAY_NAMES_FULL = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -186,6 +192,82 @@ export async function GET(request: NextRequest) {
       console.log('API /realizado - Nenhum external_id encontrado, retornando cash flow vazio');
     }
 
+    // Buscar contagem de vendas distintas via RPC
+    let salesCountByExtId = new Map<string, number>();
+
+    if (allExternalIds.length > 0) {
+      try {
+        const { data: salesCountData, error: salesCountError } = await supabase
+          .rpc('count_distinct_sales', {
+            p_group_id: groupId,
+            p_start_date: startDate,
+            p_end_date: endDate,
+            p_external_ids: allExternalIds
+          });
+
+        if (salesCountError) {
+          console.error('API /realizado - Erro ao buscar contagem de vendas via RPC:', salesCountError);
+          console.error('API /realizado - Detalhes do erro:', JSON.stringify(salesCountError, null, 2));
+          // Continuar sem quebrar - usar 0 como fallback
+        } else if (salesCountData) {
+          salesCountData.forEach((row: any) => {
+            salesCountByExtId.set(row.external_company_id, Number(row.sale_count));
+          });
+        }
+        
+        console.log('API /realizado - Contagem de vendas por empresa:', Object.fromEntries(salesCountByExtId));
+      } catch (rpcError: any) {
+        console.error('API /realizado - Exceção ao chamar RPC count_distinct_sales:', rpcError);
+        // Continuar sem quebrar - usar 0 como fallback
+      }
+    }
+
+    // Contagem de vendas do mês anterior
+    let prevSalesCountByExtId = new Map<string, number>();
+    if (allExternalIds.length > 0) {
+      try {
+        const { data: prevSalesCount, error: prevSalesCountError } = await supabase.rpc('count_distinct_sales', {
+          p_group_id: groupId,
+          p_start_date: prevStartDate,
+          p_end_date: prevEndDate,
+          p_external_ids: allExternalIds
+        });
+        
+        if (prevSalesCountError) {
+          console.error('API /realizado - Erro ao buscar contagem de vendas do mês anterior via RPC:', prevSalesCountError);
+        } else if (prevSalesCount) {
+          prevSalesCount.forEach((row: any) => {
+            prevSalesCountByExtId.set(row.external_company_id, Number(row.sale_count));
+          });
+        }
+      } catch (rpcError: any) {
+        console.error('API /realizado - Exceção ao chamar RPC count_distinct_sales (mês anterior):', rpcError);
+      }
+    }
+
+    // Contagem de vendas do mesmo mês do ano anterior
+    let prevYearSalesCountByExtId = new Map<string, number>();
+    if (allExternalIds.length > 0) {
+      try {
+        const { data: prevYearSalesCount, error: prevYearSalesCountError } = await supabase.rpc('count_distinct_sales', {
+          p_group_id: groupId,
+          p_start_date: prevYearStartDate,
+          p_end_date: prevYearEndDate,
+          p_external_ids: allExternalIds
+        });
+        
+        if (prevYearSalesCountError) {
+          console.error('API /realizado - Erro ao buscar contagem de vendas do ano anterior via RPC:', prevYearSalesCountError);
+        } else if (prevYearSalesCount) {
+          prevYearSalesCount.forEach((row: any) => {
+            prevYearSalesCountByExtId.set(row.external_company_id, Number(row.sale_count));
+          });
+        }
+      } catch (rpcError: any) {
+        console.error('API /realizado - Exceção ao chamar RPC count_distinct_sales (ano anterior):', rpcError);
+      }
+    }
+
     // 4. Buscar cash flow do mês anterior para comparação MoM (com paginação)
     let prevCashFlowData: any[] = [];
     
@@ -241,12 +323,6 @@ export async function GET(request: NextRequest) {
     });
 
     // 4.1. Buscar cash flow do mesmo mês do ano anterior para comparação YoY (com paginação)
-    // Usando yoyYear para evitar conflito com prevYear (usado para MoM na linha 34)
-    const yoyYear = year - 1;
-    const prevYearStartDate = `${yoyYear}-${String(month).padStart(2, '0')}-01`;
-    const prevYearLastDay = new Date(yoyYear, month, 0).getDate();
-    const prevYearEndDate = `${yoyYear}-${String(month).padStart(2, '0')}-${String(prevYearLastDay).padStart(2, '0')}`;
-    
     let prevYearCashFlowData: any[] = [];
     
     if (allExternalIds.length > 0) {
@@ -304,7 +380,7 @@ export async function GET(request: NextRequest) {
       const companyCashFlow = cashFlowData?.filter(cf => externalIds.includes(cf.external_company_id)) || [];
       
       const revenue = companyCashFlow.reduce((sum, cf) => sum + (Number(cf.amount) || 0), 0);
-      const transactions = companyCashFlow.length;
+      const transactions = externalIds.reduce((sum, extId) => sum + (salesCountByExtId.get(extId) || 0), 0);
       
       // Calcular MoM (Month over Month) - comparação com mês anterior
       const prevMonthRevenue = externalIds.reduce((sum, extId) => sum + (prevRevenueByExtId.get(extId) || 0), 0);

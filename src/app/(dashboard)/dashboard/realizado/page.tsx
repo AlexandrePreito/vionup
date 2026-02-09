@@ -137,6 +137,48 @@ const COMPANY_COLORS = [
 
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
 
+// Feriados nacionais (podem ser expandidos conforme necessário)
+const FERIADOS: Record<string, string[]> = {
+  '2025': [
+    '2025-01-01', '2025-03-03', '2025-03-04', '2025-04-18', '2025-04-21',
+    '2025-05-01', '2025-06-19', '2025-09-07', '2025-10-12', '2025-11-02',
+    '2025-11-15', '2025-11-20', '2025-12-25',
+  ],
+  '2026': [
+    '2026-01-01', '2026-02-16', '2026-02-17', '2026-04-03', '2026-04-21',
+    '2026-05-01', '2026-06-04', '2026-09-07', '2026-10-12', '2026-11-02',
+    '2026-11-15', '2026-12-25',
+  ],
+  '2027': [
+    '2027-01-01', '2027-02-28', '2027-03-01', '2027-04-16', '2027-04-21',
+    '2027-05-01', '2027-06-19', '2027-09-07', '2027-10-12', '2027-11-02',
+    '2027-11-15', '2027-12-25',
+  ],
+};
+
+// Verificar se uma data é feriado
+function isHoliday(dateStr: string): boolean {
+  const year = dateStr.substring(0, 4);
+  const holidays = FERIADOS[year] || [];
+  return holidays.includes(dateStr);
+}
+
+// Verificar se é sábado
+function isSaturday(dayOfWeek: string): boolean {
+  return dayOfWeek === 'Sáb';
+}
+
+// Verificar se é domingo
+function isSunday(dayOfWeek: string): boolean {
+  return dayOfWeek === 'Dom';
+}
+
+// Formatar data como DD/MM/YYYY
+function formatDateDDMMYYYY(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-');
+  return `${day}/${month}/${year}`;
+}
+
 export default function DashboardRealizadoMensalPage() {
   // Usar hook para grupos
   const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
@@ -960,10 +1002,10 @@ export default function DashboardRealizadoMensalPage() {
                 </div>
                 <button
                   onClick={handleExportToExcel}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
+                  className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                  title="Exportar Excel"
                 >
                   <Download size={18} />
-                  Exportar Excel
                 </button>
               </div>
 
@@ -996,33 +1038,87 @@ export default function DashboardRealizadoMensalPage() {
                       // Calcular total do dia
                       const dayTotal = dayData.companies.reduce((sum, c) => sum + c.revenue, 0);
                       
+                      // Verificar tipo de dia
+                      const isHolidayDay = isHoliday(dayData.date);
+                      const isSaturdayDay = isSaturday(dayData.dayOfWeek);
+                      const isSundayDay = isSunday(dayData.dayOfWeek);
+                      const isSpecialDay = isHolidayDay || isSaturdayDay || isSundayDay;
+                      
+                      // Estilos para destacar feriados, sábados e domingos
+                      const rowBgClass = isHolidayDay 
+                        ? 'bg-red-50 hover:bg-red-100' 
+                        : isSaturdayDay
+                        ? 'bg-blue-50 hover:bg-blue-100'
+                        : isSundayDay
+                        ? 'bg-purple-50 hover:bg-purple-100'
+                        : dayIndex % 2 === 0 
+                        ? 'bg-white hover:bg-gray-50' 
+                        : 'bg-gray-50/50 hover:bg-gray-100';
+                      
+                      const dateTextClass = isHolidayDay
+                        ? 'text-red-700 font-bold'
+                        : isSaturdayDay
+                        ? 'text-blue-700 font-semibold'
+                        : isSundayDay
+                        ? 'text-purple-700 font-semibold'
+                        : 'text-gray-900';
+                      
+                      // Cor de fundo para célula da data (sticky)
+                      const dateCellBgClass = isHolidayDay
+                        ? 'bg-red-50'
+                        : isSaturdayDay
+                        ? 'bg-blue-50'
+                        : isSundayDay
+                        ? 'bg-purple-50'
+                        : 'bg-white';
+                      
+                      // Cor do texto secundário (dia da semana)
+                      const dayOfWeekTextClass = isHolidayDay
+                        ? 'text-red-600'
+                        : isSaturdayDay
+                        ? 'text-blue-600'
+                        : isSundayDay
+                        ? 'text-purple-600'
+                        : 'text-gray-500';
+                      
                       return (
                         <tr
                           key={dayData.date}
-                          className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                            dayIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-                          }`}
+                          className={`border-b border-gray-100 transition-colors ${rowBgClass}`}
                         >
-                          <td className="py-3 px-4 font-medium text-gray-900 bg-white sticky left-0 z-10 border-r border-gray-200">
+                          <td className={`py-3 px-4 font-medium sticky left-0 z-10 border-r border-gray-200 ${dateCellBgClass}`}>
                             <div className="flex flex-col">
-                              <span className="font-semibold">Dia {dayData.day}</span>
-                              <span className="text-xs text-gray-500">{dayData.dayOfWeek}</span>
+                              <span className={`font-semibold ${dateTextClass}`}>
+                                {formatDateDDMMYYYY(dayData.date)}
+                              </span>
+                              <span className={`text-xs ${dayOfWeekTextClass}`}>
+                                {dayData.dayOfWeek}
+                                {isHolidayDay && ' • Feriado'}
+                              </span>
                             </div>
                           </td>
                           {realizadoData.companies.map((company) => {
                             const companyData = dayData.companies.find(c => c.companyId === company.id);
                             const revenue = companyData?.revenue || 0;
                             
+                            const cellTextClass = isHolidayDay
+                              ? 'text-red-700'
+                              : isSaturdayDay
+                              ? 'text-blue-700'
+                              : isSundayDay
+                              ? 'text-purple-700'
+                              : 'text-gray-700';
+                            
                             return (
                               <td
                                 key={company.id}
-                                className="text-right py-3 px-4 text-gray-700 whitespace-nowrap"
+                                className={`text-right py-3 px-4 whitespace-nowrap ${cellTextClass}`}
                               >
                                 {revenue > 0 ? formatCurrency(revenue) : '-'}
                               </td>
                             );
                           })}
-                          <td className="text-right py-3 px-4 font-semibold text-gray-900">
+                          <td className={`text-right py-3 px-4 font-semibold ${isHolidayDay ? 'text-red-700' : isSaturdayDay ? 'text-blue-700' : isSundayDay ? 'text-purple-700' : 'text-gray-900'}`}>
                             {formatCurrency(dayTotal)}
                           </td>
                         </tr>
