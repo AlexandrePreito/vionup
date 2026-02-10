@@ -73,6 +73,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
   const [telefone, setTelefone] = useState('');
   const [npsScore, setNpsScore] = useState<number | null>(null);
   const [respostasPerguntas, setRespostasPerguntas] = useState<Record<string, number>>({});
+  const [respostasTextoPerguntas, setRespostasTextoPerguntas] = useState<Record<string, string>>({});
   const [confirmacoesUso, setConfirmacoesUso] = useState<Record<string, boolean | null>>({});
   const [frequenciaVisita, setFrequenciaVisita] = useState<string | null>(null);
   const [comoConheceuId, setComoConheceuId] = useState<string | null>(null);
@@ -153,63 +154,52 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
     return perguntasParaExibir;
   };
 
-  // Calcular total de steps
-  const getTotalSteps = () => {
-    let steps = 2; // Nome + NPS
+  // Verificar se a pesquisa já tem pergunta de tipo texto (evita step "Comentário" duplicado)
+  const hasPerguntaTexto = () => {
     const perguntasParaExibir = getPerguntasParaExibir();
-    steps += perguntasParaExibir.length; // Cada pergunta (confirmação ou avaliação) é um step
+    return perguntasParaExibir.some((p) => !p.isConfirmacao && p.item.pergunta.tipo_resposta === 'texto');
+  };
+
+  // Calcular total de steps (nome + perguntas + frequência/como conheceu + comentário só se não houver pergunta texto)
+  const getTotalSteps = () => {
+    let steps = 1; // Nome
+    const perguntasParaExibir = getPerguntasParaExibir();
+    steps += perguntasParaExibir.length;
     const ehCliente = linkData?.pesquisa.tipo === 'cliente';
-    if (ehCliente) steps += 2; // Step de frequência + step de como conheceu (separados)
-    steps += 1; // Comentário (sempre)
-    
+    if (ehCliente) steps += 2;
+    if (!hasPerguntaTexto()) steps += 1; // Comentário apenas quando não há pergunta de texto na pesquisa
     return steps;
   };
 
-  // Mapear step atual para step real
+  // Mapear step atual para step real (comentário só aparece se não houver pergunta de texto na pesquisa)
   const getStepContent = () => {
     const perguntasParaExibir = getPerguntasParaExibir();
     const ehCliente = linkData?.pesquisa.tipo === 'cliente';
     
-    // Step 1: Nome (sempre)
     if (step === 1) return 'nome';
     
-    // Step 2: NPS (sempre)
-    if (step === 2) return 'nps';
-    
-    // Steps 3 até 3+perguntas.length: Perguntas (uma por vez)
-    const stepInicioPerguntas = 3;
+    const stepInicioPerguntas = 2;
     const stepFimPerguntas = stepInicioPerguntas + perguntasParaExibir.length - 1;
-    
     if (step >= stepInicioPerguntas && step <= stepFimPerguntas) {
       return 'perguntas';
     }
     
-    // Steps após perguntas: Extras (se cliente) - separados em dois steps
     const stepFrequencia = stepFimPerguntas + 1;
     const stepComoConheceu = stepFimPerguntas + 2;
+    if (ehCliente && step === stepFrequencia) return 'frequencia';
+    if (ehCliente && step === stepComoConheceu) return 'como_conheceu';
     
-    if (ehCliente && step === stepFrequencia) {
-      return 'frequencia';
-    }
-    
-    if (ehCliente && step === stepComoConheceu) {
-      return 'como_conheceu';
-    }
-    
-    // Último step: Comentário
     return 'comentario';
   };
 
-  // Obter a pergunta atual (para exibir uma por vez)
+  // Obter a pergunta atual (para exibir uma por vez, na ordem da pesquisa)
   const getPerguntaAtual = () => {
     const perguntasParaExibir = getPerguntasParaExibir();
-    const stepInicioPerguntas = 3;
+    const stepInicioPerguntas = 2;
     const indexPergunta = step - stepInicioPerguntas;
-    
     if (indexPergunta >= 0 && indexPergunta < perguntasParaExibir.length) {
       return perguntasParaExibir[indexPergunta];
     }
-    
     return null;
   };
 
@@ -218,28 +208,28 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
     const content = getStepContent();
     
     switch (content) {
-      case 'nome':
+      case 'nome': {
         const telefoneLimpo = telefone.replace(/\D/g, '');
         return nome.trim().length >= 2 && telefoneLimpo.length >= 10;
-      case 'nps':
-        return npsScore !== null;
-      case 'perguntas':
+      }
+      case 'perguntas': {
         const perguntaAtual = getPerguntaAtual();
         if (!perguntaAtual) return false;
-        
-        // Se é confirmação de uso, verificar se foi respondida
         if (perguntaAtual.isConfirmacao) {
           const confirmacao = confirmacoesUso[perguntaAtual.item.pergunta.id];
           return confirmacao !== null && confirmacao !== undefined;
         }
-        
-        // Se é avaliação, verificar se foi respondida (se obrigatória)
         if (perguntaAtual.item.obrigatoria) {
-          return respostasPerguntas[perguntaAtual.item.pergunta.id] !== undefined;
+          const p = perguntaAtual.item.pergunta;
+          if (p.tipo_resposta === 'estrelas') {
+            return respostasPerguntas[p.id] !== undefined;
+          }
+          if (p.tipo_resposta === 'texto') {
+            return (respostasTextoPerguntas[p.id]?.trim()?.length ?? 0) >= 5;
+          }
         }
-        
-        // Se não é obrigatória, pode prosseguir
         return true;
+      }
       case 'frequencia':
         return frequenciaVisita !== null;
       case 'como_conheceu':
@@ -257,18 +247,43 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
     setSubmitting(true);
     setError(null);
 
+    const perguntasParaExibir = getPerguntasParaExibir();
+    const perguntaNPS = perguntasParaExibir.find(
+      (p) => !p.isConfirmacao && p.item.pergunta.tipo_resposta === 'estrelas' &&
+        (p.item.pergunta.texto?.toLowerCase().includes('recomendaria') || p.item.pergunta.categoria?.toLowerCase().includes('nps'))
+    ) || perguntasParaExibir.find((p) => !p.isConfirmacao && p.item.pergunta.tipo_resposta === 'estrelas');
+    const npsScoreToSend = perguntaNPS ? (respostasPerguntas[perguntaNPS.item.pergunta.id] ?? null) : null;
+
+    const respostasPerguntasPayload = new Map<string, { nota?: number; texto_resposta?: string }>();
+    perguntasParaExibir.forEach(({ item, isConfirmacao }) => {
+      if (isConfirmacao) return;
+      const id = item.pergunta.id;
+      const nota = respostasPerguntas[id];
+      const texto = respostasTextoPerguntas[id]?.trim();
+      if (item.pergunta.tipo_resposta === 'estrelas' && nota !== undefined) {
+        respostasPerguntasPayload.set(id, { nota });
+      } else if (item.pergunta.tipo_resposta === 'texto' && texto) {
+        respostasPerguntasPayload.set(id, { texto_resposta: texto });
+      }
+    });
+
+    const comentarioParaEnvio = hasPerguntaTexto()
+      ? Object.values(respostasTextoPerguntas).filter((t) => t?.trim()).join('\n').trim() || comentario.trim()
+      : comentario.trim();
+
     try {
       const payload = {
         link_hash: hash,
         nome_respondente: nome.trim(),
         telefone_respondente: telefone.replace(/\D/g, ''),
-        nps_score: npsScore,
+        nps_score: npsScoreToSend,
         frequencia_visita: frequenciaVisita,
         como_conheceu_id: comoConheceuId,
-        comentario: comentario.trim(),
-        respostas_perguntas: Object.entries(respostasPerguntas).map(([perguntaId, nota]) => ({
+        comentario: comentarioParaEnvio,
+        respostas_perguntas: Array.from(respostasPerguntasPayload.entries()).map(([perguntaId, v]) => ({
           pergunta_id: perguntaId,
-          nota
+          ...(v.nota !== undefined && { nota: v.nota }),
+          ...(v.texto_resposta !== undefined && { texto_resposta: v.texto_resposta })
         })),
         confirmacoes_uso: Object.entries(confirmacoesUso).map(([perguntaId, confirmou]) => ({
           pergunta_id: perguntaId,
@@ -390,15 +405,59 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
 
   // ========== SUCESSO ==========
   if (success) {
+    const perguntasParaResumo = getPerguntasParaExibir().filter((p) => !p.isConfirmacao);
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle2 size={48} className="text-green-600" />
+      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4 py-8">
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-2xl w-full">
+          <div className="text-center mb-6">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 size={48} className="text-green-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Obrigado, {nome}!</h1>
+            <p className="text-gray-600 mb-2">Sua resposta foi registrada com sucesso. Agradecemos pela sua participação!</p>
+            {linkData?.company?.name && (
+              <p className="text-lg font-medium text-green-600">{linkData.company.name}</p>
+            )}
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Obrigado, {nome}!</h1>
-          <p className="text-gray-600 mb-4">Sua avaliação foi enviada com sucesso.</p>
-          <p className="text-lg font-medium text-green-600">{linkData?.company?.name}</p>
+          <div className="border-t border-gray-200 pt-6 mt-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Resumo das suas respostas:</h2>
+            <ul className="space-y-4 text-left">
+              {perguntasParaResumo.map(({ item }, index) => {
+                const p = item.pergunta;
+                const nota = respostasPerguntas[p.id];
+                const texto = respostasTextoPerguntas[p.id]?.trim();
+                const confirmou = item.pergunta.requer_confirmacao_uso ? confirmacoesUso[p.id] : true;
+                if (item.pergunta.requer_confirmacao_uso && confirmou === false) {
+                  return (
+                    <li key={p.id} className="flex flex-col gap-1">
+                      <span className="font-medium text-gray-700">
+                        {index + 1}. {p.categoria || 'Pergunta'}
+                      </span>
+                      <p className="text-sm text-gray-600">{p.texto}</p>
+                      <p className="text-sm text-gray-500 italic">Não utilizou</p>
+                    </li>
+                  );
+                }
+                return (
+                  <li key={p.id} className="flex flex-col gap-1">
+                    <span className="font-medium text-gray-700">
+                      {index + 1}. {p.categoria || 'Pergunta'}
+                    </span>
+                    <p className="text-sm text-gray-600">{p.texto}</p>
+                    {p.tipo_resposta === 'estrelas' && nota !== undefined ? (
+                      <p className="text-lg text-yellow-500" title={`${nota} de 5`}>
+                        {'★'.repeat(nota)}{'☆'.repeat(5 - nota)}
+                      </p>
+                    ) : texto ? (
+                      <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded border border-gray-200">
+                        {texto.length > 200 ? `${texto.slice(0, 200)}...` : texto}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </div>
       </div>
     );
@@ -471,80 +530,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
             </div>
           )}
 
-          {/* ===== STEP: NPS ===== */}
-          {currentContent === 'nps' && (
-            <div className="p-6 sm:p-8">
-              {/* Nome da empresa e atendente dentro do card */}
-              {linkData?.company && (
-                <div className="text-center mb-4">
-                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
-                    {linkData.company.name}
-                  </p>
-                  {linkData?.employee && (
-                    <p className="text-base sm:text-lg font-bold text-gray-700 mt-1">
-                      {linkData.employee.name}
-                    </p>
-                  )}
-                </div>
-              )}
-              {/* Progress - Dentro do card */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm sm:text-base text-gray-600 font-medium">Pergunta {step} de {totalSteps}</span>
-                  <span className="text-sm sm:text-base font-semibold text-gray-600">{Math.round((step / totalSteps) * 100)}%</span>
-                </div>
-                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-orange-500 to-pink-500 rounded-full transition-all duration-500"
-                    style={{ width: `${(step / totalSteps) * 100}%` }}
-                  />
-                </div>
-              </div>
-              <div className="text-center mb-8">
-                {/* Buscar pergunta NPS do banco ou usar padrão */}
-                {(() => {
-                  const perguntasParaExibir = getPerguntasParaExibir();
-                  // Procurar por uma pergunta NPS específica (primeira pergunta de estrelas ou primeira pergunta em geral)
-                  const perguntaNPS = perguntasParaExibir.find(p => 
-                    p.item.pergunta.tipo_resposta === 'estrelas' && 
-                    (p.item.pergunta.categoria?.toLowerCase().includes('nps') || 
-                     p.item.pergunta.texto?.toLowerCase().includes('experiência') ||
-                     p.item.pergunta.texto?.toLowerCase().includes('experiencia') ||
-                     p.item.pergunta.texto?.toLowerCase().includes('recomendaria'))
-                  ) || perguntasParaExibir.find(p => p.item.pergunta.tipo_resposta === 'estrelas') || perguntasParaExibir[0];
-                  
-                  const textoPergunta = perguntaNPS?.item.pergunta.texto || 'Como foi sua experiência?';
-                  
-                  return (
-                    <>
-                      <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">{textoPergunta}</h2>
-                      <p className="text-base sm:text-lg text-gray-600">De 1 a 5, o quanto você recomendaria?</p>
-                    </>
-                  );
-                })()}
-              </div>
-              
-              <div className="flex justify-center mb-6">
-                <StarRating value={npsScore} onChange={setNpsScore} size={48} />
-              </div>
-              
-              {npsScore !== null && (
-                <div className="mt-6 text-center">
-                  <span className={`inline-block px-4 py-2 rounded-full text-sm font-medium ${
-                    npsScore >= 4 
-                      ? 'bg-green-100 text-green-700' 
-                      : npsScore === 3 
-                        ? 'bg-yellow-100 text-yellow-700' 
-                        : 'bg-red-100 text-red-700'
-                  }`}>
-                    {npsScore >= 4 ? '😊 Que bom que gostou!' : npsScore === 3 ? '😐 Podemos melhorar!' : '😔 Sentimos muito!'}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ===== STEP: PERGUNTAS ===== */}
+          {/* ===== STEP: PERGUNTAS (ordem da pesquisa: primeira pergunta após nome = primeira da lista) ===== */}
           {currentContent === 'perguntas' && (() => {
             const perguntaAtual = getPerguntaAtual();
             if (!perguntaAtual) return null;
@@ -674,26 +660,39 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
                     </h2>
                   )}
                 </div>
-                {/* Estrelas */}
-                <div className="flex justify-center mb-6">
-                  <StarRating
-                    value={respostasPerguntas[item.pergunta.id] || null}
-                    onChange={(v) => setRespostasPerguntas(prev => ({ ...prev, [item.pergunta.id]: v }))}
-                    size={40}
-                  />
-                </div>
-                {/* Feedback quando selecionar estrelas */}
-                {respostasPerguntas[item.pergunta.id] !== undefined && (
-                  <div className="text-center">
-                    <span className={`inline-block px-4 py-2 rounded-full text-sm font-medium ${
-                      respostasPerguntas[item.pergunta.id] >= 4 
-                        ? 'bg-green-100 text-green-700' 
-                        : respostasPerguntas[item.pergunta.id] === 3 
-                          ? 'bg-yellow-100 text-yellow-700' 
-                          : 'bg-red-100 text-red-700'
-                    }`}>
-                      {respostasPerguntas[item.pergunta.id] >= 4 ? '😊 Que bom que gostou!' : respostasPerguntas[item.pergunta.id] === 3 ? '😐 Podemos melhorar!' : '😔 Sentimos muito!'}
-                    </span>
+                {/* Resposta: estrelas ou texto conforme tipo_resposta */}
+                {item.pergunta.tipo_resposta === 'estrelas' ? (
+                  <>
+                    <div className="flex justify-center mb-6">
+                      <StarRating
+                        value={respostasPerguntas[item.pergunta.id] || null}
+                        onChange={(v) => setRespostasPerguntas(prev => ({ ...prev, [item.pergunta.id]: v }))}
+                        size={40}
+                      />
+                    </div>
+                    {respostasPerguntas[item.pergunta.id] !== undefined && (
+                      <div className="text-center">
+                        <span className={`inline-block px-4 py-2 rounded-full text-sm font-medium ${
+                          respostasPerguntas[item.pergunta.id] >= 4 
+                            ? 'bg-green-100 text-green-700' 
+                            : respostasPerguntas[item.pergunta.id] === 3 
+                              ? 'bg-yellow-100 text-yellow-700' 
+                              : 'bg-red-100 text-red-700'
+                        }`}>
+                          {respostasPerguntas[item.pergunta.id] >= 4 ? '😊 Que bom que gostou!' : respostasPerguntas[item.pergunta.id] === 3 ? '😐 Podemos melhorar!' : '😔 Sentimos muito!'}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-left">
+                    <textarea
+                      value={respostasTextoPerguntas[item.pergunta.id] ?? ''}
+                      onChange={(e) => setRespostasTextoPerguntas(prev => ({ ...prev, [item.pergunta.id]: e.target.value }))}
+                      placeholder="Compartilhe sua opinião..."
+                      rows={5}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none text-base bg-gray-50"
+                    />
                   </div>
                 )}
               </div>

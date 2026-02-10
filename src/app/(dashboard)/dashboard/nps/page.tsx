@@ -22,8 +22,6 @@ import {
   ChevronUp,
   Search
 } from 'lucide-react';
-import { useGroupFilter } from '@/hooks/useGroupFilter';
-
 interface Unidade {
   id: string;
   id_empresa_goomer: string;
@@ -234,7 +232,6 @@ function ScoreCard({
 }
 
 export default function NPSDashboardPage() {
-  const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [unidades, setUnidades] = useState<Unidade[]>([]);
   const [selectedUnidade, setSelectedUnidade] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -245,19 +242,12 @@ export default function NPSDashboardPage() {
   const [showAllComments, setShowAllComments] = useState(false);
   const [commentFilter, setCommentFilter] = useState<'all' | 'promotor' | 'neutro' | 'detrator'>('all');
 
-  // Buscar unidades
+  // Buscar empresas direto das tabelas goomer (goomer_unidades)
   useEffect(() => {
-    if (!selectedGroupId) {
-      setUnidades([]);
-      setSelectedUnidade('');
-      setLoadingUnidades(false);
-      return;
-    }
-
     const fetchUnidades = async () => {
       try {
         setLoadingUnidades(true);
-        const res = await fetch(`/api/goomer/unidades?group_id=${selectedGroupId}`);
+        const res = await fetch('/api/goomer/unidades');
         if (res.ok) {
           const result = await res.json();
           setUnidades(result.unidades || []);
@@ -268,13 +258,13 @@ export default function NPSDashboardPage() {
           }
         }
       } catch (error) {
-        console.error('Erro ao buscar unidades:', error);
+        console.error('Erro ao buscar empresas:', error);
       } finally {
         setLoadingUnidades(false);
       }
     };
     fetchUnidades();
-  }, [selectedGroupId]);
+  }, []);
 
   // Buscar dados do dashboard
   useEffect(() => {
@@ -316,42 +306,20 @@ export default function NPSDashboardPage() {
 
       {/* Filtros */}
       <div className="flex flex-wrap items-end gap-4">
-        {/* Grupo */}
-        <div className="w-48">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
-          {isGroupReadOnly ? (
-            <input
-              type="text"
-              value={groupName}
-              disabled
-              className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
-            />
-          ) : (
-            <select
-              value={selectedGroupId}
-              onChange={(e) => setSelectedGroupId(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Selecione...</option>
-              {groups.map((group: any) => (
-                <option key={group.id} value={group.id}>{group.name}</option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        {/* Unidade */}
+        {/* Empresa */}
         <div className="w-56">
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Unidade <span className="text-red-500">*</span>
+            Empresa <span className="text-red-500">*</span>
           </label>
           <select
             value={selectedUnidade}
             onChange={(e) => setSelectedUnidade(e.target.value)}
-            disabled={loadingUnidades || !selectedGroupId}
-            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+            disabled={loadingUnidades}
+            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed cursor-pointer"
           >
-            <option value="">Selecione uma unidade...</option>
+            <option value="">
+              {loadingUnidades ? 'Carregando...' : unidades.length === 0 ? 'Nenhuma empresa encontrada' : 'Selecione uma empresa...'}
+            </option>
             {unidades.map((unidade) => (
               <option key={unidade.id} value={unidade.id}>
                 {unidade.nome_goomer.replace(/_/g, ' ')}
@@ -389,21 +357,16 @@ export default function NPSDashboardPage() {
         </div>
       </div>
 
-      {/* Mensagem se não selecionou grupo */}
-      {!selectedGroupId && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-8 text-center">
-          <Building2 size={48} className="mx-auto text-indigo-400 mb-4" />
-          <h3 className="text-lg font-medium text-indigo-900">Selecione um grupo</h3>
-          <p className="text-indigo-600 mt-1">Escolha um grupo para visualizar o dashboard de NPS</p>
-        </div>
-      )}
-
-      {/* Mensagem se não selecionou unidade */}
-      {selectedGroupId && !selectedUnidade && !loadingUnidades && (
+      {/* Mensagem se não selecionou empresa */}
+      {!selectedUnidade && !loadingUnidades && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-8 text-center">
           <Building2 size={48} className="mx-auto text-blue-400 mb-4" />
-          <h3 className="text-lg font-medium text-blue-900">Selecione uma unidade</h3>
-          <p className="text-blue-600 mt-1">Escolha uma unidade para visualizar o dashboard de NPS</p>
+          <h3 className="text-lg font-medium text-blue-900">Selecione uma empresa</h3>
+          <p className="text-blue-600 mt-1">
+            {unidades.length === 0
+              ? 'Nenhuma empresa encontrada nas tabelas Goomer. Verifique se há dados em goomer_unidades.'
+              : 'Escolha uma empresa para visualizar o dashboard de NPS'}
+          </p>
         </div>
       )}
 
@@ -859,7 +822,7 @@ export default function NPSDashboardPage() {
           <Calendar size={48} className="mx-auto text-gray-300 mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">Sem dados para este período</h3>
           <p className="text-gray-500">
-            Não há dados de NPS importados para esta unidade neste mês.
+            Não há dados de NPS importados para esta empresa neste mês.
           </p>
         </div>
       )}

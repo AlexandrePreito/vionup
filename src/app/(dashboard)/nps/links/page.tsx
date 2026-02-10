@@ -317,6 +317,29 @@ export default function LinksNPSPage() {
     return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${url}`;
   };
 
+  // Baixar QR code via API interna (evita CORS)
+  const handleDownloadQRCode = async (link: NPSLink) => {
+    const nomeArquivo = link.tipo === 'unidade'
+      ? `qrcode-${link.company?.name || link.hash_link}.png`.replace(/[^a-zA-Z0-9.-]/g, '_')
+      : `qrcode-${link.employee?.name || link.hash_link}.png`.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const npsUrl = `${baseUrl}/nps/${link.hash_link}`;
+    const url = `/api/nps/links/qrcode?url=${encodeURIComponent(npsUrl)}&filename=${encodeURIComponent(nomeArquivo)}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Falha ao gerar QR code');
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = nomeArquivo;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error('Erro ao baixar QR code:', err);
+      window.open(getQRCodeUrl(link.hash_link), '_blank');
+    }
+  };
+
   // Filtrar links
   const filteredLinks = links.filter(l => {
     // Filtro por empresa
@@ -585,14 +608,14 @@ export default function LinksNPSPage() {
                         >
                           <ExternalLink size={16} />
                         </a>
-                        <a
-                          href={getQRCodeUrl(link.hash_link)}
-                          download={`qrcode-${link.hash_link}.png`}
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadQRCode(link)}
                           className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
                           title="Baixar QR Code"
                         >
                           <Download size={16} />
-                        </a>
+                        </button>
                         <button
                           onClick={() => handleToggleAtivo(link)}
                           className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"

@@ -7,32 +7,74 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const groupId = searchParams.get('group_id');
 
-    // Obter usuário logado
+    // Obter usuário logado (obrigatório só quando usa group_id)
     const user = await getAuthenticatedUser(request);
-    
-    console.log('API /goomer/unidades - Usuário identificado:', user ? { id: user.id, role: user.role, company_group_id: user.company_group_id } : 'null');
     console.log('API /goomer/unidades - group_id na query:', groupId);
 
-    if (!user) {
-      console.warn('API /goomer/unidades - Nenhum usuário identificado, retornando vazio');
-      return NextResponse.json({ unidades: [] });
+    // Sem group_id: listar empresas das tabelas goomer (tela NPS) — não exige usuário para não bloquear o dropdown
+    if (!groupId || groupId === '') {
+      const { data: todasUnidades, error: errUnidades } = await supabaseAdmin
+        .from('goomer_unidades')
+        .select('*')
+        .order('nome_goomer');
+      if (errUnidades) {
+        console.error('API /goomer/unidades - Erro ao buscar goomer_unidades:', errUnidades);
+        throw errUnidades;
+      }
+      if (todasUnidades && todasUnidades.length > 0) {
+        return NextResponse.json({ unidades: todasUnidades });
+      }
+      // Fallback: goomer_unidades vazia — buscar unidade_id distintos de goomer_nps_mensal e montar lista
+      const { data: npsRows, error: errNps } = await supabaseAdmin
+        .from('goomer_nps_mensal')
+        .select('unidade_id');
+      if (errNps || !npsRows?.length) {
+        return NextResponse.json({ unidades: [] });
+      }
+      const idsUnicos = [...new Set((npsRows as { unidade_id: string }[]).map((r) => r.unidade_id).filter(Boolean))];
+      const { data: unidadesPorId } = await supabaseAdmin
+        .from('goomer_unidades')
+        .select('id, id_empresa_goomer, nome_goomer')
+        .in('id', idsUnicos);
+      const mapUnidades = new Map((unidadesPorId || []).map((u: any) => [u.id, u]));
+      const unidadesFallback = idsUnicos.map((id) => {
+        const u = mapUnidades.get(id);
+        return u || { id, id_empresa_goomer: id, nome_goomer: `Empresa ${id}` };
+      });
+      return NextResponse.json({ unidades: unidadesFallback });
     }
 
-    // Determinar o grupo efetivo (master pode escolher, outros usam o do usuário)
+    // Com group_id: exige usuário e usa cadeia companies / mapeamentos
+    if (!user) {
+      console.warn('API /goomer/unidades - Nenhum usuário identificado (group_id informado), retornando vazio');
+      return NextResponse.json({ unidades: [] });
+    }
     let effectiveGroupId = groupId;
     if (user.role !== 'master') {
       effectiveGroupId = user.company_group_id;
-      if (groupId && groupId !== user.company_group_id) {
+      if (groupId !== user.company_group_id) {
         console.warn('API /goomer/unidades - SEGURANÇA: group_id da query ignorado para usuário não-master');
       }
     }
 
     if (!effectiveGroupId) {
-      console.warn('API /goomer/unidades - Nenhum group_id disponível, retornando vazio');
       return NextResponse.json({ unidades: [] });
     }
 
-    // Buscar empresas do grupo
+    // Helper: buscar unidades Goomer a partir de códigos externos
+    const fetchUnidadesByExternalCodes = async (externalCodes: Set<string>) => {
+      if (externalCodes.size === 0) return [];
+      const { data: unidades, error } = await supabaseAdmin
+        .from('goomer_unidades')
+        .select('*')
+        .in('id_empresa_goomer', Array.from(externalCodes))
+        .order('nome_goomer');
+      if (error) throw error;
+      return (unidades || []).filter((u: any) => externalCodes.has(String(u.id_empresa_goomer)));
+    };
+
+    // 1) Tentar via companies + company_mappings
+    let externalCodes = new Set<string>();
     const { data: companies, error: companiesError } = await supabaseAdmin
       .from('companies')
       .select('id')
@@ -44,102 +86,52 @@ export async function GET(request: NextRequest) {
       throw companiesError;
     }
 
-    if (!companies || companies.length === 0) {
-      console.log('API /goomer/unidades - Nenhuma empresa encontrada para o grupo:', effectiveGroupId);
-      return NextResponse.json({ unidades: [] });
-    }
+    if (companies && companies.length > 0) {
+      const companyIds = companies.map((c: any) => c.id);
+      const { data: mappings, error: mappingsError } = await supabaseAdmin
+        .from('company_mappings')
+        .select('external_company_id, company_id')
+        .eq('company_group_id', effectiveGroupId)
+        .in('company_id', companyIds);
 
-    const companyIds = companies.map((c: any) => c.id);
+      if (!mappingsError && mappings && mappings.length > 0) {
+        const externalCompanyIds = [...new Set(mappings.map((m: any) => m.external_company_id))];
+        const { data: externalCompanies, error: extError } = await supabaseAdmin
+          .from('external_companies')
+          .select('id, external_id, external_code, company_group_id')
+          .in('id', externalCompanyIds)
+          .eq('company_group_id', effectiveGroupId);
 
-    // Buscar mapeamentos de empresas do grupo
-    const { data: mappings, error: mappingsError } = await supabaseAdmin
-      .from('company_mappings')
-      .select('external_company_id, company_id')
-      .eq('company_group_id', effectiveGroupId)
-      .in('company_id', companyIds);
-
-    if (mappingsError) {
-      console.error('API /goomer/unidades - Erro ao buscar mapeamentos:', mappingsError);
-      throw mappingsError;
-    }
-
-    // Se não houver mapeamentos, retornar vazio
-    if (!mappings || mappings.length === 0) {
-      console.log('API /goomer/unidades - Nenhum mapeamento encontrado para o grupo:', effectiveGroupId);
-      return NextResponse.json({ unidades: [] });
-    }
-
-    // Buscar empresas externas dos mapeamentos
-    const externalCompanyIds = [...new Set(mappings.map((m: any) => m.external_company_id))];
-    console.log('API /goomer/unidades - External company IDs dos mapeamentos:', externalCompanyIds.length);
-    
-    const { data: externalCompanies, error: extError } = await supabaseAdmin
-      .from('external_companies')
-      .select('id, external_id, external_code, company_group_id')
-      .in('id', externalCompanyIds)
-      .eq('company_group_id', effectiveGroupId);
-
-    if (extError) {
-      console.error('API /goomer/unidades - Erro ao buscar empresas externas:', extError);
-      throw extError;
-    }
-
-    console.log('API /goomer/unidades - Empresas externas encontradas:', externalCompanies?.length || 0);
-
-    // Extrair códigos externos (external_id ou external_code)
-    const externalCodes = new Set<string>();
-    externalCompanies?.forEach((ec: any) => {
-      if (ec.external_id) {
-        externalCodes.add(String(ec.external_id));
-        console.log('API /goomer/unidades - Adicionado external_id:', ec.external_id);
+        if (!extError && externalCompanies?.length) {
+          externalCompanies.forEach((ec: any) => {
+            if (ec.external_id) externalCodes.add(String(ec.external_id));
+            if (ec.external_code) externalCodes.add(String(ec.external_code));
+          });
+        }
       }
-      if (ec.external_code) {
-        externalCodes.add(String(ec.external_code));
-        console.log('API /goomer/unidades - Adicionado external_code:', ec.external_code);
+    }
+
+    let filteredUnidades = await fetchUnidadesByExternalCodes(externalCodes);
+
+    // 2) Fallback: se não encontrou nada, buscar direto por external_companies do grupo
+    if (filteredUnidades.length === 0) {
+      console.log('API /goomer/unidades - Fallback: buscando external_companies direto pelo grupo');
+      const { data: externalByGroup, error: extErr } = await supabaseAdmin
+        .from('external_companies')
+        .select('external_id, external_code')
+        .eq('company_group_id', effectiveGroupId);
+
+      if (!extErr && externalByGroup?.length) {
+        const fallbackCodes = new Set<string>();
+        externalByGroup.forEach((ec: any) => {
+          if (ec.external_id) fallbackCodes.add(String(ec.external_id));
+          if (ec.external_code) fallbackCodes.add(String(ec.external_code));
+        });
+        filteredUnidades = await fetchUnidadesByExternalCodes(fallbackCodes);
+        if (filteredUnidades.length > 0) {
+          console.log('API /goomer/unidades - Fallback retornou', filteredUnidades.length, 'unidades');
+        }
       }
-    });
-
-    if (externalCodes.size === 0) {
-      console.log('API /goomer/unidades - Nenhum código externo encontrado para o grupo:', effectiveGroupId);
-      return NextResponse.json({ unidades: [] });
-    }
-
-    console.log('API /goomer/unidades - Códigos externos para buscar:', Array.from(externalCodes));
-
-    // Buscar unidades do Goomer que correspondem aos códigos externos
-    // goomer_unidades tem id_empresa_goomer que pode corresponder ao external_id ou external_code
-    const { data: unidades, error: unidadesError } = await supabaseAdmin
-      .from('goomer_unidades')
-      .select('*')
-      .in('id_empresa_goomer', Array.from(externalCodes))
-      .order('nome_goomer');
-
-    if (unidadesError) {
-      console.error('API /goomer/unidades - Erro ao buscar unidades:', unidadesError);
-      throw unidadesError;
-    }
-
-    console.log('API /goomer/unidades - Unidades encontradas no Goomer:', unidades?.length || 0);
-    if (unidades && unidades.length > 0) {
-      console.log('API /goomer/unidades - Primeiras unidades:', unidades.slice(0, 3).map((u: any) => ({ 
-        id: u.id, 
-        nome: u.nome_goomer, 
-        id_empresa_goomer: u.id_empresa_goomer 
-      })));
-    }
-
-    // Filtro de segurança adicional: garantir que apenas unidades mapeadas sejam retornadas
-    const filteredUnidades = unidades?.filter((u: any) => {
-      const matches = externalCodes.has(String(u.id_empresa_goomer));
-      if (!matches) {
-        console.log('API /goomer/unidades - Unidade filtrada:', u.nome_goomer, 'id_empresa_goomer:', u.id_empresa_goomer);
-      }
-      return matches;
-    }) || [];
-
-    if (filteredUnidades.length !== unidades?.length) {
-      console.warn('API /goomer/unidades - ATENÇÃO: Algumas unidades foram filtradas por não terem mapeamento válido!');
-      console.warn('API /goomer/unidades - Total encontrado:', unidades?.length, 'Total filtrado:', filteredUnidades.length);
     }
 
     console.log('API /goomer/unidades - Unidades finais retornadas:', filteredUnidades.length, 'para o grupo:', effectiveGroupId);

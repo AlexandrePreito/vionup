@@ -224,7 +224,7 @@ const dashboardItems: (SidebarItem | SidebarGroup)[] = [
     title: 'NPS',
     items: [
       {
-        href: '/nps',
+        href: '/dashboard/nps_interno',
         icon: <Star size={20} />,
         tooltip: 'NPS (Interno)'
       },
