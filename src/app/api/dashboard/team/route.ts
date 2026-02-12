@@ -181,7 +181,7 @@ export async function GET(request: NextRequest) {
     // Agrupar metas de produtos por funcionário
     const productGoalsByEmployee: Record<string, { total: number; achieved: number }> = {};
     
-    // Buscar vendas por produto: view primeiro; fallback em external_sales se vazio
+    // Buscar vendas por produto usando MESMA lógica do dashboard funcionário (mv_employee_product_sales)
     let productSalesByCode: Record<string, Record<string, number>> = {};
     
     console.log('\n========== BUSCANDO VENDAS POR PRODUTO (EQUIPE) ==========');
@@ -189,6 +189,7 @@ export async function GET(request: NextRequest) {
     console.log(`Códigos:`, allCodes);
     
     if (allCodes.length > 0) {
+      // Buscar da materialized view (mesmo que employee dashboard)
       const { data: productSales } = await supabaseAdmin
         .from('mv_employee_product_sales')
         .select('external_employee_id, external_product_id, total_quantity')
@@ -211,52 +212,42 @@ export async function GET(request: NextRequest) {
           if (!productSalesByCode[empKey]) productSalesByCode[empKey] = {};
           productSalesByCode[empKey][prodKey] = (productSalesByCode[empKey][prodKey] || 0) + (ps.total_quantity || 0);
         }
-      }
+      } else {
+        // Fallback SOMENTE se a view não retornou nada (view pode estar desatualizada)
+        console.log('⚠️ View vazia, buscando fallback de external_sales...');
+        let prodPage = 0;
+        let prodHasMore = true;
+        while (prodHasMore) {
+          const pFrom = prodPage * pageSize;
+          const pTo = pFrom + pageSize - 1;
+          const { data: productRows } = await supabaseAdmin
+            .from('external_sales')
+            .select('external_employee_id, external_product_id, quantity')
+            .eq('company_group_id', companyGroupId)
+            .in('external_employee_id', allCodes)
+            .gte('sale_date', startDate)
+            .lte('sale_date', endDate)
+            .order('sale_date', { ascending: true })
+            .range(pFrom, pTo);
 
-      // Fallback produtos: buscar de external_sales com paginação
-      const fallbackProducts: Record<string, Record<string, number>> = {};
-      let prodPage = 0;
-      let prodHasMore = true;
-      while (prodHasMore) {
-        const pFrom = prodPage * pageSize;
-        const pTo = pFrom + pageSize - 1;
-        const { data: productRows } = await supabaseAdmin
-          .from('external_sales')
-          .select('external_employee_id, external_product_id, quantity')
-          .eq('company_group_id', companyGroupId)
-          .in('external_employee_id', allCodes)
-          .gte('sale_date', startDate)
-          .lte('sale_date', endDate)
-          .order('sale_date', { ascending: true })
-          .range(pFrom, pTo);
-
-        if (productRows && productRows.length > 0) {
-          for (const row of productRows) {
-            const empKey = String(row.external_employee_id ?? '').trim();
-            const prodKey = String(row.external_product_id ?? '').trim();
-            if (!fallbackProducts[empKey]) fallbackProducts[empKey] = {};
-            fallbackProducts[empKey][prodKey] = (fallbackProducts[empKey][prodKey] || 0) + (Number(row.quantity) || 0);
+          if (productRows && productRows.length > 0) {
+            for (const row of productRows) {
+              const empKey = String(row.external_employee_id ?? '').trim();
+              const prodKey = String(row.external_product_id ?? '').trim();
+              if (!productSalesByCode[empKey]) productSalesByCode[empKey] = {};
+              productSalesByCode[empKey][prodKey] = (productSalesByCode[empKey][prodKey] || 0) + (Number(row.quantity) || 0);
+            }
           }
-        }
-        prodHasMore = productRows && productRows.length === pageSize;
-        prodPage++;
-        if (prodPage > 100) prodHasMore = false;
-      }
-      for (const empKey of Object.keys(fallbackProducts)) {
-        if (!productSalesByCode[empKey]) productSalesByCode[empKey] = {};
-        for (const prodKey of Object.keys(fallbackProducts[empKey])) {
-          const current = productSalesByCode[empKey][prodKey];
-          if (current == null || current === 0) {
-            productSalesByCode[empKey][prodKey] = fallbackProducts[empKey][prodKey];
-          }
+          prodHasMore = productRows && productRows.length === pageSize;
+          prodPage++;
+          if (prodPage > 100) prodHasMore = false;
         }
       }
     }
 
-    // Buscar mapeamentos de produtos (code + uuid por produto, igual dashboard funcionário)
+    // Buscar mapeamentos de produtos
     const productIds = [...new Set((productGoals || []).map((g: any) => g.product_id).filter(Boolean))];
     let productIdToExternalCodes: Record<string, string[]> = {};
-    const productIdToExternalPairs: Record<string, { code: string; uuid: string }[]> = {};
 
     if (productIds.length > 0) {
       const { data: productMappings } = await supabaseAdmin
@@ -281,22 +272,17 @@ export async function GET(request: NextRequest) {
 
         for (const pm of productMappings) {
           const code = productUuidToCode[pm.external_product_id];
-          const uuid = String(pm.external_product_id ?? '').trim();
           if (code) {
             if (!productIdToExternalCodes[pm.product_id]) {
               productIdToExternalCodes[pm.product_id] = [];
             }
             productIdToExternalCodes[pm.product_id].push(code);
           }
-          if (!productIdToExternalPairs[pm.product_id]) {
-            productIdToExternalPairs[pm.product_id] = [];
-          }
-          productIdToExternalPairs[pm.product_id].push({ code: code || '', uuid });
         }
       }
     }
 
-    // Calcular metas de produtos atingidas por funcionário (lookup por code ou uuid; max por produto para não duplicar)
+    // Calcular metas de produtos atingidas por funcionário (mesma lógica do employee dashboard)
     for (const goal of productGoals || []) {
       if (!productGoalsByEmployee[goal.employee_id]) {
         productGoalsByEmployee[goal.employee_id] = { total: 0, achieved: 0 };
@@ -304,19 +290,18 @@ export async function GET(request: NextRequest) {
       productGoalsByEmployee[goal.employee_id].total++;
 
       const codes = employeeCodes[goal.employee_id] || [];
-      const pairs = productIdToExternalPairs[goal.product_id] || [];
+      const externalCodes = productIdToExternalCodes[goal.product_id] || [];
+
       let realized = 0;
-      // Somar por código do funcionário; por produto usar o máximo entre os pares (code/uuid) para não duplicar
+
       for (const empCode of codes) {
         const empProductSales = productSalesByCode[empCode] || {};
-        let qtyThisCode = 0;
-        for (const pair of pairs) {
-          const qtyFromCode = pair.code ? (empProductSales[pair.code] ?? 0) : 0;
-          const qtyFromUuid = pair.uuid ? (empProductSales[pair.uuid] ?? 0) : 0;
-          qtyThisCode = Math.max(qtyThisCode, qtyFromCode || qtyFromUuid);
+        for (const prodCode of externalCodes) {
+          realized += empProductSales[prodCode] || 0;
         }
-        realized += qtyThisCode;
       }
+
+      console.log(`Meta produto - Funcionário: ${goal.employee_id}, Produto: ${goal.product_id}, Códigos produto: ${externalCodes}, Realizado: ${realized}, Meta: ${goal.goal_value}`);
 
       if (realized >= goal.goal_value) {
         productGoalsByEmployee[goal.employee_id].achieved++;
