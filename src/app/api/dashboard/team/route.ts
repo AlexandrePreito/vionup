@@ -106,73 +106,79 @@ export async function GET(request: NextRequest) {
     console.log('=================================================');
 
     if (allCodes.length > 0) {
-      // Primeiro, contar quantos registros existem (mesma lógica do employee dashboard)
-      const { count: totalCount } = await supabaseAdmin
-        .from('external_sales')
-        .select('*', { count: 'exact', head: true })
-        .eq('company_group_id', companyGroupId)
-        .in('external_employee_id', allCodes)
-        .gte('sale_date', startDate)
-        .lte('sale_date', endDate)
-        .not('sale_uuid', 'is', null);
+      // Buscar faturamento por FUNCIONÁRIO (não por código individual)
+      // Usa .in() com todos os códigos do funcionário, igual o employee dashboard
+      for (const emp of employees) {
+        const codes = employeeCodes[emp.id] || [];
+        if (codes.length === 0) continue;
 
-      const totalExpected = totalCount || 0;
-      console.log(`📊 Total de registros esperados (count): ${totalExpected}`);
-
-      const allSalesRows: any[] = [];
-      let page = 0;
-      let hasMore = true;
-      const maxPages = 100;
-      
-      while (hasMore && page < maxPages) {
-        const from = page * pageSize;
-        const to = (page + 1) * pageSize - 1;
-        
-        console.log(`📄 Buscando página ${page + 1} (range: ${from} a ${to})...`);
-        
-        const { data: salesRows, error: salesError } = await supabaseAdmin
+        // Contar registros esperados (mesma query do employee dashboard)
+        const { count: totalCount } = await supabaseAdmin
           .from('external_sales')
-          .select('external_employee_id, total_value, sale_uuid')
+          .select('*', { count: 'exact', head: true })
           .eq('company_group_id', companyGroupId)
-          .in('external_employee_id', allCodes)
+          .in('external_employee_id', codes)
           .gte('sale_date', startDate)
           .lte('sale_date', endDate)
-          .not('sale_uuid', 'is', null)
-          .order('sale_date', { ascending: true })
-          .order('sale_uuid', { ascending: true })
-          .range(from, to);
+          .not('sale_uuid', 'is', null);
 
-        if (salesError) {
-          console.error('❌ Erro ao buscar vendas:', salesError);
-          hasMore = false;
-        } else if (salesRows && salesRows.length > 0) {
-          allSalesRows.push(...salesRows);
-          console.log(`✅ Página ${page + 1}: ${salesRows.length} registros (total acumulado: ${allSalesRows.length} de ${totalExpected})`);
-          
-          if (allSalesRows.length >= totalExpected) {
-            console.log(`✅ Todos os ${totalExpected} registros foram buscados!`);
-            hasMore = false;
-          } else {
-            page++;
-          }
-        } else {
-          console.log(`✅ Página ${page + 1}: vazia - busca concluída`);
-          hasMore = false;
+        const totalExpected = totalCount || 0;
+        
+        if (totalExpected === 0) {
+          console.log(`👤 ${emp.name} (${codes.join(',')}): 0 registros`);
+          continue;
         }
-      }
 
-      if (page >= maxPages) {
-        console.warn(`⚠️ Atingido limite máximo de ${maxPages} páginas! Registros buscados: ${allSalesRows.length} de ${totalExpected}`);
+        // Buscar todos os registros com paginação (mesma query exata do employee dashboard)
+        const allSalesRows: any[] = [];
+        let page = 0;
+        let hasMore = true;
+        const maxPages = 100;
+        
+        while (hasMore && page < maxPages) {
+          const from = page * pageSize;
+          const to = (page + 1) * pageSize - 1;
+          
+          const { data: salesRows, error: salesError } = await supabaseAdmin
+            .from('external_sales')
+            .select('total_value, sale_uuid, external_employee_id, sale_date')
+            .eq('company_group_id', companyGroupId)
+            .in('external_employee_id', codes)
+            .gte('sale_date', startDate)
+            .lte('sale_date', endDate)
+            .not('sale_uuid', 'is', null)
+            .order('sale_date', { ascending: true })
+            .order('sale_uuid', { ascending: true })
+            .range(from, to);
+
+          if (salesError) {
+            console.error(`❌ Erro ao buscar vendas de ${emp.name}:`, salesError);
+            hasMore = false;
+          } else if (salesRows && salesRows.length > 0) {
+            allSalesRows.push(...salesRows);
+            
+            if (allSalesRows.length >= totalExpected) {
+              hasMore = false;
+            } else {
+              page++;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+        
+        // Somar faturamento por código real (igual employee dashboard)
+        let empRevenue = 0;
+        for (const row of allSalesRows) {
+          const code = String(row.external_employee_id ?? '').trim();
+          if (!salesByCode[code]) salesByCode[code] = 0;
+          salesByCode[code] += (row.total_value || 0);
+          empRevenue += (row.total_value || 0);
+        }
+        
+        console.log(`👤 ${emp.name} (${codes.join(',')}): ${allSalesRows.length}/${totalExpected} registros, R$ ${empRevenue.toFixed(2)}`);
       }
       
-      // Somar faturamento por código
-      for (const row of allSalesRows) {
-        const code = String(row.external_employee_id ?? '').trim();
-        if (!salesByCode[code]) salesByCode[code] = 0;
-        salesByCode[code] += Number(row.total_value) || 0;
-      }
-      
-      console.log(`✅ Total de registros processados: ${allSalesRows.length}`);
       console.log(`💰 Vendas por código:`, salesByCode);
     }
 
