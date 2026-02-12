@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { FolderTree, Leaf, Search, Loader2, Link2, ArrowLeft, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { useState, useEffect, DragEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { Search, Link2, FolderTree, Leaf, GripVertical, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui';
-import { Category, ExternalCategory, CategoryMapping, CompanyGroup } from '@/types';
+import { Category, ExternalCategory, CategoryMapping, Company, CompanyMapping, ExternalCompany } from '@/types';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
 
 const ITEMS_PER_PAGE = 20;
@@ -15,24 +15,25 @@ export default function ConciliacaoCategoriasPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [externalCategories, setExternalCategories] = useState<ExternalCategory[]>([]);
   const [mappings, setMappings] = useState<CategoryMapping[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyMappings, setCompanyMappings] = useState<CompanyMapping[]>([]);
+  const [externalCompanies, setExternalCompanies] = useState<ExternalCompany[]>([]);
+  const [loading, setLoading] = useState(false);
   const [searchInternal, setSearchInternal] = useState('');
   const [searchExternal, setSearchExternal] = useState('');
+  const [filterInternal, setFilterInternal] = useState<'all' | 'mapped' | 'unmapped'>('all');
+  const [filterExternal, setFilterExternal] = useState<'all' | 'mapped' | 'unmapped'>('all');
   const [filterType, setFilterType] = useState<'all' | 'entrada' | 'saida'>('all');
-  
-  // Paginação
-  const [internalPage, setInternalPage] = useState(1);
-  const [externalPage, setExternalPage] = useState(1);
-  
-  // Drag and drop
-  const [draggingCategory, setDraggingCategory] = useState<Category | null>(null);
 
-  // Buscar categorias internas (apenas analíticas)
-  const fetchCategories = async () => {
-    if (!selectedGroupId) return;
-    
+  const [currentPageInternal, setCurrentPageInternal] = useState(1);
+  const [currentPageExternal, setCurrentPageExternal] = useState(1);
+
+  const [draggedCategory, setDraggedCategory] = useState<ExternalCategory | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+  const fetchCategories = async (groupId: string) => {
     try {
-      const res = await fetch(`/api/categories?group_id=${selectedGroupId}&analytical_only=true&include_inactive=true`);
+      const res = await fetch(`/api/categories?group_id=${groupId}&analytical_only=true&include_inactive=true`);
       const data = await res.json();
       setCategories(data.categories || []);
     } catch (error) {
@@ -40,12 +41,9 @@ export default function ConciliacaoCategoriasPage() {
     }
   };
 
-  // Buscar categorias externas
-  const fetchExternalCategories = async () => {
-    if (!selectedGroupId) return;
-    
+  const fetchExternalCategories = async (groupId: string) => {
     try {
-      const res = await fetch(`/api/external-categories?group_id=${selectedGroupId}`);
+      const res = await fetch(`/api/external-categories?group_id=${groupId}`);
       const data = await res.json();
       setExternalCategories(data.externalCategories || []);
     } catch (error) {
@@ -53,12 +51,9 @@ export default function ConciliacaoCategoriasPage() {
     }
   };
 
-  // Buscar mapeamentos
-  const fetchMappings = async () => {
-    if (!selectedGroupId) return;
-    
+  const fetchMappings = async (groupId: string) => {
     try {
-      const res = await fetch(`/api/mappings/categories?group_id=${selectedGroupId}`);
+      const res = await fetch(`/api/mappings/categories?group_id=${groupId}`);
       const data = await res.json();
       setMappings(data.mappings || []);
     } catch (error) {
@@ -66,147 +61,229 @@ export default function ConciliacaoCategoriasPage() {
     }
   };
 
-  // Carregar dados
-  const loadData = async () => {
-    if (!selectedGroupId) return;
-    
+  const fetchCompanies = async (groupId: string) => {
+    try {
+      const res = await fetch(`/api/companies?group_id=${groupId}`);
+      const data = await res.json();
+      setCompanies(data.companies || []);
+    } catch (error) {
+      console.error('Erro ao buscar empresas:', error);
+    }
+  };
+
+  const fetchCompanyMappings = async (groupId: string) => {
+    try {
+      const res = await fetch(`/api/mappings/companies?group_id=${groupId}`);
+      const data = await res.json();
+      setCompanyMappings(data.mappings || []);
+    } catch (error) {
+      console.error('Erro ao buscar mapeamentos de empresas:', error);
+    }
+  };
+
+  const fetchExternalCompanies = async (groupId: string) => {
+    try {
+      const res = await fetch(`/api/external-companies?group_id=${groupId}`);
+      const data = await res.json();
+      setExternalCompanies(data.externalCompanies || []);
+    } catch (error) {
+      console.error('Erro ao buscar empresas externas:', error);
+    }
+  };
+
+  const loadData = async (groupId: string) => {
+    if (!groupId) return;
     setLoading(true);
-    await Promise.all([
-      fetchCategories(),
-      fetchExternalCategories(),
-      fetchMappings()
-    ]);
-    setLoading(false);
+    try {
+      await Promise.all([
+        fetchCategories(groupId),
+        fetchExternalCategories(groupId),
+        fetchMappings(groupId),
+        fetchCompanies(groupId),
+        fetchCompanyMappings(groupId),
+        fetchExternalCompanies(groupId)
+      ]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    if (selectedGroupId) {
-      loadData();
-    }
+    if (selectedGroupId) loadData(selectedGroupId);
   }, [selectedGroupId]);
 
-  // Filtrar categorias internas
-  const filteredCategories = categories.filter(cat => {
-    const matchesSearch = cat.name.toLowerCase().includes(searchInternal.toLowerCase()) ||
-                          (cat.code && cat.code.toLowerCase().includes(searchInternal.toLowerCase()));
-    const matchesType = filterType === 'all' || cat.type === filterType;
-    return matchesSearch && matchesType;
-  });
+  const isExternalMapped = (externalId: string) =>
+    mappings.some(m => m.external_category_id === externalId);
 
-  // Filtrar categorias externas
-  const filteredExternalCategories = externalCategories.filter(cat => {
-    const fullPath = [cat.layer_01, cat.layer_02, cat.layer_03, cat.layer_04]
-      .filter(Boolean)
-      .join(' > ')
-      .toLowerCase();
-    return fullPath.includes(searchExternal.toLowerCase()) ||
-           cat.external_id.toLowerCase().includes(searchExternal.toLowerCase());
-  });
+  const getCategoryMappings = (categoryId: string) =>
+    mappings.filter(m => m.category_id === categoryId);
 
-  // Paginação interna
-  const totalInternalPages = Math.ceil(filteredCategories.length / ITEMS_PER_PAGE);
-  const paginatedCategories = filteredCategories.slice(
-    (internalPage - 1) * ITEMS_PER_PAGE,
-    internalPage * ITEMS_PER_PAGE
-  );
+  const getExternalCategoryById = (externalId: string) =>
+    externalCategories.find(e => e.id === externalId);
 
-  // Paginação externa
-  const totalExternalPages = Math.ceil(filteredExternalCategories.length / ITEMS_PER_PAGE);
-  const paginatedExternalCategories = filteredExternalCategories.slice(
-    (externalPage - 1) * ITEMS_PER_PAGE,
-    externalPage * ITEMS_PER_PAGE
-  );
+  const formatExternalPath = (cat: ExternalCategory) =>
+    [cat.layer_01, cat.layer_02, cat.layer_03, cat.layer_04].filter(Boolean).join(' > ');
 
-  // Verificar se categoria externa está mapeada
-  const isExternalMapped = (externalCategoryId: string) => {
-    return mappings.some(m => m.external_category_id === externalCategoryId);
+  /** Segunda e terceira camadas: "Camada2 - Camada3" (ex: Receita op. - Vendas) */
+  const formatExternalPathTwoLayers = (cat: ExternalCategory) =>
+    [cat.layer_02, cat.layer_03].filter(Boolean).join(' - ') || formatExternalPath(cat);
+
+  /** Receita = azul, Despesa = laranja (baseado no primeiro layer) */
+  const getTipoFromExternalCategory = (cat: ExternalCategory): 'receita' | 'despesa' => {
+    const first = (cat.layer_01 || '').toLowerCase();
+    if (first.includes('receita')) return 'receita';
+    return 'despesa';
   };
 
-  // Obter mapeamento de categoria interna
-  const getCategoryMappings = (categoryId: string) => {
-    return mappings.filter(m => m.category_id === categoryId);
+  const getCompanyDisplayName = (externalCompanyId?: string): string => {
+    if (!externalCompanyId) return '';
+    const ext = externalCompanies.find(
+      ec => ec.id === externalCompanyId || ec.external_id === externalCompanyId || (ec as any).external_code === externalCompanyId
+    );
+    if (!ext) return externalCompanyId;
+    const mapping = companyMappings.find(m => m.external_company_id === ext.id);
+    if (mapping) {
+      const internal = companies.find(c => c.id === mapping.company_id);
+      if (internal) return internal.name;
+    }
+    return ext.name || ext.external_id || externalCompanyId;
   };
 
-  // Criar mapeamento via drag and drop
-  const handleDrop = async (externalCategory: ExternalCategory) => {
-    if (!draggingCategory) return;
-
+  const handleCreateMapping = async (categoryId: string, externalCategoryId: string) => {
+    if (!selectedGroupId) return;
     try {
       const res = await fetch('/api/mappings/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           company_group_id: selectedGroupId,
-          category_id: draggingCategory.id,
-          external_category_id: externalCategory.id
+          category_id: categoryId,
+          external_category_id: externalCategoryId
         })
       });
-
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
         alert(data.error || 'Erro ao criar mapeamento');
         return;
       }
-
-      fetchMappings();
+      await fetchMappings(selectedGroupId);
     } catch (error) {
       console.error('Erro ao criar mapeamento:', error);
       alert('Erro ao criar mapeamento');
-    } finally {
-      setDraggingCategory(null);
     }
   };
 
-  // Remover mapeamento
   const handleRemoveMapping = async (mappingId: string) => {
     try {
-      const res = await fetch(`/api/mappings/categories?id=${mappingId}`, {
-        method: 'DELETE'
-      });
-
+      const res = await fetch(`/api/mappings/categories?id=${mappingId}`, { method: 'DELETE' });
       if (!res.ok) {
         alert('Erro ao remover mapeamento');
         return;
       }
-
-      fetchMappings();
+      await fetchMappings(selectedGroupId);
     } catch (error) {
       console.error('Erro ao remover mapeamento:', error);
       alert('Erro ao remover mapeamento');
     }
   };
 
-  // Formatar caminho da categoria externa
-  const formatExternalPath = (cat: ExternalCategory) => {
-    return [cat.layer_01, cat.layer_02, cat.layer_03, cat.layer_04]
-      .filter(Boolean)
-      .join(' > ');
+  const handleDragStart = (e: DragEvent<HTMLDivElement>, extCat: ExternalCategory) => {
+    setDraggedCategory(extCat);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', extCat.id);
   };
 
-  // Estatísticas
-  const totalInternal = categories.length;
-  const totalExternal = externalCategories.length;
-  const mappedExternal = new Set(mappings.map(m => m.external_category_id)).size;
-  const unmappedExternal = totalExternal - mappedExternal;
+  const handleDragEnd = () => {
+    setDraggedCategory(null);
+    setDropTargetId(null);
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>, categoryId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropTargetId(categoryId);
+  };
+
+  const handleDragLeave = () => setDropTargetId(null);
+
+  const handleDrop = async (e: DragEvent<HTMLDivElement>, categoryId: string) => {
+    e.preventDefault();
+    setDropTargetId(null);
+    if (draggedCategory) {
+      await handleCreateMapping(categoryId, draggedCategory.id);
+    }
+    setDraggedCategory(null);
+  };
+
+  const filteredCategories = (categories || []).filter(cat => {
+    const matchesSearch =
+      cat.name.toLowerCase().includes(searchInternal.toLowerCase()) ||
+      (cat.code && cat.code.toLowerCase().includes(searchInternal.toLowerCase()));
+    const matchesType = filterType === 'all' || cat.type === filterType;
+    if (!matchesSearch || !matchesType) return false;
+    const hasMappings = getCategoryMappings(cat.id).length > 0;
+    if (filterInternal === 'mapped' && !hasMappings) return false;
+    if (filterInternal === 'unmapped' && hasMappings) return false;
+    return true;
+  });
+
+  const filteredExternalCategories = (externalCategories || []).filter(ext => {
+    const path = formatExternalPath(ext).toLowerCase();
+    const pathTwo = formatExternalPathTwoLayers(ext).toLowerCase();
+    const id = (ext.external_id || '').toLowerCase();
+    const companyName = getCompanyDisplayName(ext.external_company_id).toLowerCase();
+    const search = searchExternal.toLowerCase();
+    const matchesSearch =
+      path.includes(search) || pathTwo.includes(search) || id.includes(search) || companyName.includes(search);
+    if (!matchesSearch) return false;
+    const isMapped = isExternalMapped(ext.id);
+    if (filterExternal === 'mapped' && !isMapped) return false;
+    if (filterExternal === 'unmapped' && isMapped) return false;
+    return true;
+  });
+
+  const totalPagesInternal = Math.ceil(filteredCategories.length / ITEMS_PER_PAGE);
+  const startIndexInternal = (currentPageInternal - 1) * ITEMS_PER_PAGE;
+  const endIndexInternal = startIndexInternal + ITEMS_PER_PAGE;
+  const paginatedCategories = filteredCategories.slice(startIndexInternal, endIndexInternal);
+
+  const totalPagesExternal = Math.ceil(filteredExternalCategories.length / ITEMS_PER_PAGE);
+  const startIndexExternal = (currentPageExternal - 1) * ITEMS_PER_PAGE;
+  const endIndexExternal = startIndexExternal + ITEMS_PER_PAGE;
+  const paginatedExternalCategories = filteredExternalCategories.slice(startIndexExternal, endIndexExternal);
+
+  useEffect(() => {
+    setCurrentPageInternal(1);
+  }, [searchInternal, filterInternal, filterType]);
+
+  useEffect(() => {
+    setCurrentPageExternal(1);
+  }, [searchExternal, filterExternal]);
+
+  const totalInternal = categories?.length || 0;
+  const mappedInternal = categories?.filter(c => getCategoryMappings(c.id).length > 0).length || 0;
+  const totalExternal = externalCategories?.length || 0;
+  const mappedExternal = externalCategories?.filter(c => isExternalMapped(c.id)).length || 0;
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Cabeçalho */}
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col p-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Conciliação de Categorias</h1>
-          <p className="text-gray-500 mt-1">Vincule categorias analíticas às categorias importadas</p>
+          <p className="text-gray-500 text-sm">Arraste as categorias externas para vincular com as categorias analíticas do sistema</p>
         </div>
-        <Button variant="secondary" onClick={() => router.push('/cadastros/categorias')}>
-          <ArrowLeft size={18} className="mr-2" />
-          Categorias
-        </Button>
+        <div className="flex items-center gap-4">
+          <Button
+            onClick={() => router.push('/cadastros/categorias')}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            Categorias
+          </Button>
+        </div>
       </div>
 
-      {/* Filtros */}
-      <div className="flex gap-4 items-center">
-        {/* Grupo */}
-        <div className="w-64">
+      <div className="flex gap-4 mb-4">
+        <div className="w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
           {isGroupReadOnly ? (
             <input
@@ -221,112 +298,110 @@ export default function ConciliacaoCategoriasPage() {
               onChange={(e) => setSelectedGroupId(e.target.value)}
               className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
-              <option value="">Selecione um grupo</option>
+              <option value="">Selecione o grupo</option>
               {groups.map((group: any) => (
                 <option key={group.id} value={group.id}>{group.name}</option>
               ))}
             </select>
           )}
         </div>
-
-        {/* Tipo */}
-        <div className="w-48">
+        <div className="w-40">
           <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value as 'all' | 'entrada' | 'saida')}
             className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
-            <option value="all">Todas</option>
+            <option value="all">Todos</option>
             <option value="entrada">Entradas</option>
             <option value="saida">Saídas</option>
           </select>
         </div>
       </div>
 
-      {/* Estatísticas */}
-      {selectedGroupId && !loading && (
-        <div className="grid grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl border border-gray-100 p-4">
-            <div className="text-2xl font-bold text-gray-900">{totalInternal}</div>
-            <div className="text-sm text-gray-500">Categorias Internas</div>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-100 p-4">
-            <div className="text-2xl font-bold text-gray-900">{totalExternal}</div>
-            <div className="text-sm text-gray-500">Categorias Externas</div>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-100 p-4">
-            <div className="text-2xl font-bold text-green-600">{mappedExternal}</div>
-            <div className="text-sm text-gray-500">Mapeadas</div>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-100 p-4">
-            <div className="text-2xl font-bold text-orange-600">{unmappedExternal}</div>
-            <div className="text-sm text-gray-500">Não Mapeadas</div>
-          </div>
+      <div className="flex gap-4 mb-4">
+        <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
+          <span className="text-gray-700 font-medium">{mappedInternal}/{totalInternal}</span>
+          <span className="text-gray-600 text-sm ml-2">categorias vinculadas</span>
         </div>
-      )}
+        <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
+          <span className="text-gray-700 font-medium">{mappedExternal}/{totalExternal}</span>
+          <span className="text-gray-600 text-sm ml-2">externas mapeadas</span>
+        </div>
+      </div>
 
-      {/* Conteúdo */}
       {loading ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
-          <Loader2 size={48} className="mx-auto text-gray-300 mb-4 animate-spin" />
-          <p className="text-gray-500">Carregando categorias...</p>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
         </div>
       ) : !selectedGroupId ? (
-          <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
-            <FolderTree size={48} className="mx-auto text-gray-300 mb-4" />
-            <h2 className="text-lg font-medium text-gray-900 mb-2">Selecione um grupo</h2>
-            <p className="text-gray-500">Escolha um grupo para iniciar a conciliação</p>
-          </div>
+        <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
+          <FolderTree size={48} className="mx-auto text-gray-300 mb-4" />
+          <h2 className="text-lg font-medium text-gray-900 mb-2">Selecione um grupo</h2>
+          <p className="text-gray-500">Escolha um grupo para iniciar a conciliação</p>
+        </div>
       ) : (
-        <div className="grid grid-cols-2 gap-6">
-          {/* Coluna Esquerda - Categorias Internas */}
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-            <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+        <div className="flex-1 grid grid-cols-2 gap-6 min-h-0">
+          {/* Coluna esquerda - Categorias do sistema */}
+          <div className="flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="p-4 bg-gray-50 border-b border-gray-200">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <div className="flex items-center gap-2">
                   <Leaf size={20} className="text-blue-600" />
-                  Categorias Analíticas ({filteredCategories.length})
-                </h3>
+                  <h2 className="font-semibold text-gray-900">Categorias Analíticas</h2>
+                </div>
+                <span className="text-gray-600 text-sm">{filteredCategories.length} categorias</span>
               </div>
-              <div className="relative">
-                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Buscar categoria..."
-                  value={searchInternal}
-                  onChange={(e) => { setSearchInternal(e.target.value); setInternalPage(1); }}
-                  className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
+              <div className="flex gap-2">
+                <div className="flex-1 relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar categoria..."
+                    value={searchInternal}
+                    onChange={(e) => setSearchInternal(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 text-gray-900 placeholder-gray-400 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <select
+                  value={filterInternal}
+                  onChange={(e) => setFilterInternal(e.target.value as any)}
+                  className="px-3 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="all">Todas</option>
+                  <option value="mapped">Vinculadas</option>
+                  <option value="unmapped">Não vinculadas</option>
+                </select>
               </div>
             </div>
 
-            <div className="p-4 space-y-2" style={{ minHeight: '500px', maxHeight: 'calc(100vh - 400px)', overflowY: 'auto' }}>
-              {paginatedCategories.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">
-                  Nenhuma categoria analítica encontrada
-                </div>
-              ) : (
-                paginatedCategories.map((category) => {
-                  const catMappings = getCategoryMappings(category.id);
-                  
-                  return (
-                    <div
-                      key={category.id}
-                      draggable
-                      onDragStart={() => setDraggingCategory(category)}
-                      onDragEnd={() => setDraggingCategory(null)}
-                      className={`p-3 rounded-lg border cursor-grab active:cursor-grabbing transition-all ${
-                        draggingCategory?.id === category.id
-                          ? 'border-blue-500 bg-blue-50 shadow-lg'
-                          : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
-                      }`}
-                    >
+            <div className="flex-1 overflow-y-auto p-3 space-y-2" style={{ height: '1200px' }}>
+              {paginatedCategories.map((category) => {
+                const catMappings = getCategoryMappings(category.id);
+                const isDropTarget = dropTargetId === category.id;
+                return (
+                  <div
+                    key={category.id}
+                    onDragOver={(e) => handleDragOver(e, category.id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, category.id)}
+                    className={`rounded-xl border-2 transition-all duration-200 ${
+                      isDropTarget
+                        ? 'border-blue-500 scale-[1.02] shadow-lg'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="p-3">
                       <div className="flex items-start gap-3">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                          category.type === 'entrada' ? 'bg-green-100' : 'bg-red-100'
-                        }`}>
-                          <Leaf size={16} className={category.type === 'entrada' ? 'text-green-600' : 'text-red-600'} />
+                        <div
+                          className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                            category.type === 'entrada' ? 'bg-green-100' : 'bg-red-100'
+                          } ${catMappings.length > 0 ? 'ring-2 ring-green-300' : ''}`}
+                        >
+                          <Leaf
+                            size={20}
+                            className={category.type === 'entrada' ? 'text-green-600' : 'text-red-600'}
+                          />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-gray-900 truncate">{category.name}</p>
@@ -336,182 +411,266 @@ export default function ConciliacaoCategoriasPage() {
                                 {category.code}
                               </span>
                             )}
-                            <span className={`px-2 py-0.5 rounded text-xs ${
-                              category.type === 'entrada' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                            }`}>
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs ${
+                                category.type === 'entrada' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                              }`}
+                            >
                               {category.type === 'entrada' ? 'Entrada' : 'Saída'}
                             </span>
                           </div>
-                          
-                          {/* Mapeamentos */}
-                          {catMappings.length > 0 && (
-                            <div className="mt-2 space-y-1">
-                              {catMappings.map((mapping) => (
-                                <div key={mapping.id} className="flex items-center justify-between bg-green-50 rounded px-2 py-1 text-xs">
-                                  <span className="text-green-700 truncate flex-1">
-                                    {mapping.external_category ? formatExternalPath(mapping.external_category) : 'N/A'}
-                                  </span>
-                                  <button
-                                    onClick={() => handleRemoveMapping(mapping.id)}
-                                    className="p-0.5 text-red-500 hover:bg-red-100 rounded ml-2"
-                                    title="Remover vínculo"
-                                  >
-                                    <X size={14} />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
                         </div>
                         {catMappings.length > 0 && (
-                          <div className="text-green-600">
-                            <Link2 size={18} />
+                          <div className="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-medium">
+                            <Check size={12} />
+                            {catMappings.length}
                           </div>
                         )}
                       </div>
+
+                      {catMappings.length > 0 ? (
+                        <div className="mt-3 space-y-2">
+                          {catMappings.map((mapping) => {
+                            const extCat = getExternalCategoryById(mapping.external_category_id);
+                            const companyName = extCat ? getCompanyDisplayName(extCat.external_company_id) : '';
+                            return (
+                              <div
+                                key={mapping.id}
+                                className="flex items-center gap-2 border border-green-200 rounded-lg p-2"
+                              >
+                                <Link2 size={14} className="text-green-600 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-green-800 truncate">
+                                    {extCat ? formatExternalPathTwoLayers(extCat) : 'N/A'}
+                                  </p>
+                                  {companyName && (
+                                    <p className="text-xs text-green-600">{companyName}</p>
+                                  )}
+                                  {extCat?.external_id && (
+                                    <p className="text-xs text-gray-500">ID: {extCat.external_id}</p>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => handleRemoveMapping(mapping.id)}
+                                  className="p-1 text-red-500 hover:bg-red-100 rounded transition-colors"
+                                  title="Desvincular"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div
+                          className={`mt-3 border-2 border-dashed rounded-lg p-3 text-center transition-colors ${
+                            isDropTarget ? 'border-blue-400' : 'border-gray-300'
+                          }`}
+                        >
+                          <p
+                            className={`text-sm ${
+                              isDropTarget ? 'text-blue-600 font-medium' : 'text-gray-400'
+                            }`}
+                          >
+                            {isDropTarget
+                              ? '✓ Solte aqui para vincular'
+                              : 'Arraste uma categoria externa aqui'}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  );
-                })
-              )}
+                  </div>
+                );
+              })}
             </div>
 
-            {/* Paginação Interna */}
-            {totalInternalPages > 1 && (
-              <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between text-sm">
-                <span className="text-gray-500">
-                  {(internalPage - 1) * ITEMS_PER_PAGE + 1}-{Math.min(internalPage * ITEMS_PER_PAGE, filteredCategories.length)} de {filteredCategories.length}
-                </span>
+            <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                {filteredCategories.length > 0 ? (
+                  <>
+                    Mostrando {startIndexInternal + 1} a{' '}
+                    {Math.min(endIndexInternal, filteredCategories.length)} de{' '}
+                    {filteredCategories.length} categorias
+                  </>
+                ) : (
+                  <>Nenhuma categoria encontrada</>
+                )}
+              </div>
+              {totalPagesInternal > 1 && (
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setInternalPage(p => Math.max(1, p - 1))}
-                    disabled={internalPage === 1}
-                    className="p-1 rounded border border-gray-300 disabled:opacity-50"
+                    onClick={() => setCurrentPageInternal((p) => Math.max(1, p - 1))}
+                    disabled={currentPageInternal === 1}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <ChevronLeft size={16} />
+                    Anterior
                   </button>
-                  <span>{internalPage}/{totalInternalPages}</span>
+                  <span className="text-sm text-gray-600">
+                    Página {currentPageInternal} de {totalPagesInternal}
+                  </span>
                   <button
-                    onClick={() => setInternalPage(p => Math.min(totalInternalPages, p + 1))}
-                    disabled={internalPage === totalInternalPages}
-                    className="p-1 rounded border border-gray-300 disabled:opacity-50"
+                    onClick={() => setCurrentPageInternal((p) => Math.min(totalPagesInternal, p + 1))}
+                    disabled={currentPageInternal === totalPagesInternal}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <ChevronRight size={16} />
+                    Próxima
                   </button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* Coluna Direita - Categorias Externas */}
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-            <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+          {/* Coluna direita - Categorias externas */}
+          <div className="flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="p-4 bg-gray-50 border-b border-gray-200">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <div className="flex items-center gap-2">
                   <FolderTree size={20} className="text-orange-600" />
-                  Categorias Externas ({filteredExternalCategories.length})
-                </h3>
+                  <h2 className="font-semibold text-gray-900">Categorias (Banco de Dados)</h2>
+                </div>
+                <span className="text-gray-600 text-sm">{filteredExternalCategories.length} categorias</span>
               </div>
-              <div className="relative">
-                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Buscar categoria externa..."
-                  value={searchExternal}
-                  onChange={(e) => { setSearchExternal(e.target.value); setExternalPage(1); }}
-                  className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
+              <div className="flex gap-2">
+                <div className="flex-1 relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar categoria..."
+                    value={searchExternal}
+                    onChange={(e) => setSearchExternal(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 text-gray-900 placeholder-gray-400 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <select
+                  value={filterExternal}
+                  onChange={(e) => setFilterExternal(e.target.value as any)}
+                  className="px-3 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="all">Todas</option>
+                  <option value="unmapped">Não mapeadas</option>
+                  <option value="mapped">Mapeadas</option>
+                </select>
               </div>
             </div>
 
-            <div className="p-4 space-y-2" style={{ minHeight: '500px', maxHeight: 'calc(100vh - 400px)', overflowY: 'auto' }}>
-              {paginatedExternalCategories.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">
-                  Nenhuma categoria externa encontrada
-                </div>
-              ) : (
-                paginatedExternalCategories.map((extCat) => {
-                  const isMapped = isExternalMapped(extCat.id);
-                  
-                  return (
-                    <div
-                      key={extCat.id}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.currentTarget.classList.add('border-blue-500', 'bg-blue-50');
-                      }}
-                      onDragLeave={(e) => {
-                        e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
-                        handleDrop(extCat);
-                      }}
-                      className={`p-3 rounded-lg border transition-all ${
-                        isMapped
-                          ? 'border-green-200 bg-green-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                          isMapped ? 'bg-green-100' : 'bg-orange-100'
-                        }`}>
-                          <FolderTree size={16} className={isMapped ? 'text-green-600' : 'text-orange-600'} />
+            <div className="flex-1 overflow-y-auto p-3 space-y-2" style={{ height: '1200px' }}>
+              {paginatedExternalCategories.map((extCat) => {
+                const isMapped = isExternalMapped(extCat.id);
+                const isDragging = draggedCategory?.id === extCat.id;
+                const tipo = getTipoFromExternalCategory(extCat);
+                const companyName = getCompanyDisplayName(extCat.external_company_id);
+                return (
+                  <div
+                    key={extCat.id}
+                    draggable={!isMapped}
+                    onDragStart={(e) => handleDragStart(e, extCat)}
+                    onDragEnd={handleDragEnd}
+                    className={`rounded-xl border-2 p-3 transition-all duration-200 ${
+                      isMapped
+                        ? 'border-green-200 opacity-60 cursor-not-allowed'
+                        : isDragging
+                        ? 'border-blue-500 shadow-lg scale-[1.02] cursor-grabbing'
+                        : 'border-gray-200 hover:border-blue-300 hover:shadow-md cursor-grab'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {!isMapped && (
+                        <div className="text-gray-400 cursor-grab">
+                          <GripVertical size={18} />
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-900 text-sm">
-                            {formatExternalPath(extCat)}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            ID: {extCat.external_id}
-                          </p>
-                        </div>
-                        {isMapped && (
-                          <div className="text-green-600">
-                            <Link2 size={18} />
-                          </div>
+                      )}
+                      <div
+                        className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                          isMapped
+                            ? 'bg-green-100'
+                            : tipo === 'receita'
+                            ? 'bg-blue-100'
+                            : 'bg-orange-100'
+                        }`}
+                      >
+                        {isMapped ? (
+                          <Check size={20} className="text-green-600" />
+                        ) : (
+                          <FolderTree
+                            size={20}
+                            className={tipo === 'receita' ? 'text-blue-600' : 'text-orange-600'}
+                          />
                         )}
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 truncate text-sm">
+                          {formatExternalPathTwoLayers(extCat)}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5 flex-wrap">
+                          {companyName && (
+                            <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600 font-medium">
+                              {companyName}
+                            </span>
+                          )}
+                          <span>ID: {extCat.external_id}</span>
+                        </div>
+                      </div>
+                      {isMapped && (
+                        <div className="text-green-600">
+                          <Link2 size={18} />
+                        </div>
+                      )}
                     </div>
-                  );
-                })
+                  </div>
+                );
+              })}
+
+              {paginatedExternalCategories.length === 0 && (
+                <div className="h-full flex flex-col items-center justify-center text-gray-400 py-12">
+                  <FolderTree size={48} className="mb-4 opacity-50" />
+                  <p className="text-lg font-medium">Nenhuma categoria externa</p>
+                  <p className="text-sm">Sincronize os dados do Power BI primeiro</p>
+                </div>
               )}
             </div>
 
-            {/* Paginação Externa */}
-            {totalExternalPages > 1 && (
-              <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between text-sm">
-                <span className="text-gray-500">
-                  {(externalPage - 1) * ITEMS_PER_PAGE + 1}-{Math.min(externalPage * ITEMS_PER_PAGE, filteredExternalCategories.length)} de {filteredExternalCategories.length}
-                </span>
+            <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                {filteredExternalCategories.length > 0 ? (
+                  <>
+                    Mostrando {startIndexExternal + 1} a{' '}
+                    {Math.min(endIndexExternal, filteredExternalCategories.length)} de{' '}
+                    {filteredExternalCategories.length} categorias
+                  </>
+                ) : (
+                  <>Nenhuma categoria encontrada</>
+                )}
+              </div>
+              {totalPagesExternal > 1 && (
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setExternalPage(p => Math.max(1, p - 1))}
-                    disabled={externalPage === 1}
-                    className="p-1 rounded border border-gray-300 disabled:opacity-50"
+                    onClick={() => setCurrentPageExternal((p) => Math.max(1, p - 1))}
+                    disabled={currentPageExternal === 1}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <ChevronLeft size={16} />
+                    Anterior
                   </button>
-                  <span>{externalPage}/{totalExternalPages}</span>
+                  <span className="text-sm text-gray-600">
+                    Página {currentPageExternal} de {totalPagesExternal}
+                  </span>
                   <button
-                    onClick={() => setExternalPage(p => Math.min(totalExternalPages, p + 1))}
-                    disabled={externalPage === totalExternalPages}
-                    className="p-1 rounded border border-gray-300 disabled:opacity-50"
+                    onClick={() => setCurrentPageExternal((p) => Math.min(totalPagesExternal, p + 1))}
+                    disabled={currentPageExternal === totalPagesExternal}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <ChevronRight size={16} />
+                    Próxima
                   </button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Instrução de uso */}
-      {selectedGroupId && !loading && categories.length > 0 && externalCategories.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-700">
-          <strong>Dica:</strong> Arraste uma categoria analítica da esquerda e solte sobre uma categoria externa da direita para criar o vínculo.
+      {draggedCategory && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-2 animate-pulse">
+          <Link2 size={18} />
+          <span>Solte na categoria analítica para vincular</span>
         </div>
       )}
     </div>
