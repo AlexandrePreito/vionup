@@ -91,34 +91,23 @@ export async function GET(request: NextRequest) {
 
     // 5. Faturamento realizado: mesmo critério do dashboard funcionário (external_sales, sale_uuid not null, ordem sale_date + sale_uuid, só códigos)
     const allCodes = Object.values(employeeCodes).flat();
+    const employeeIdsToTry = [...new Set([...allCodes, ...externalUuids])];
     const startDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-01`;
     const endDate = new Date(yearNum, monthNum, 0).toISOString().split('T')[0];
 
     let salesByCode: Record<string, number> = {};
     const pageSize = 1000;
-
-    console.log('=================================================');
-    console.log('🔍 BUSCANDO VENDAS DA EQUIPE (external_sales)');
-    console.log(`📅 Período: ${startDate} a ${endDate}`);
-    console.log(`🏢 Company Group ID: ${companyGroupId}`);
-    console.log(`👥 Total de códigos externos: ${allCodes.length}`);
-    console.log(`📊 Códigos:`, allCodes);
-    console.log('=================================================');
+    const uuidToCodeMap = uuidToCode as Record<string, string>;
 
     if (allCodes.length > 0) {
       let page = 0;
       let hasMore = true;
-      let totalRecords = 0;
-      
       while (hasMore) {
         const from = page * pageSize;
         const to = from + pageSize - 1;
-        
-        console.log(`📄 Buscando página ${page + 1} (range: ${from} a ${to})...`);
-        
         const { data: salesRows } = await supabaseAdmin
           .from('external_sales')
-          .select('external_employee_id, total_value, sale_uuid')
+          .select('external_employee_id, total_value')
           .eq('company_group_id', companyGroupId)
           .in('external_employee_id', allCodes)
           .gte('sale_date', startDate)
@@ -129,25 +118,17 @@ export async function GET(request: NextRequest) {
           .range(from, to);
 
         if (salesRows && salesRows.length > 0) {
-          totalRecords += salesRows.length;
-          console.log(`✅ Página ${page + 1}: ${salesRows.length} registros (total acumulado: ${totalRecords})`);
-          
           for (const row of salesRows) {
-            const code = String(row.external_employee_id ?? '').trim();
-            if (!salesByCode[code]) salesByCode[code] = 0;
-            salesByCode[code] += Number(row.total_value) || 0;
+            const raw = String(row.external_employee_id ?? '').trim();
+            const key = uuidToCodeMap[raw] || raw;
+            if (!salesByCode[key]) salesByCode[key] = 0;
+            salesByCode[key] += Number(row.total_value) || 0;
           }
-        } else {
-          console.log(`✅ Página ${page + 1}: vazia - busca concluída`);
         }
-        
         hasMore = salesRows && salesRows.length === pageSize;
         page++;
         if (page > 100) hasMore = false;
       }
-      
-      console.log(`✅ Total de registros processados: ${totalRecords}`);
-      console.log(`💰 Vendas por código:`, salesByCode);
     }
 
     // 6. Buscar metas de faturamento de todos os funcionários
@@ -184,29 +165,19 @@ export async function GET(request: NextRequest) {
     // Buscar vendas por produto: view primeiro; fallback em external_sales se vazio
     let productSalesByCode: Record<string, Record<string, number>> = {};
     
-    console.log('\n========== BUSCANDO VENDAS POR PRODUTO (EQUIPE) ==========');
-    console.log(`Total de códigos de funcionários: ${allCodes.length}`);
-    console.log(`Códigos:`, allCodes);
-    
     if (allCodes.length > 0) {
       const { data: productSales } = await supabaseAdmin
         .from('mv_employee_product_sales')
         .select('external_employee_id, external_product_id, total_quantity')
         .eq('company_group_id', companyGroupId)
-        .in('external_employee_id', allCodes)
+        .in('external_employee_id', employeeIdsToTry)
         .eq('year', yearNum)
         .eq('month', monthNum);
 
-      console.log(`View mv_employee_product_sales retornou: ${productSales?.length || 0} registros`);
-      
       if (productSales && productSales.length > 0) {
-        console.log('Primeiros 5 registros da view:');
-        productSales.slice(0, 5).forEach((ps: any) => {
-          console.log(`  - Emp: ${ps.external_employee_id}, Prod: ${ps.external_product_id}, Qty: ${ps.total_quantity}`);
-        });
-        
         for (const ps of productSales) {
-          const empKey = String(ps.external_employee_id ?? '').trim();
+          const rawEmp = String(ps.external_employee_id ?? '').trim();
+          const empKey = uuidToCodeMap[rawEmp] || rawEmp;
           const prodKey = String(ps.external_product_id ?? '').trim();
           if (!productSalesByCode[empKey]) productSalesByCode[empKey] = {};
           productSalesByCode[empKey][prodKey] = (productSalesByCode[empKey][prodKey] || 0) + (ps.total_quantity || 0);
@@ -224,7 +195,7 @@ export async function GET(request: NextRequest) {
           .from('external_sales')
           .select('external_employee_id, external_product_id, quantity')
           .eq('company_group_id', companyGroupId)
-          .in('external_employee_id', allCodes)
+          .in('external_employee_id', employeeIdsToTry)
           .gte('sale_date', startDate)
           .lte('sale_date', endDate)
           .order('sale_date', { ascending: true })
@@ -232,7 +203,8 @@ export async function GET(request: NextRequest) {
 
         if (productRows && productRows.length > 0) {
           for (const row of productRows) {
-            const empKey = String(row.external_employee_id ?? '').trim();
+            const rawEmp = String(row.external_employee_id ?? '').trim();
+            const empKey = uuidToCodeMap[rawEmp] || rawEmp;
             const prodKey = String(row.external_product_id ?? '').trim();
             if (!fallbackProducts[empKey]) fallbackProducts[empKey] = {};
             fallbackProducts[empKey][prodKey] = (fallbackProducts[empKey][prodKey] || 0) + (Number(row.quantity) || 0);
@@ -296,7 +268,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Calcular metas de produtos atingidas por funcionário (lookup por code ou uuid; max por produto para não duplicar)
+    // Calcular metas de produtos atingidas por funcionário (lookup por code ou uuid como no dashboard funcionário)
     for (const goal of productGoals || []) {
       if (!productGoalsByEmployee[goal.employee_id]) {
         productGoalsByEmployee[goal.employee_id] = { total: 0, achieved: 0 };
@@ -306,16 +278,13 @@ export async function GET(request: NextRequest) {
       const codes = employeeCodes[goal.employee_id] || [];
       const pairs = productIdToExternalPairs[goal.product_id] || [];
       let realized = 0;
-      // Somar por código do funcionário; por produto usar o máximo entre os pares (code/uuid) para não duplicar
       for (const empCode of codes) {
         const empProductSales = productSalesByCode[empCode] || {};
-        let qtyThisCode = 0;
         for (const pair of pairs) {
-          const qtyFromCode = pair.code ? (empProductSales[pair.code] ?? 0) : 0;
-          const qtyFromUuid = pair.uuid ? (empProductSales[pair.uuid] ?? 0) : 0;
-          qtyThisCode = Math.max(qtyThisCode, qtyFromCode || qtyFromUuid);
+          const qtyFromCode = pair.code ? (empProductSales[pair.code] || 0) : 0;
+          const qtyFromUuid = pair.uuid ? (empProductSales[pair.uuid] || 0) : 0;
+          realized += qtyFromCode || qtyFromUuid;
         }
-        realized += qtyThisCode;
       }
 
       if (realized >= goal.goal_value) {

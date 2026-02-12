@@ -16,7 +16,8 @@ import {
   Medal,
   Eye,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  ClipboardList
 } from 'lucide-react';
 import Link from 'next/link';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
@@ -48,6 +49,13 @@ interface EmployeeData {
   products: {
     total: number;
     achieved: number;
+    progress: number;
+  };
+  research: {
+    total: number;
+    achieved: number;
+    goalValue: number;
+    realized: number;
     progress: number;
   };
 }
@@ -477,7 +485,8 @@ export default function DashboardEquipePage() {
                           Produtos <SortIcon field="products" />
                         </div>
                       </th>
-                      <th className="text-center px-6 py-3 text-sm font-semibold text-gray-700">Ações</th>
+                      <th className="text-center px-6 py-3 text-sm font-semibold text-gray-700">Pesquisas</th>
+                      <th className="text-center px-6 py-3 text-sm font-semibold text-gray-700 w-16">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -562,14 +571,34 @@ export default function DashboardEquipePage() {
                           )}
                         </td>
 
+                        {/* Pesquisas (meta de pesquisa: realizado / meta, ex. 0/75) */}
+                        <td className="px-6 py-4 text-center">
+                          {(emp.research?.goalValue ?? 0) > 0 ? (
+                            <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full ${
+                              emp.research.progress >= 100
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : emp.research.progress > 0
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-red-100 text-red-700'
+                            }`}>
+                              <ClipboardList size={14} />
+                              <span className="font-medium">
+                                {emp.research.realized ?? 0}/{emp.research.goalValue}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-sm">-</span>
+                          )}
+                        </td>
+
                         {/* Ações */}
                         <td className="px-6 py-4 text-center">
                           <Link
-                            href={`/dashboard/funcionario?employee=${emp.id}&year=${teamData.period?.year || selectedYear}&month=${teamData.period?.month || selectedMonth}`}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"
+                            href={`/dashboard/funcionario?group_id=${selectedGroupId || ''}&company_id=${selectedCompany || ''}&employee=${emp.id}&year=${teamData?.period?.year ?? selectedYear}&month=${teamData?.period?.month ?? selectedMonth}`}
+                            className="inline-flex items-center justify-center w-9 h-9 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"
+                            title="Detalhes"
                           >
-                            <Eye size={16} />
-                            <span className="text-sm font-medium">Detalhes</span>
+                            <Eye size={18} />
                           </Link>
                         </td>
                       </tr>

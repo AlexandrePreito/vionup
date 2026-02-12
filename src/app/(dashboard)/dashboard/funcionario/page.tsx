@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { 
   User, 
   Loader2, 
@@ -52,7 +53,7 @@ interface ProductGoal {
   goalUnit: string;
   realized: number;
   progress: number;
-  status: 'achieved' | 'ontrack' | 'behind';
+  status: 'achieved' | 'almost' | 'ontrack' | 'behind';
 }
 
 interface ResearchData {
@@ -73,6 +74,7 @@ interface DashboardData {
     month: number;
     startDate?: string;
     endDate?: string;
+    isCurrentMonth?: boolean;
   };
   revenue: {
     goal: number;
@@ -98,6 +100,7 @@ interface DashboardData {
   summary: {
     totalProductGoals: number;
     productsAchieved: number;
+    productsAlmost?: number;
     productsOnTrack: number;
     productsBehind: number;
   };
@@ -119,6 +122,7 @@ const MONTHS = [
 ];
 
 export default function DashboardFuncionarioPage() {
+  const searchParams = useSearchParams();
   const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -131,6 +135,31 @@ export default function DashboardFuncionarioPage() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [researchData, setResearchData] = useState<ResearchData | null>(null);
   const [loadingResearch, setLoadingResearch] = useState(false);
+  const employeeIdFromUrlRef = useRef<string | null>(null);
+
+  // Inicializar filtros a partir da URL (ex.: ao vir da tela Equipe pelo botão Detalhes)
+  useEffect(() => {
+    const groupId = searchParams.get('group_id');
+    const companyId = searchParams.get('company_id');
+    const employeeId = searchParams.get('employee');
+    const year = searchParams.get('year');
+    const month = searchParams.get('month');
+    if (groupId) setSelectedGroupId(groupId);
+    if (year) setSelectedYear(parseInt(year, 10));
+    if (month) setSelectedMonth(parseInt(month, 10));
+    if (companyId) setSelectedCompany(companyId);
+    if (employeeId) employeeIdFromUrlRef.current = employeeId;
+  }, [searchParams, setSelectedGroupId]);
+
+  // Após carregar funcionários, selecionar o que veio na URL (quando veio da Equipe)
+  useEffect(() => {
+    const pending = employeeIdFromUrlRef.current;
+    if (!pending || employees.length === 0) return;
+    if (employees.some((e: Employee) => e.id === pending)) {
+      setSelectedEmployee(pending);
+      employeeIdFromUrlRef.current = null;
+    }
+  }, [employees]);
 
   // Buscar empresas quando grupo mudar
   useEffect(() => {
@@ -500,6 +529,8 @@ export default function DashboardFuncionarioPage() {
     switch (status) {
       case 'achieved':
         return 'text-emerald-600';
+      case 'almost':
+        return 'text-teal-600';
       case 'ontrack':
         return 'text-amber-500';
       case 'behind':
@@ -514,6 +545,8 @@ export default function DashboardFuncionarioPage() {
     switch (status) {
       case 'achieved':
         return 'bg-emerald-100';
+      case 'almost':
+        return 'bg-teal-100';
       case 'ontrack':
         return 'bg-amber-100';
       case 'behind':
@@ -528,6 +561,8 @@ export default function DashboardFuncionarioPage() {
     switch (status) {
       case 'achieved':
         return 'bg-emerald-500';
+      case 'almost':
+        return 'bg-teal-500';
       case 'ontrack':
         return 'bg-amber-500';
       case 'behind':
@@ -542,12 +577,31 @@ export default function DashboardFuncionarioPage() {
     switch (status) {
       case 'achieved':
         return <CheckCircle className="w-5 h-5 text-emerald-500" />;
+      case 'almost':
+        return <Target className="w-5 h-5 text-teal-500" />;
       case 'ontrack':
         return <TrendingUp className="w-5 h-5 text-amber-500" />;
       case 'behind':
         return <AlertTriangle className="w-5 h-5 text-red-500" />;
       default:
         return <XCircle className="w-5 h-5 text-gray-400" />;
+    }
+  };
+
+  // Label do status (metas de produtos); mês passado = "Não atingida" em vez de "Atenção"
+  const getProductStatusLabel = (status: string, isCurrentMonth?: boolean) => {
+    if (status === 'behind' && isCurrentMonth === false) return 'Não atingida';
+    switch (status) {
+      case 'achieved':
+        return 'Atingida';
+      case 'almost':
+        return 'Quase lá';
+      case 'ontrack':
+        return 'No Caminho';
+      case 'behind':
+        return 'Atenção';
+      default:
+        return status;
     }
   };
 
@@ -1028,7 +1082,7 @@ export default function DashboardFuncionarioPage() {
 
           {/* Resumo das Metas de Produtos */}
           {dashboardData.products.length > 0 && (
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
                 <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
                   <Target size={24} className="text-blue-600" />
@@ -1048,6 +1102,15 @@ export default function DashboardFuncionarioPage() {
                 </div>
               </div>
               <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
+                <div className="w-12 h-12 bg-teal-100 rounded-xl flex items-center justify-center">
+                  <Target size={24} className="text-teal-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Quase lá</p>
+                  <p className="text-2xl font-bold text-teal-600">{dashboardData.summary.productsAlmost ?? 0}</p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
                 <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
                   <TrendingUp size={24} className="text-amber-500" />
                 </div>
@@ -1061,7 +1124,7 @@ export default function DashboardFuncionarioPage() {
                   <AlertTriangle size={24} className="text-red-500" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Atenção</p>
+                  <p className="text-sm text-gray-500">{dashboardData.period?.isCurrentMonth === false ? 'Não atingidas' : 'Atenção'}</p>
                   <p className="text-2xl font-bold text-red-500">{dashboardData.summary.productsBehind}</p>
                 </div>
               </div>
@@ -1128,8 +1191,7 @@ export default function DashboardFuncionarioPage() {
                         <td className="px-6 py-4 text-center">
                           <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${getStatusBgColor(product.status)} ${getStatusColor(product.status)}`}>
                             {getStatusIcon(product.status)}
-                            {product.status === 'achieved' ? 'Atingida' : 
-                             product.status === 'ontrack' ? 'No Caminho' : 'Atenção'}
+                            {getProductStatusLabel(product.status, dashboardData.period?.isCurrentMonth)}
                           </span>
                         </td>
                       </tr>

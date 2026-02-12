@@ -355,50 +355,36 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Fallback: sempre buscar em external_sales e preencher onde a view está vazia/zero (igual equipe)
-      const employeeIdsToTry = [...new Set([...externalEmployeeCodes, ...mappedExternalEmployeeUuids])];
-      const fallbackByProduct: Record<string, { quantity: number; value: number }> = {};
-      const fallbackProductPageSize = 1000;
-      let fallbackProductPage = 0;
-      let fallbackProductHasMore = true;
-      while (fallbackProductHasMore && fallbackProductPage < 100) {
-        const fFrom = fallbackProductPage * fallbackProductPageSize;
-        const fTo = fFrom + fallbackProductPageSize - 1;
+      // Fallback: se a view não retornou dados, buscar direto em external_sales
+      // external_sales pode ter external_employee_id como código (string) ou como UUID
+      if (Object.keys(salesByProduct).length === 0) {
+        const employeeIdsToTry = [...new Set([...externalEmployeeCodes, ...mappedExternalEmployeeUuids])];
         const { data: salesRows } = await supabaseAdmin
           .from('external_sales')
           .select('external_product_id, quantity, total_value')
           .eq('company_group_id', companyGroupId)
           .in('external_employee_id', employeeIdsToTry)
           .gte('sale_date', startDate)
-          .lte('sale_date', endDate)
-          .order('sale_date', { ascending: true })
-          .range(fFrom, fTo);
+          .lte('sale_date', endDate);
 
         if (salesRows && salesRows.length > 0) {
           for (const row of salesRows) {
             const key = String(row.external_product_id ?? '').trim();
-            if (!fallbackByProduct[key]) fallbackByProduct[key] = { quantity: 0, value: 0 };
-            fallbackByProduct[key].quantity += Number(row.quantity) || 0;
-            fallbackByProduct[key].value += Number(row.total_value) || 0;
+            if (!salesByProduct[key]) {
+              salesByProduct[key] = { quantity: 0, value: 0 };
+            }
+            salesByProduct[key].quantity += Number(row.quantity) || 0;
+            salesByProduct[key].value += Number(row.total_value) || 0;
           }
-        }
-        fallbackProductHasMore = salesRows && salesRows.length === fallbackProductPageSize;
-        fallbackProductPage++;
-      }
-      for (const key of Object.keys(fallbackByProduct)) {
-        const current = salesByProduct[key]?.quantity ?? 0;
-        if (current === 0 && fallbackByProduct[key].quantity > 0) {
-          if (!salesByProduct[key]) salesByProduct[key] = { quantity: 0, value: 0 };
-          salesByProduct[key].quantity = fallbackByProduct[key].quantity;
-          salesByProduct[key].value = fallbackByProduct[key].value;
         }
       }
     }
 
-    // 7. Calcular ranking do funcionário (mesma base da página Equipe: external_sales, mesmo período e filtros)
+    // 7. Calcular ranking do funcionário (otimizado)
     let ranking = { position: 0, total: 0 };
     
     if (companyId) {
+      // Buscar todos os funcionários ativos da empresa e seus códigos externos
       const { data: companyEmployees } = await supabaseAdmin
         .from('employees')
         .select('id')
@@ -406,6 +392,7 @@ export async function GET(request: NextRequest) {
         .eq('is_active', true);
 
       if (companyEmployees && companyEmployees.length > 0) {
+        // Buscar mapeamentos de todos os funcionários
         const { data: allMappings } = await supabaseAdmin
           .from('employee_mappings')
           .select('employee_id, external_employee_id')
@@ -413,74 +400,62 @@ export async function GET(request: NextRequest) {
           .eq('company_group_id', companyGroupId);
 
         if (allMappings && allMappings.length > 0) {
+          // Buscar códigos externos
           const { data: allExternalEmployees } = await supabaseAdmin
             .from('external_employees')
             .select('id, external_id')
             .in('id', allMappings.map((m: any) => m.external_employee_id));
 
-          const uuidToCodeRank: Record<string, string> = {};
+          // Mapear UUID -> código externo
+          const uuidToCode: Record<string, string> = {};
           if (allExternalEmployees) {
             for (const ee of allExternalEmployees) {
-              uuidToCodeRank[ee.id] = ee.external_id;
+              uuidToCode[ee.id] = ee.external_id;
             }
           }
 
-          const employeeCodesRank: Record<string, string[]> = {};
+          // Mapear employee_id -> códigos externos
+          const employeeCodes: Record<string, string[]> = {};
           for (const mapping of allMappings) {
-            const code = uuidToCodeRank[mapping.external_employee_id];
+            const code = uuidToCode[mapping.external_employee_id];
             if (code) {
-              if (!employeeCodesRank[mapping.employee_id]) {
-                employeeCodesRank[mapping.employee_id] = [];
+              if (!employeeCodes[mapping.employee_id]) {
+                employeeCodes[mapping.employee_id] = [];
               }
-              employeeCodesRank[mapping.employee_id].push(code);
+              employeeCodes[mapping.employee_id].push(code);
             }
           }
 
-          const allCodesRank = Object.values(employeeCodesRank).flat();
-          if (allCodesRank.length > 0) {
-            const rankStart = `${yearNum}-${String(monthNum).padStart(2, '0')}-01`;
-            const rankEnd = new Date(yearNum, monthNum, 0).toISOString().split('T')[0];
-            const rankPageSize = 1000;
-            let rankPage = 0;
-            let rankHasMore = true;
-            const rankingSalesByCode: Record<string, number> = {};
+          // Buscar vendas de todos usando a MATERIALIZED VIEW
+          const allCodes = Object.values(employeeCodes).flat();
+          if (allCodes.length > 0) {
+            const { data: allSales } = await supabaseAdmin
+              .from('mv_employee_sales_summary')
+              .select('external_employee_id, total_revenue')
+              .eq('company_group_id', companyGroupId)
+              .in('external_employee_id', allCodes)
+              .eq('year', yearNum)
+              .eq('month', monthNum);
 
-            while (rankHasMore && rankPage < 100) {
-              const from = rankPage * rankPageSize;
-              const to = from + rankPageSize - 1;
-              const { data: rankRows } = await supabaseAdmin
-                .from('external_sales')
-                .select('external_employee_id, total_value')
-                .eq('company_group_id', companyGroupId)
-                .in('external_employee_id', allCodesRank)
-                .gte('sale_date', rankStart)
-                .lte('sale_date', rankEnd)
-                .not('sale_uuid', 'is', null)
-                .order('sale_date', { ascending: true })
-                .order('sale_uuid', { ascending: true })
-                .range(from, to);
-
-              if (rankRows && rankRows.length > 0) {
-                for (const row of rankRows) {
-                  const code = String(row.external_employee_id ?? '').trim();
-                  if (!rankingSalesByCode[code]) rankingSalesByCode[code] = 0;
-                  rankingSalesByCode[code] += Number(row.total_value) || 0;
+            // Agrupar por funcionário interno
+            const employeeSales: { employeeId: string; total: number }[] = [];
+            
+            for (const emp of companyEmployees) {
+              const codes = employeeCodes[emp.id] || [];
+              let total = 0;
+              
+              if (allSales) {
+                for (const sale of allSales) {
+                  if (codes.includes(sale.external_employee_id)) {
+                    total += sale.total_revenue || 0;
+                  }
                 }
               }
-              rankHasMore = rankRows && rankRows.length === rankPageSize;
-              rankPage++;
-            }
-
-            const employeeSales: { employeeId: string; total: number }[] = [];
-            for (const emp of companyEmployees) {
-              const codes = employeeCodesRank[emp.id] || [];
-              let total = 0;
-              for (const code of codes) {
-                total += rankingSalesByCode[code] || 0;
-              }
+              
               employeeSales.push({ employeeId: emp.id, total });
             }
 
+            // Ordenar e encontrar posição
             employeeSales.sort((a: any, b: any) => b.total - a.total);
             const position = employeeSales.findIndex((e: any) => e.employeeId === employeeId) + 1;
             ranking = { position, total: employeeSales.length };
@@ -529,36 +504,12 @@ export async function GET(request: NextRequest) {
               const code = (byCode[pm.external_product_id] ?? '').trim();
               const qtyFromCode = code && salesByProduct[code] ? salesByProduct[code].quantity : 0;
               const qtyFromUuid = uuid && salesByProduct[uuid] ? salesByProduct[uuid].quantity : 0;
-              realized = Math.max(realized, qtyFromCode || qtyFromUuid);
+              realized += qtyFromCode || qtyFromUuid;
             }
           }
         }
 
         const progress = goal.goal_value > 0 ? (realized / goal.goal_value) * 100 : 0;
-        const progressRounded = Math.round(progress * 10) / 10;
-
-        // Status proporcional ao mês: só no mês vigente; mês passado = bateu ou não bateu
-        const now = new Date();
-        const isCurrentMonth = now.getFullYear() === yearNum && now.getMonth() + 1 === monthNum;
-        let status: string;
-        if (progress >= 100) {
-          status = 'achieved';
-        } else if (!isCurrentMonth) {
-          status = 'behind'; // mês fechado: só "atingida" ou "não atingida"
-        } else {
-          const dayOfMonth = now.getDate();
-          const daysInMonth = new Date(yearNum, monthNum, 0).getDate();
-          const monthProgress = (dayOfMonth / daysInMonth) * 100; // % do mês já decorrido
-          const remainingTime = Math.max(0, 100 - monthProgress); // % do mês que falta
-          const remainingGoal = 100 - progress; // % da meta que falta
-          if (remainingGoal > remainingTime) {
-            status = 'behind'; // Alerta: falta mais % da meta do que % do mês
-          } else if (progress >= 80) {
-            status = 'almost'; // Quase lá: perto da meta e no ritmo
-          } else {
-            status = 'ontrack'; // No caminho: tempo suficiente para fechar
-          }
-        }
 
         return {
           id: goal.id,
@@ -567,8 +518,8 @@ export async function GET(request: NextRequest) {
           goalValue: goal.goal_value,
           goalUnit: goal.goal_unit,
           realized,
-          progress: progressRounded,
-          status
+          progress: Math.round(progress * 10) / 10,
+          status: progress >= 100 ? 'achieved' : progress >= 70 ? 'ontrack' : 'behind'
         };
       })
     );
@@ -737,11 +688,7 @@ export async function GET(request: NextRequest) {
       ranking,
       period: {
         year: yearNum,
-        month: monthNum,
-        isCurrentMonth: (() => {
-          const n = new Date();
-          return n.getFullYear() === yearNum && n.getMonth() + 1 === monthNum;
-        })()
+        month: monthNum
       },
       revenue: {
         goal: revenueGoal,
@@ -759,7 +706,6 @@ export async function GET(request: NextRequest) {
       summary: {
         totalProductGoals: productGoalsWithRealized.length,
         productsAchieved: productGoalsWithRealized.filter((p: any) => p.status === 'achieved').length,
-        productsAlmost: productGoalsWithRealized.filter((p: any) => p.status === 'almost').length,
         productsOnTrack: productGoalsWithRealized.filter((p: any) => p.status === 'ontrack').length,
         productsBehind: productGoalsWithRealized.filter((p: any) => p.status === 'behind').length
       }
