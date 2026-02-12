@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { config_id, sync_type = 'full' } = body;
+    const { config_id, sync_type = 'full', end_date: endDateParam } = body;
 
     if (!config_id) {
       return NextResponse.json({ error: 'config_id obrigatório' }, { status: 400 });
@@ -90,14 +90,33 @@ export async function POST(request: NextRequest) {
     // Calcular período
     const today = new Date();
     let startDate: Date;
-    let endDate = today;  // Declarado antes de qualquer uso
+    let endDate: Date;
 
     if (sync_type === 'incremental' && config.is_incremental) {
       const daysBack = config.incremental_days || 7;
       startDate = new Date(today);
       startDate.setDate(startDate.getDate() - daysBack);
+      endDate = new Date(today);
     } else {
       startDate = config.initial_date ? new Date(config.initial_date) : new Date('2024-01-01');
+      // Permite informar end_date (ex.: fim do mês) para trazer período fechado (ex.: fevereiro inteiro)
+      if (endDateParam && typeof endDateParam === 'string') {
+        const parsed = new Date(endDateParam);
+        if (!isNaN(parsed.getTime())) {
+          endDate = parsed;
+          if (endDate > today) endDate = today;
+          if (endDate < startDate) {
+            return NextResponse.json(
+              { error: 'end_date não pode ser anterior a start_date (initial_date)' },
+              { status: 400 }
+            );
+          }
+        } else {
+          endDate = new Date(today);
+        }
+      } else {
+        endDate = new Date(today);
+      }
     }
 
     // Calcular total de dias

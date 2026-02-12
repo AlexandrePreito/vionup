@@ -331,9 +331,11 @@ export async function GET(request: NextRequest) {
       .eq('month', monthNum)
       .eq('is_active', true);
 
-    // 6. Buscar vendas por produto usando a MATERIALIZED VIEW otimizada
+    // 6. Buscar vendas por produto: tentar view; se vazia, buscar direto em external_sales
     let salesByProduct: Record<string, { quantity: number; value: number }> = {};
-    
+    const startDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-01`;
+    const endDate = new Date(yearNum, monthNum, 0).toISOString().split('T')[0];
+
     if (externalEmployeeCodes.length > 0) {
       const { data: productSales } = await supabaseAdmin
         .from('mv_employee_product_sales')
@@ -343,12 +345,37 @@ export async function GET(request: NextRequest) {
         .eq('year', yearNum)
         .eq('month', monthNum);
 
-      if (productSales) {
+      if (productSales && productSales.length > 0) {
         for (const ps of productSales) {
-          salesByProduct[ps.external_product_id] = {
+          const key = String(ps.external_product_id ?? '');
+          salesByProduct[key] = {
             quantity: ps.total_quantity || 0,
             value: ps.total_value || 0
           };
+        }
+      }
+
+      // Fallback: se a view não retornou dados, buscar direto em external_sales
+      // external_sales pode ter external_employee_id como código (string) ou como UUID
+      if (Object.keys(salesByProduct).length === 0) {
+        const employeeIdsToTry = [...new Set([...externalEmployeeCodes, ...mappedExternalEmployeeUuids])];
+        const { data: salesRows } = await supabaseAdmin
+          .from('external_sales')
+          .select('external_product_id, quantity, total_value')
+          .eq('company_group_id', companyGroupId)
+          .in('external_employee_id', employeeIdsToTry)
+          .gte('sale_date', startDate)
+          .lte('sale_date', endDate);
+
+        if (salesRows && salesRows.length > 0) {
+          for (const row of salesRows) {
+            const key = String(row.external_product_id ?? '').trim();
+            if (!salesByProduct[key]) {
+              salesByProduct[key] = { quantity: 0, value: 0 };
+            }
+            salesByProduct[key].quantity += Number(row.quantity) || 0;
+            salesByProduct[key].value += Number(row.total_value) || 0;
+          }
         }
       }
     }
@@ -463,17 +490,21 @@ export async function GET(request: NextRequest) {
             .eq('company_group_id', companyGroupId);
 
           if (productMappings && productMappings.length > 0) {
+            const externalProductUuids = productMappings.map((pm: any) => pm.external_product_id);
             const { data: externalProducts } = await supabaseAdmin
               .from('external_products')
-              .select('external_id')
-              .in('id', productMappings.map((pm: any) => pm.external_product_id));
+              .select('id, external_id')
+              .in('id', externalProductUuids);
 
-            const externalProductCodes = externalProducts?.map((ep: any) => ep.external_id) || [];
-            
-            for (const code of externalProductCodes) {
-              if (salesByProduct[code]) {
-                realized += salesByProduct[code].quantity;
-              }
+            // View/external_sales podem usar external_product_id como código (external_id) ou UUID
+            const byCode: Record<string, string> = {};
+            (externalProducts || []).forEach((ep: any) => { byCode[ep.id] = ep.external_id; });
+            for (const pm of productMappings) {
+              const uuid = String(pm.external_product_id ?? '').trim();
+              const code = (byCode[pm.external_product_id] ?? '').trim();
+              const qtyFromCode = code && salesByProduct[code] ? salesByProduct[code].quantity : 0;
+              const qtyFromUuid = uuid && salesByProduct[uuid] ? salesByProduct[uuid].quantity : 0;
+              realized += qtyFromCode || qtyFromUuid;
             }
           }
         }

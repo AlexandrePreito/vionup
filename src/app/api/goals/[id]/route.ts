@@ -122,6 +122,47 @@ export async function PUT(
       parent_goal_id
     } = body;
 
+    // Buscar meta atual para validação de duplicidade (metas de pesquisa)
+    const { data: currentGoal, error: fetchError } = await supabaseAdmin
+      .from('sales_goals')
+      .select('goal_type, company_group_id, year, month, company_id, employee_id')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !currentGoal) {
+      return NextResponse.json({ error: 'Meta não encontrada' }, { status: 404 });
+    }
+
+    const isResearchGoal = typeof currentGoal.goal_type === 'string' && currentGoal.goal_type.startsWith('research_');
+    if (isResearchGoal) {
+      const checkYear = year !== undefined ? year : currentGoal.year;
+      const checkMonth = month !== undefined ? month : currentGoal.month;
+      const checkCompanyId = company_id !== undefined ? (company_id || null) : currentGoal.company_id;
+      const checkEmployeeId = employee_id !== undefined ? (employee_id || null) : currentGoal.employee_id;
+
+      let dupQuery = supabaseAdmin
+        .from('sales_goals')
+        .select('id')
+        .eq('company_group_id', currentGoal.company_group_id)
+        .eq('goal_type', currentGoal.goal_type)
+        .eq('year', checkYear)
+        .eq('month', checkMonth)
+        .eq('is_active', true)
+        .neq('id', id);
+      if (currentGoal.goal_type.includes('_employee')) {
+        dupQuery = checkCompanyId ? dupQuery.eq('company_id', checkCompanyId) : dupQuery.is('company_id', null);
+        dupQuery = checkEmployeeId ? dupQuery.eq('employee_id', checkEmployeeId) : dupQuery.is('employee_id', null);
+      } else {
+        dupQuery = checkCompanyId ? dupQuery.eq('company_id', checkCompanyId) : dupQuery.is('company_id', null);
+      }
+      const { data: existingRows } = await dupQuery.limit(1);
+      if (existingRows && existingRows.length > 0) {
+        return NextResponse.json({
+          error: 'Já existe outra meta deste tipo para o mesmo mês, ano e ' + (currentGoal.goal_type.includes('_employee') ? 'empresa/funcionário' : 'empresa') + '.'
+        }, { status: 409 });
+      }
+    }
+
     const updateData: any = {
       updated_at: new Date().toISOString()
     };

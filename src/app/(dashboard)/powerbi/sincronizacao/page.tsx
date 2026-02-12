@@ -301,6 +301,8 @@ export default function PowerBISincronizacaoPage() {
   // Modal de confirmação para parar sincronização
   const [isConfirmStopModalOpen, setIsConfirmStopModalOpen] = useState(false);
   const [pendingSync, setPendingSync] = useState<{ entityType: string; forceFullSync: boolean } | null>(null);
+  // Até data (opcional) para Sync Completa — ex.: 2026-02-28 para trazer fevereiro inteiro
+  const [syncEndDateOptional, setSyncEndDateOptional] = useState('');
 
   // Modal de importação via planilha
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -456,21 +458,23 @@ export default function PowerBISincronizacaoPage() {
   // ============================================================
   // SINCRONIZAÇÃO COM FILA
   // ============================================================
-  const handleSync = async (config: PowerBISyncConfig, forceFullSync: boolean = false) => {
+  const handleSync = async (config: PowerBISyncConfig, forceFullSync: boolean = false, optionalEndDate?: string) => {
     try {
       setSyncingEntity(config.entity_type);
       abortRef.current = false;
 
       const syncType = forceFullSync ? 'full' : (config.is_incremental ? 'incremental' : 'full');
+      const body: { config_id: string; sync_type: string; end_date?: string } = {
+        config_id: config.id,
+        sync_type: syncType,
+      };
+      if (syncType === 'full' && optionalEndDate?.trim()) body.end_date = optionalEndDate.trim();
 
       // 1. Adicionar à fila
       const response = await fetch('/api/powerbi/sync-queue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          config_id: config.id,
-          sync_type: syncType,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -2322,12 +2326,23 @@ export default function PowerBISincronizacaoPage() {
                         <Play size={14} />
                         Sync Incremental
                       </button>
+                      {['sales', 'cash_flow', 'cash_flow_statement'].includes(selectedEntityType!) && (
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-gray-500">Até data (opcional — ex.: fim do mês)</label>
+                          <input
+                            type="date"
+                            value={syncEndDateOptional}
+                            onChange={(e) => setSyncEndDateOptional(e.target.value)}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
+                          />
+                        </div>
+                      )}
                       <button
                         onClick={() => {
                           const config = configs[selectedEntityType!];
                           if (config) {
                             closeDetailPanel();
-                            handleSync(config, true);
+                            handleSync(config, true, syncEndDateOptional || undefined);
                           }
                         }}
                         disabled={syncingEntity !== null}

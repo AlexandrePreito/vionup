@@ -290,10 +290,26 @@ export default function MetasPesquisasPage() {
       if (isEmployeeType && !editingItem && selectedEmployees.length > 0) {
         let successCount = 0;
         let errorCount = 0;
+        let skipCount = 0;
+        let firstErrorMessage = '';
+
+        const alreadyExists = (eid: string, cid: string) =>
+          goals.some(
+            (g: ResearchGoal) =>
+              g.goal_type === formData.goal_type &&
+              g.year === formData.year &&
+              g.month === formData.month &&
+              g.employee_id === eid &&
+              (g.company_id || '') === cid
+          );
 
         // Criar uma meta para cada combinação empresa + funcionário
         for (const companyId of selectedCompanies) {
           for (const emp of selectedEmployees) {
+            if (alreadyExists(emp.id, companyId)) {
+              skipCount++;
+              continue;
+            }
             const payload = {
               ...formData,
               company_id: companyId,
@@ -312,12 +328,22 @@ export default function MetasPesquisasPage() {
               successCount++;
             } else {
               errorCount++;
+              if (!firstErrorMessage) {
+                try {
+                  const errData = await res.json();
+                  firstErrorMessage = errData.error || '';
+                } catch (_) {}
+              }
             }
           }
         }
 
-        if (errorCount > 0) {
-          alert(`${successCount} metas criadas com sucesso. ${errorCount} erros (possível duplicidade).`);
+        if (skipCount > 0 || errorCount > 0) {
+          const parts = [];
+          if (successCount > 0) parts.push(`${successCount} meta(s) criada(s).`);
+          if (skipCount > 0) parts.push(`${skipCount} não criada(s): já existe meta deste tipo para o mesmo mês, ano e funcionário.`);
+          if (errorCount > 0) parts.push(firstErrorMessage ? `${errorCount} erro(s): ${firstErrorMessage}` : `${errorCount} erro(s).`);
+          alert(parts.join(' '));
         }
 
         setIsModalOpen(false);
@@ -329,8 +355,23 @@ export default function MetasPesquisasPage() {
       if (isCompanyType && !editingItem && selectedCompanies.length > 0) {
         let successCount = 0;
         let errorCount = 0;
+        let skipCount = 0;
+        let firstErrorMessage = '';
+
+        const companyAlreadyExists = (cid: string) =>
+          goals.some(
+            (g: ResearchGoal) =>
+              g.goal_type === formData.goal_type &&
+              g.year === formData.year &&
+              g.month === formData.month &&
+              (g.company_id || '') === cid
+          );
 
         for (const companyId of selectedCompanies) {
+          if (companyAlreadyExists(companyId)) {
+            skipCount++;
+            continue;
+          }
           const payload = {
             ...formData,
             company_id: companyId,
@@ -348,11 +389,21 @@ export default function MetasPesquisasPage() {
             successCount++;
           } else {
             errorCount++;
+            if (!firstErrorMessage) {
+              try {
+                const errData = await res.json();
+                firstErrorMessage = errData.error || '';
+              } catch (_) {}
+            }
           }
         }
 
-        if (errorCount > 0) {
-          alert(`${successCount} metas criadas com sucesso. ${errorCount} erros (possível duplicidade).`);
+        if (skipCount > 0 || errorCount > 0) {
+          const parts = [];
+          if (successCount > 0) parts.push(`${successCount} meta(s) criada(s).`);
+          if (skipCount > 0) parts.push(`${skipCount} não criada(s): já existe meta deste tipo para o mesmo mês, ano e empresa.`);
+          if (errorCount > 0) parts.push(firstErrorMessage ? `${errorCount} erro(s): ${firstErrorMessage}` : `${errorCount} erro(s).`);
+          alert(parts.join(' '));
         }
 
         setIsModalOpen(false);
@@ -519,6 +570,11 @@ export default function MetasPesquisasPage() {
 
   return (
     <>
+      <style dangerouslySetInnerHTML={{ __html: `
+        .no-spin-input::-webkit-outer-spin-button,
+        .no-spin-input::-webkit-inner-spin-button { -webkit-appearance: none; appearance: none; margin: 0; opacity: 0; pointer-events: none; height: 0; width: 0; }
+        .no-spin-input { -moz-appearance: textfield; appearance: textfield; }
+      ` }} />
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -878,15 +934,13 @@ export default function MetasPesquisasPage() {
                     </label>
                     {formData.goal_type.includes('note') ? (
                       <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="5"
-                        value={formData.goal_value}
+                        type="text"
+                        inputMode="decimal"
+                        value={formData.goal_value === 0 ? '' : formData.goal_value}
                         onChange={(e) => {
-                          const newValue = parseFloat(e.target.value) || 0;
+                          const raw = e.target.value.replace(/[^0-9,.]/g, '').replace(',', '.');
+                          const newValue = raw === '' ? 0 : Math.min(5, Math.max(0, parseFloat(raw) || 0));
                           setFormData({ ...formData, goal_value: newValue });
-                          // Atualizar valores dos funcionários selecionados
                           if (selectedEmployees.length > 0) {
                             setSelectedEmployees(selectedEmployees.map(emp => ({ ...emp, value: newValue })));
                           }
@@ -896,14 +950,13 @@ export default function MetasPesquisasPage() {
                       />
                     ) : (
                       <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={formData.goal_value}
+                        type="text"
+                        inputMode="numeric"
+                        value={formData.goal_value === 0 ? '' : formData.goal_value}
                         onChange={(e) => {
-                          const newValue = parseInt(e.target.value) || 0;
+                          const raw = e.target.value.replace(/\D/g, '');
+                          const newValue = raw === '' ? 0 : parseInt(raw, 10) || 0;
                           setFormData({ ...formData, goal_value: newValue });
-                          // Atualizar valores dos funcionários selecionados
                           if (selectedEmployees.length > 0) {
                             setSelectedEmployees(selectedEmployees.map(emp => ({ ...emp, value: newValue })));
                           }
@@ -1020,13 +1073,12 @@ export default function MetasPesquisasPage() {
                             <span className="flex-1 text-sm text-gray-700 truncate">{emp.name}</span>
                             {formData.goal_type.includes('note') ? (
                               <input
-                                type="number"
-                                step="0.1"
-                                min="0"
-                                max="5"
-                                value={emp.value}
+                                type="text"
+                                inputMode="decimal"
+                                value={emp.value === 0 ? '' : emp.value}
                                 onChange={(e) => {
-                                  const newValue = parseFloat(e.target.value) || 0;
+                                  const raw = e.target.value.replace(/[^0-9,.]/g, '').replace(',', '.');
+                                  const newValue = raw === '' ? 0 : Math.min(5, Math.max(0, parseFloat(raw) || 0));
                                   const updated = [...selectedEmployees];
                                   updated[index] = { ...emp, value: newValue };
                                   setSelectedEmployees(updated);
@@ -1035,12 +1087,12 @@ export default function MetasPesquisasPage() {
                               />
                             ) : (
                               <input
-                                type="number"
-                                min="1"
-                                step="1"
-                                value={emp.value}
+                                type="text"
+                                inputMode="numeric"
+                                value={emp.value === 0 ? '' : emp.value}
                                 onChange={(e) => {
-                                  const newValue = parseInt(e.target.value) || 0;
+                                  const raw = e.target.value.replace(/\D/g, '');
+                                  const newValue = raw === '' ? 0 : parseInt(raw, 10) || 0;
                                   const updated = [...selectedEmployees];
                                   updated[index] = { ...emp, value: newValue };
                                   setSelectedEmployees(updated);
@@ -1080,22 +1132,26 @@ export default function MetasPesquisasPage() {
                   </label>
                   {formData.goal_type.includes('note') ? (
                     <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="5"
-                      value={formData.goal_value}
-                      onChange={(e) => setFormData({ ...formData, goal_value: parseFloat(e.target.value) || 0 })}
+                      type="text"
+                      inputMode="decimal"
+                      value={formData.goal_value === 0 ? '' : formData.goal_value}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9,.]/g, '').replace(',', '.');
+                        const newValue = raw === '' ? 0 : Math.min(5, Math.max(0, parseFloat(raw) || 0));
+                        setFormData({ ...formData, goal_value: newValue });
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Ex: 4.5"
                     />
                   ) : (
                     <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={formData.goal_value}
-                      onChange={(e) => setFormData({ ...formData, goal_value: parseInt(e.target.value) || 0 })}
+                      type="text"
+                      inputMode="numeric"
+                      value={formData.goal_value === 0 ? '' : formData.goal_value}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, '');
+                        setFormData({ ...formData, goal_value: raw === '' ? 0 : parseInt(raw, 10) || 0 });
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Ex: 100"
                     />

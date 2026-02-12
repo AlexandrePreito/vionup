@@ -231,6 +231,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Nome é obrigatório para meta personalizada' }, { status: 400 });
     }
 
+    // Metas de pesquisa: não permitir duplicata (mesmo tipo + mês + ano + empresa + funcionário)
+    // Por funcionário: mesma empresa + mesmo funcionário = duplicata. Mesmo funcionário em empresas diferentes = permitido.
+    const isResearchGoal = typeof goal_type === 'string' && goal_type.startsWith('research_');
+    if (isResearchGoal) {
+      let dupQuery = supabaseAdmin
+        .from('sales_goals')
+        .select('id')
+        .eq('company_group_id', company_group_id)
+        .eq('goal_type', goal_type)
+        .eq('year', year)
+        .eq('month', month)
+        .eq('is_active', true);
+      if (goal_type.includes('_employee')) {
+        if (company_id) dupQuery = dupQuery.eq('company_id', company_id);
+        else dupQuery = dupQuery.is('company_id', null);
+        if (employee_id) dupQuery = dupQuery.eq('employee_id', employee_id);
+        else dupQuery = dupQuery.is('employee_id', null);
+      } else {
+        if (company_id) dupQuery = dupQuery.eq('company_id', company_id);
+        else dupQuery = dupQuery.is('company_id', null);
+      }
+      const { data: existingRows } = await dupQuery.limit(1);
+      if (existingRows && existingRows.length > 0) {
+        return NextResponse.json({
+          error: 'Já existe uma meta deste tipo para o mesmo mês, ano e ' + (goal_type.includes('_employee') ? 'empresa/funcionário' : 'empresa') + '. Não é possível cadastrar duplicada.'
+        }, { status: 409 });
+      }
+    }
+
     const insertData: any = {
       company_group_id,
       goal_type,

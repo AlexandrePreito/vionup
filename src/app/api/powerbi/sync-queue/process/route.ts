@@ -7,6 +7,10 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 // Cache global de tokens do Power BI
 const tokenCache = new Map<string, { token: string; expires: number }>();
 
+/** Limite da API Power BI: 100k linhas ou 1M valores. Acima disso os dados vêm truncados (200 OK). */
+const POWERBI_MAX_ROWS_PER_QUERY = 100000;
+const POWERBI_TRUNCATION_THRESHOLD = 95000;
+
 async function getPowerBIToken(connection: any): Promise<string> {
   const cacheKey = connection.client_id;
   const cached = tokenCache.get(cacheKey);
@@ -83,7 +87,7 @@ async function executeDaxQuery(options: DaxQueryOptions): Promise<DaxQueryResult
     datasetId,
     accessToken,
     query,
-    timeoutMs = 300000,
+    timeoutMs = 600000,  // 10 minutos
     retryableColumns = []
   } = options;
 
@@ -254,6 +258,31 @@ function injectDateFilter(
 
   // Caso 2/3/4: Query sem FILTER externo — envolver com FILTER
   return `EVALUATE\nFILTER(\n  ${queryBody},\n  ${dateFilter}\n)`;
+}
+
+/** Extrai nome da tabela da query DAX (ex.: VendaItemGeral). */
+function getTableNameFromDaxQuery(daxQuery: string): string {
+  const tableMatch = daxQuery.match(/SUMMARIZECOLUMNS\s*\(\s*([^\[]+)\[/i) ||
+    daxQuery.match(/FILTER\s*\(\s*'?([^'\[]+)'?\[/i) ||
+    daxQuery.match(/SELECTCOLUMNS\s*\(\s*([^\[]+)\[/i);
+  return tableMatch ? tableMatch[1].trim() : 'VendaItemGeral';
+}
+
+/** Injeta filtro por empresa na query DAX (evita truncamento ao buscar por empresa). */
+function injectCompanyFilter(daxQuery: string, tableName: string, companyCode: string): string {
+  const escaped = String(companyCode).replace(/"/g, '""'); // DAX usa "" para escapar aspas duplas
+  const companyFilter = `${tableName}[Empresa] = "${escaped}"`;
+  const queryBody = daxQuery.replace(/^EVALUATE\s*/i, '').trim();
+  const filterMatch = queryBody.match(/^FILTER\s*\(/i);
+  if (filterMatch) {
+    const insertPos = findFilterConditionEnd(queryBody);
+    if (insertPos > 0) {
+      const before = queryBody.substring(0, insertPos).trimEnd();
+      const after = queryBody.substring(insertPos);
+      return `EVALUATE\n${before} && (${companyFilter})${after}`;
+    }
+  }
+  return daxQuery;
 }
 
 interface ProcessResult {
@@ -555,11 +584,10 @@ export async function POST(req: NextRequest): Promise<NextResponse<ProcessResult
       // Para entidades com filtro de data: NÃO adicionar TOPN (o filtro já limita)
       // Para entidades sem data: TOPN(5000) - proteção contra timeout
       if (!daxQuery.toUpperCase().includes('TOPN')) {
-        // Remover EVALUATE e qualquer espaço/linha após, garantindo limpeza
-        const queryWithoutEvaluate = daxQuery.replace(/^EVALUATE\s*\n?\s*/i, '').trim();
-        // Garantir que não há EVALUATE duplicado
-        const cleanQuery = queryWithoutEvaluate.replace(/^EVALUATE\s*\n?\s*/i, '').trim();
-        
+        // Remover TODOS os EVALUATE do início (evita "EVALUATE TOPN(..., EVALUATE FILTER(...))" inválido no DAX)
+        const stripEvaluate = (q: string) => q.replace(/^(\s*EVALUATE\s*\n?\s*)+/i, '').trim();
+        const cleanQuery = stripEvaluate(daxQuery);
+
         // Não adicionar TOPN quando a query já tem FILTER com SUMMARIZECOLUMNS
         // O filtro de data já limita os resultados suficientemente
         if (hasDateField) {
@@ -658,8 +686,47 @@ TOPN(
       }, { status: 500 });
     }
 
-    const rows = queryResult.rows;
+    let rows = queryResult.rows;
     console.log(`📊 Power BI retornou ${rows.length} registros para o período ${batchStartDateStr} a ${batchEndDateStr}`);
+
+    // API Power BI limita a 100k linhas por request; acima disso retorna truncado (200 OK). Refazer por empresa.
+    if (config.entity_type === 'sales' && rows.length >= POWERBI_TRUNCATION_THRESHOLD) {
+      console.warn(`⚠️ Possível truncamento (${rows.length} >= ${POWERBI_TRUNCATION_THRESHOLD}). Refazendo por empresa para trazer todas as linhas.`);
+      const tableName = getTableNameFromDaxQuery(daxQuery);
+      const dateCol = config.date_field?.includes('[') ? config.date_field : `${tableName}[${config.date_field || 'dt_contabil'}]`;
+      const distinctCompaniesDax = `EVALUATE SUMMARIZE(FILTER(${tableName}, ${dateCol} >= DATE(${startYear}, ${startMonth}, ${startDay}) && ${dateCol} <= DATE(${endYear}, ${endMonth}, ${endDay})), ${tableName}[Empresa])`;
+      let companiesResult: DaxQueryResult | null = null;
+      try {
+        companiesResult = await executeDaxQuery({
+          workspaceId: config.connection.workspace_id,
+          datasetId: config.dataset_id,
+          accessToken: access_token,
+          query: distinctCompaniesDax,
+        });
+      } catch (err: any) {
+        console.error('❌ Erro ao buscar empresas para refetch:', err.message);
+      }
+      const companyRows = companiesResult?.rows ?? [];
+      const companyKey = companyRows.length > 0 ? Object.keys(companyRows[0]).find(k => /Empresa/i.test(k)) : null;
+      const companies = companyKey ? companyRows.map((r: any) => String(r[companyKey] ?? '')).filter(Boolean) : [];
+      if (companies.length === 0) {
+        console.warn('⚠️ Nenhuma empresa retornada; mantendo resultado original.');
+      } else {
+        const allRows: any[] = [];
+        for (const companyCode of companies) {
+          const daxByCompany = injectCompanyFilter(daxQuery, tableName, companyCode);
+          const res = await executeDaxQuery({
+            workspaceId: config.connection.workspace_id,
+            datasetId: config.dataset_id,
+            accessToken: access_token,
+            query: daxByCompany,
+          });
+          if (res.rows?.length) allRows.push(...res.rows);
+        }
+        rows = allRows;
+        console.log(`📊 Refetch por empresa: ${companies.length} empresas, ${rows.length} linhas totais.`);
+      }
+    }
 
     if (rows.length > 5000) {
       console.warn(`⚠️ MUITOS REGISTROS (${rows.length})! Considere reduzir o batch size.`);
