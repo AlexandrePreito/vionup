@@ -91,29 +91,62 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Função para calcular próxima execução
+/**
+ * Retorna o offset de Brasília em minutos (negativo = Brasília está atrás do UTC).
+ * Usa Intl para lidar com horário de verão automaticamente.
+ * Brasília normalmente é UTC-3 (-180 min).
+ */
+function getBrasiliaOffsetMinutes(date: Date): number {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date);
+  const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value || '0', 10);
+
+  const brasiliaAsUtc = new Date(Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour'),
+    get('minute'),
+    get('second')
+  ));
+
+  return Math.round((brasiliaAsUtc.getTime() - date.getTime()) / 60000);
+}
+
+/**
+ * Calcula o próximo next_run_at em UTC.
+ * O time_of_day vem do frontend em horário de Brasília (America/Sao_Paulo).
+ */
 function calculateNextRun(scheduleType: string, dayOfWeek: number | undefined, timeOfDay: string): string {
   const now = new Date();
   const [hours, minutes] = timeOfDay.split(':').map(Number);
-  
+
+  const brasiliaOffset = getBrasiliaOffsetMinutes(now);
+  const offsetHours = Math.abs(brasiliaOffset) / 60;
+
   const nextRun = new Date();
-  nextRun.setHours(hours, minutes, 0, 0);
+  nextRun.setUTCHours(hours + offsetHours, minutes, 0, 0);
 
   if (scheduleType === 'daily') {
-    // Se já passou o horário hoje, agenda para amanhã
     if (nextRun <= now) {
-      nextRun.setDate(nextRun.getDate() + 1);
+      nextRun.setUTCDate(nextRun.getUTCDate() + 1);
     }
   } else if (scheduleType === 'weekly' && dayOfWeek !== undefined) {
-    // Encontrar próximo dia da semana
-    const currentDay = now.getDay();
+    const currentDay = nextRun.getUTCDay();
     let daysUntil = dayOfWeek - currentDay;
-    
     if (daysUntil < 0 || (daysUntil === 0 && nextRun <= now)) {
       daysUntil += 7;
     }
-    
-    nextRun.setDate(nextRun.getDate() + daysUntil);
+    nextRun.setUTCDate(nextRun.getUTCDate() + daysUntil);
   }
 
   return nextRun.toISOString();
