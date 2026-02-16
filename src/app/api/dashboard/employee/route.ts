@@ -103,6 +103,7 @@ export async function GET(request: NextRequest) {
     let totalQuantity = 0; // Mantido para compatibilidade, mas não usado no ticket médio
     let distinctSalesCount = 0;
     let averageTicket = 0;
+    let salesByDate: Record<string, { revenue: number; saleUuids: Set<string> }> = {};
     
     if (externalEmployeeCodes.length > 0) {
       // Buscar diretamente da tabela external_sales (fonte de verdade)
@@ -151,6 +152,7 @@ export async function GET(request: NextRequest) {
       let totalExpected = 0;
       
       // Primeiro, contar quantos registros existem (para debug)
+      // Inclui sale_uuid OU venda_id (sync pode popular um ou outro)
       const { count: totalCount } = await supabaseAdmin
         .from('external_sales')
         .select('*', { count: 'exact', head: true })
@@ -158,7 +160,7 @@ export async function GET(request: NextRequest) {
         .in('external_employee_id', externalEmployeeCodes)
         .gte('sale_date', startDateStr)
         .lte('sale_date', endDateStr)
-        .not('sale_uuid', 'is', null);
+        .or('sale_uuid.not.is.null,venda_id.not.is.null');
       
       console.log(`📊 Total de registros esperados (count): ${totalCount || 'N/A'}`);
       totalExpected = totalCount || 0;
@@ -171,12 +173,12 @@ export async function GET(request: NextRequest) {
         
         const { data: directSales, error: directError } = await supabaseAdmin
           .from('external_sales')
-          .select('total_value, sale_uuid, external_employee_id, sale_date')
+          .select('total_value, sale_uuid, venda_id, external_employee_id, sale_date')
           .eq('company_group_id', companyGroupId)
           .in('external_employee_id', externalEmployeeCodes)
           .gte('sale_date', startDateStr)
           .lte('sale_date', endDateStr)
-          .not('sale_uuid', 'is', null)
+          .or('sale_uuid.not.is.null,venda_id.not.is.null')
           .order('sale_date', { ascending: true })
           .order('sale_uuid', { ascending: true })
           .range(from, to);
@@ -242,15 +244,15 @@ export async function GET(request: NextRequest) {
         // Calcular valor total: SUM(total_value)
         totalRevenue = allDirectSales.reduce((sum: number, s: any) => sum + (s.total_value || 0), 0);
         
-        // Calcular quantidade de vendas distintas: COUNT(DISTINCT sale_uuid)
+        // Calcular quantidade de vendas distintas: COUNT(DISTINCT sale_uuid ou venda_id)
+        // Sync pode popular venda_id ou sale_uuid; usamos o que estiver preenchido
         const uniqueSaleUuids = new Set<string>();
         const salesByCode: Record<string, { count: number; revenue: number }> = {};
-        const salesByDate: Record<string, { count: number; revenue: number }> = {};
+        salesByDate = {};
         
         allDirectSales.forEach((s: any) => {
-          if (s.sale_uuid && s.sale_uuid.trim() !== '') {
-            uniqueSaleUuids.add(s.sale_uuid.trim());
-          }
+          const saleId = (s.sale_uuid || s.venda_id || '').toString().trim();
+          if (saleId) uniqueSaleUuids.add(saleId);
           // Agrupar por código externo para debug
           const code = s.external_employee_id || 'UNKNOWN';
           if (!salesByCode[code]) {
@@ -259,13 +261,15 @@ export async function GET(request: NextRequest) {
           salesByCode[code].count++;
           salesByCode[code].revenue += s.total_value || 0;
           
-          // Agrupar por data para debug
+          // Agrupar por data (revenue + distinct sale_uuid/venda_id para transactions)
           const saleDate = s.sale_date ? new Date(s.sale_date).toISOString().split('T')[0] : 'SEM_DATA';
-          if (!salesByDate[saleDate]) {
-            salesByDate[saleDate] = { count: 0, revenue: 0 };
+          if (saleDate !== 'SEM_DATA') {
+            if (!salesByDate[saleDate]) {
+              salesByDate[saleDate] = { revenue: 0, saleUuids: new Set() };
+            }
+            salesByDate[saleDate].revenue += s.total_value || 0;
+            if (saleId) salesByDate[saleDate].saleUuids.add(saleId);
           }
-          salesByDate[saleDate].count++;
-          salesByDate[saleDate].revenue += s.total_value || 0;
         });
         distinctSalesCount = uniqueSaleUuids.size;
         
@@ -274,8 +278,8 @@ export async function GET(request: NextRequest) {
         console.log(`✅ Valor total (SUM total_value): R$ ${totalRevenue.toFixed(2)}`);
         console.log(`✅ Quantidade de vendas distintas (COUNT DISTINCT sale_uuid): ${distinctSalesCount}`);
         console.log(`✅ Vendas por código externo:`, salesByCode);
-        console.log(`✅ Primeiras 5 datas com vendas:`, Object.keys(salesByDate).slice(0, 5).map(d => `${d}: ${salesByDate[d].count} vendas, R$ ${salesByDate[d].revenue.toFixed(2)}`));
-        console.log(`✅ Últimas 5 datas com vendas:`, Object.keys(salesByDate).slice(-5).map(d => `${d}: ${salesByDate[d].count} vendas, R$ ${salesByDate[d].revenue.toFixed(2)}`));
+        console.log(`✅ Primeiras 5 datas com vendas:`, Object.keys(salesByDate).slice(0, 5).map(d => `${d}: ${salesByDate[d].saleUuids.size} vendas, R$ ${salesByDate[d].revenue.toFixed(2)}`));
+        console.log(`✅ Últimas 5 datas com vendas:`, Object.keys(salesByDate).slice(-5).map(d => `${d}: ${salesByDate[d].saleUuids.size} vendas, R$ ${salesByDate[d].revenue.toFixed(2)}`));
         console.log(`✅ Exemplo de sale_uuid (primeiros 3):`, Array.from(uniqueSaleUuids).slice(0, 3));
         console.log('=================================================');
       } else {
@@ -455,9 +459,8 @@ export async function GET(request: NextRequest) {
                 .in('external_employee_id', allCodesRank)
                 .gte('sale_date', rankStart)
                 .lte('sale_date', rankEnd)
-                .not('sale_uuid', 'is', null)
+                .or('sale_uuid.not.is.null,venda_id.not.is.null')
                 .order('sale_date', { ascending: true })
-                .order('sale_uuid', { ascending: true })
                 .range(from, to);
 
               if (rankRows && rankRows.length > 0) {
@@ -724,6 +727,39 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 11. Montar vendas diárias para gráfico (igual tela Realizado)
+    const DAYS_OF_WEEK = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const lastDayOfMonth = new Date(yearNum, monthNum, 0).getDate();
+    const dailyMap = new Map<string, { revenue: number; transactions: number }>();
+    
+    for (let day = 1; day <= lastDayOfMonth; day++) {
+      const dateStr = `${yearNum}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      dailyMap.set(dateStr, { revenue: 0, transactions: 0 });
+    }
+    
+    if (Object.keys(salesByDate).length > 0) {
+      for (const [dateStr, data] of Object.entries(salesByDate)) {
+        if (dailyMap.has(dateStr)) {
+          dailyMap.set(dateStr, {
+            revenue: Math.round(data.revenue * 100) / 100,
+            transactions: data.saleUuids?.size ?? 0
+          });
+        }
+      }
+    }
+    
+    const dailyRevenue = Array.from(dailyMap.entries()).map(([date, data]) => {
+      const dateObj = new Date(date + 'T12:00:00');
+      const dayOfWeekIndex = dateObj.getDay();
+      return {
+        date,
+        day: dateObj.getDate(),
+        dayOfWeek: DAYS_OF_WEEK[dayOfWeekIndex] || 'Dom',
+        revenue: data.revenue,
+        transactions: data.transactions
+      };
+    }).sort((a, b) => a.day - b.day);
+
     // 12. Montar resposta
     const response = {
       employee: {
@@ -754,6 +790,7 @@ export async function GET(request: NextRequest) {
         averageTicket: Math.round(averageTicket * 100) / 100 || 0,
         totalQuantity: totalQuantity || 0
       },
+      dailyRevenue,
       tendency,
       products: productGoalsWithRealized,
       summary: {

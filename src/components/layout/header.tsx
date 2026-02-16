@@ -1,16 +1,28 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { Package, UserCircle, Clock, ShoppingCart, Building2, Building, Users, Database, RefreshCw, Settings, ShoppingBag, Target, LayoutDashboard, Upload, Star } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSidebar } from '@/contexts/sidebar-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { UserMenu } from '@/components/UserMenu';
+import { MobileNav } from '@/components/layout/MobileNav';
+
+const MOBILE_BREAKPOINT = 768;
 
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const { setActiveSection, activeSection, isExpanded } = useSidebar();
+  const { setActiveSection, activeSection, isExpanded, isMobileMenuOpen, setIsMobileMenuOpen } = useSidebar();
   const { user } = useAuth();
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
@@ -60,13 +72,33 @@ export function Header() {
   const isNPSActive = npsItems.some(item => isActive(item.href)) || pathname.startsWith('/nps/');
 
   return (
-    <header className={`h-16 bg-white border-b border-gray-200 fixed top-0 right-0 z-30 shadow-sm transition-all duration-300 ${isExpanded ? 'left-64' : 'left-16'}`}>
-      <div className="flex items-center justify-between h-full px-6">
-        {/* Espaçador esquerdo */}
-        <div className="flex-1"></div>
-
-        {/* Menu de Navegação - Centralizado */}
-        <nav className="flex items-center gap-1 absolute left-1/2 -translate-x-1/2">
+    <>
+      {/* Mobile: apenas bolinha flutuante (sem header) | Desktop: header completo */}
+      {isMobile ? (
+        /* Mobile: header mínimo com botão menu (sem ícone flutuante azul) */
+        <header className="fixed top-0 left-0 right-0 h-14 z-30 bg-white/95 backdrop-blur border-b border-gray-200 flex items-center px-4">
+          <button
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="p-2.5 -ml-1 rounded-lg text-gray-600 hover:bg-gray-100 active:bg-gray-200 transition-colors touch-manipulation"
+            aria-label="Abrir menu"
+          >
+            <span className="flex flex-col gap-1.5">
+              <span className="w-5 h-0.5 rounded-full bg-gray-600" />
+              <span className="w-5 h-0.5 rounded-full bg-gray-600" />
+              <span className="w-5 h-0.5 rounded-full bg-gray-600" />
+            </span>
+          </button>
+          <div className="flex-1" />
+          <UserMenu />
+        </header>
+      ) : (
+      <header className={`h-16 bg-white border-b border-gray-200 fixed top-0 z-30 shadow-sm transition-all duration-300 
+        ${isExpanded ? 'right-0 left-64' : 'right-0 left-16'}
+      `}>
+        <div className="flex items-center justify-between h-full px-6">
+          <div className="flex-1" />
+          {/* Menu de Navegação - Centralizado (desktop) */}
+          <nav className="flex items-center gap-1 absolute left-1/2 -translate-x-1/2">
           {/* Dashboard */}
           <button
             onClick={() => {
@@ -180,15 +212,14 @@ export function Header() {
           </button>
         </nav>
 
-        {/* Espaçador direito */}
-        <div className="flex-1"></div>
-
-        {/* Ações do usuário */}
-        <div className="flex items-center gap-3">
-          {/* Menu do usuário */}
-          <UserMenu />
+          <div className="flex-1" />
+          <div className="flex items-center gap-2">
+            <UserMenu />
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+      )}
+      <MobileNav open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen} />
+    </>
   );
 }

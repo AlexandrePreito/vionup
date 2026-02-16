@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
+import { MobileExpandableCard } from '@/components/MobileExpandableCard';
 
 interface CompanyGroup {
   id: string;
@@ -237,10 +238,10 @@ export default function DashboardEmpresasPage() {
         <p className="text-gray-500">Visão geral de todas as empresas</p>
       </div>
 
-      {/* Filtros */}
-      <div className="flex flex-wrap items-end gap-4">
+      {/* Filtros - em mobile: um abaixo do outro, mesmo tamanho */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-4">
         {/* Grupo */}
-        <div className="w-48">
+        <div className="w-full sm:w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
           {isGroupReadOnly ? (
             <input
@@ -264,7 +265,7 @@ export default function DashboardEmpresasPage() {
         </div>
 
         {/* Mês */}
-        <div className="w-40">
+        <div className="w-full sm:w-40">
           <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
           <select
             value={selectedMonth}
@@ -278,7 +279,7 @@ export default function DashboardEmpresasPage() {
         </div>
 
         {/* Ano */}
-        <div className="w-28">
+        <div className="w-full sm:w-28">
           <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
           <select
             value={selectedYear}
@@ -311,8 +312,8 @@ export default function DashboardEmpresasPage() {
       {/* Conteúdo */}
       {!loading && companiesData && (
         <div className="space-y-6">
-          {/* Cards de Resumo */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Cards de Resumo - em mobile: um abaixo do outro */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Total de Empresas */}
             <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
               <div className="w-14 h-14 bg-indigo-100 rounded-xl flex items-center justify-center">
@@ -375,20 +376,11 @@ export default function DashboardEmpresasPage() {
             </div>
           </div>
 
-          {/* Tabela de Empresas */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
-                  <Building2 size={20} className="text-indigo-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900">Ranking de Empresas</h3>
-                  <p className="text-sm text-gray-500">{MONTHS[companiesData.period.month - 1]?.label} {companiesData.period.year}</p>
-                </div>
-              </div>
-            </div>
-
+          {/* Ranking de Empresas - em mobile: só o card, expandir ao clicar */}
+          <MobileExpandableCard
+            title="Ranking de Empresas"
+            subtitle={`${MONTHS[companiesData.period.month - 1]?.label} ${companiesData.period.year}`}
+          >
             {companiesData.companies.length === 0 ? (
               <div className="p-12 text-center">
                 <Building2 size={48} className="mx-auto text-gray-300 mb-4" />
@@ -541,7 +533,7 @@ export default function DashboardEmpresasPage() {
                 </table>
               </div>
             )}
-          </div>
+          </MobileExpandableCard>
         </div>
       )}
     </div>

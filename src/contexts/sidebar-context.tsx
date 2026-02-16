@@ -10,6 +10,8 @@ interface SidebarContextType {
   setActiveSection: (section: ActiveSection) => void;
   isExpanded: boolean;
   setIsExpanded: (expanded: boolean) => void;
+  isMobileMenuOpen: boolean;
+  setIsMobileMenuOpen: (open: boolean) => void;
 }
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
@@ -18,6 +20,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [activeSection, setActiveSection] = useState<ActiveSection>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Detectar seção ativa baseado na rota
   useEffect(() => {
@@ -39,7 +42,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   return (
-    <SidebarContext.Provider value={{ activeSection, setActiveSection, isExpanded, setIsExpanded }}>
+    <SidebarContext.Provider value={{ activeSection, setActiveSection, isExpanded, setIsExpanded, isMobileMenuOpen, setIsMobileMenuOpen }}>
       {children}
     </SidebarContext.Provider>
   );

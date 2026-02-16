@@ -350,12 +350,24 @@ O sistema utiliza as seguintes variáveis de ambiente (configuradas no Supabase)
 
 ---
 
+## 📚 Documentação Adicional
+
+| Documento | Descrição |
+|-----------|-----------|
+| [docs/SINCRONIZACAO_SISTEMA.md](docs/SINCRONIZACAO_SISTEMA.md) | **Sincronização Power BI** — Telas, APIs e Cron (foco em agendamentos automáticos) |
+| [docs/SINCRONIZACAO_APIS_E_PAGINAS.md](docs/SINCRONIZACAO_APIS_E_PAGINAS.md) | Referência de APIs e páginas do módulo de sincronização |
+| [docs/SINCRONIZACAO_POWERBI_COMPLETA.md](docs/SINCRONIZACAO_POWERBI_COMPLETA.md) | Arquitetura completa, tabelas, DAX e troubleshooting |
+| [docs/VERCEL_CRON_SYNC.md](docs/VERCEL_CRON_SYNC.md) | Configuração do Cron no Vercel |
+
+---
+
 ## 🔍 Como Usar Esta Documentação
 
 1. **Para encontrar uma tabela**: Consulte a seção [Banco de Dados](#banco-de-dados-supabase)
 2. **Para encontrar uma API**: Consulte a seção [APIs Disponíveis](#apis-disponíveis)
 3. **Para entender a estrutura**: Consulte a seção [Estrutura do Projeto](#estrutura-do-projeto)
 4. **Para localizar arquivos**: Consulte a seção [Localização dos Arquivos](#localização-dos-arquivos)
+5. **Para sincronização Power BI e Cron**: Consulte [docs/SINCRONIZACAO_SISTEMA.md](docs/SINCRONIZACAO_SISTEMA.md)
 
 ---
 

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
+import { MobileExpandableCard } from '@/components/MobileExpandableCard';
 import { 
   Building, 
   Calendar,
@@ -251,10 +252,10 @@ export default function PrevisaoPage() {
         </div>
       </div>
 
-      {/* Filtros */}
-      <div className="flex flex-wrap items-end gap-4">
+      {/* Filtros - em mobile: um abaixo do outro, mesmo tamanho */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-4">
         {/* Grupo */}
-        <div className="w-48">
+        <div className="w-full sm:w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
           {isGroupReadOnly ? (
             <input
@@ -278,7 +279,7 @@ export default function PrevisaoPage() {
         </div>
 
         {/* Empresa (Obrigatório) */}
-        <div className="w-56">
+        <div className="w-full sm:w-56">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Empresa <span className="text-red-500">*</span>
           </label>
@@ -296,7 +297,7 @@ export default function PrevisaoPage() {
         </div>
 
         {/* Mês */}
-        <div className="w-40">
+        <div className="w-full sm:w-40">
           <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
           <select
             value={selectedMonth}
@@ -310,7 +311,7 @@ export default function PrevisaoPage() {
         </div>
 
         {/* Ano */}
-        <div className="w-28">
+        <div className="w-full sm:w-28">
           <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
           <select
             value={selectedYear}
@@ -324,7 +325,7 @@ export default function PrevisaoPage() {
         </div>
 
         {/* Base de Cálculo */}
-        <div className="w-36">
+        <div className="w-full sm:w-36">
           <label className="block text-sm font-medium text-gray-700 mb-1">Base de Cálculo</label>
           <select
             value={baseMonths}
@@ -378,8 +379,8 @@ export default function PrevisaoPage() {
 
       {dataLoaded && previsaoData && !loading && (
         <>
-            {/* Cards Principais */}
-            <div className="grid grid-cols-4 gap-6">
+            {/* Cards Principais - em mobile: um abaixo do outro */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {/* Card Empresa */}
               <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 rounded-bl-full" />
@@ -454,8 +455,8 @@ export default function PrevisaoPage() {
               </div>
             </div>
 
-            {/* Cards Info */}
-            <div className="grid grid-cols-2 gap-6">
+            {/* Cards Info - em mobile: um abaixo do outro */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* Realizado até Hoje */}
               <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
                 <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -519,13 +520,10 @@ export default function PrevisaoPage() {
               </div>
             </div>
 
-            {/* Gráfico Realizado Diário (Não Acumulado) */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <div className="mb-6">
-                <h3 className="text-lg font-bold text-gray-900">Realizado Diário</h3>
-                <p className="text-sm text-gray-500">Faturamento por dia com projeção</p>
-              </div>
-              <ResponsiveContainer width="100%" height={280}>
+            {/* Gráfico Realizado Diário - em mobile: só o card, expandir ao clicar */}
+            <MobileExpandableCard title="Realizado Diário" subtitle="Faturamento por dia com projeção">
+              <div className="h-[280px] min-h-[200px]">
+              <ResponsiveContainer width="100%" height="100%" minHeight={200}>
                 <LineChart data={graficoRealizadoDiarioData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis 
@@ -597,14 +595,12 @@ export default function PrevisaoPage() {
                   )}
                 </LineChart>
               </ResponsiveContainer>
-            </div>
-
-            {/* Gráfico Principal */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <div className="mb-6">
-                <h3 className="text-lg font-bold text-gray-900">Projeção do Mês (Acumulado)</h3>
               </div>
-              <ResponsiveContainer width="100%" height={320}>
+            </MobileExpandableCard>
+
+            <MobileExpandableCard title="Projeção do Mês (Acumulado)" subtitle="Faturamento acumulado com cenários">
+              <div className="h-[320px] min-h-[220px]">
+              <ResponsiveContainer width="100%" height="100%" minHeight={220}>
                 <LineChart data={graficoPrincipalData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis 
@@ -684,15 +680,12 @@ export default function PrevisaoPage() {
                   )}
                 </LineChart>
               </ResponsiveContainer>
-            </div>
+              </div>
+            </MobileExpandableCard>
 
-            {/* Grid 2 Colunas */}
-            <div className="grid grid-cols-2 gap-6">
-              {/* Coluna Esquerda - Gráfico de Análise */}
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-1">Análise do Período</h3>
-                <p className="text-sm text-gray-500 mb-6">Realizado diário com tendência e mediana</p>
-                
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Análise do Período - em mobile: só o card, expandir ao clicar */}
+              <MobileExpandableCard title="Análise do Período" subtitle="Realizado diário com tendência e mediana">
                 {/* Legenda */}
                 <div className="flex flex-wrap gap-4 mb-4 text-xs">
                   <div className="flex items-center gap-2">
@@ -784,14 +777,14 @@ export default function PrevisaoPage() {
                     </p>
                   </div>
                 </div>
-              </div>
+              </MobileExpandableCard>
 
-              {/* Coluna Direita - Tabela de Projeção */}
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-1">Projeção por Dia</h3>
-                <p className="text-sm text-gray-500 mb-6">Detalhamento dos dias restantes</p>
-                
-                <div className="overflow-x-auto">
+              {/* Projeção por Dia - em mobile: só o card, expandir ao clicar */}
+              <MobileExpandableCard 
+                title="Projeção por Dia" 
+                subtitle="Detalhamento dos dias restantes"
+              >
+                <div className="overflow-x-auto mt-2">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-200">
@@ -835,7 +828,7 @@ export default function PrevisaoPage() {
                     </tfoot>
                   </table>
                 </div>
-              </div>
+              </MobileExpandableCard>
             </div>
         </>
       )}

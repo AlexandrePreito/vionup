@@ -297,17 +297,17 @@ export default function NPSDashboardPage() {
   ) || [];
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard NPS</h1>
-        <p className="text-gray-500">Acompanhamento de satisfação dos clientes</p>
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Dashboard NPS</h1>
+        <p className="text-gray-500 text-sm mt-1">Acompanhamento de satisfação dos clientes</p>
       </div>
 
-      {/* Filtros */}
-      <div className="flex flex-wrap items-end gap-4">
+      {/* Filtros - mobile: empilhados */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-4">
         {/* Empresa */}
-        <div className="w-56">
+        <div className="w-full sm:w-56">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Empresa <span className="text-red-500">*</span>
           </label>
@@ -329,7 +329,7 @@ export default function NPSDashboardPage() {
         </div>
 
         {/* Mês */}
-        <div className="w-40">
+        <div className="w-full sm:w-40">
           <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
           <select
             value={selectedMonth}
@@ -343,7 +343,7 @@ export default function NPSDashboardPage() {
         </div>
 
         {/* Ano */}
-        <div className="w-28">
+        <div className="w-full sm:w-28">
           <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
           <select
             value={selectedYear}
@@ -380,8 +380,8 @@ export default function NPSDashboardPage() {
       {/* Dashboard Content */}
       {!loading && data && (
         <div className="space-y-6">
-          {/* Row 1: NPS Principal + Distribuição */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Row 1: NPS Principal + Distribuição - mobile: empilhados */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Card NPS Principal */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-500/10 to-teal-500/10 rounded-bl-full" />
@@ -455,8 +455,8 @@ export default function NPSDashboardPage() {
                 </div>
               </div>
 
-              {/* Cards de cada tipo */}
-              <div className="grid grid-cols-3 gap-4">
+              {/* Cards de cada tipo - mobile: uma coluna */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {/* Promotores */}
                 <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
                   <div className="flex items-center gap-2 mb-2">
@@ -493,8 +493,19 @@ export default function NPSDashboardPage() {
             </div>
           </div>
 
-          {/* Row 2: Scores por Categoria */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+          {/* Row 2: Avaliações por Categoria - mobile: direto; desktop: card */}
+          <div className="md:hidden">
+            <h3 className="text-base font-semibold text-gray-900 mb-3">Avaliações por Categoria</h3>
+            <p className="text-sm text-gray-500 mb-4">Média das notas de 0 a 5</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <ScoreCard label="Média Geral" score={data.scores.medio_geral} icon={Star} category="medio_geral" />
+              <ScoreCard label="Comida" score={data.scores.comida} icon={Utensils} category="comida" />
+              <ScoreCard label="Tempo de Espera" score={data.scores.tempo_espera} icon={Clock} category="tempo_espera" />
+              <ScoreCard label="Atendimento Mesa" score={data.scores.atendimento_mesa} icon={UserCheck} category="atendimento_mesa" />
+              <ScoreCard label="Recepção" score={data.scores.atendimento_recepcao} icon={DoorOpen} category="atendimento_recepcao" />
+            </div>
+          </div>
+          <div className="hidden md:block bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
               <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
                 <Star size={20} className="text-purple-600" />
@@ -506,42 +517,17 @@ export default function NPSDashboardPage() {
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                <ScoreCard 
-                  label="Média Geral" 
-                  score={data.scores.medio_geral} 
-                  icon={Star}
-                  category="medio_geral"
-                />
-                <ScoreCard 
-                  label="Comida" 
-                  score={data.scores.comida} 
-                  icon={Utensils}
-                  category="comida"
-                />
-                <ScoreCard 
-                  label="Tempo de Espera" 
-                  score={data.scores.tempo_espera} 
-                  icon={Clock}
-                  category="tempo_espera"
-                />
-                <ScoreCard 
-                  label="Atendimento Mesa" 
-                  score={data.scores.atendimento_mesa} 
-                  icon={UserCheck}
-                  category="atendimento_mesa"
-                />
-                <ScoreCard 
-                  label="Recepção" 
-                  score={data.scores.atendimento_recepcao} 
-                  icon={DoorOpen}
-                  category="atendimento_recepcao"
-                />
+                <ScoreCard label="Média Geral" score={data.scores.medio_geral} icon={Star} category="medio_geral" />
+                <ScoreCard label="Comida" score={data.scores.comida} icon={Utensils} category="comida" />
+                <ScoreCard label="Tempo de Espera" score={data.scores.tempo_espera} icon={Clock} category="tempo_espera" />
+                <ScoreCard label="Atendimento Mesa" score={data.scores.atendimento_mesa} icon={UserCheck} category="atendimento_mesa" />
+                <ScoreCard label="Recepção" score={data.scores.atendimento_recepcao} icon={DoorOpen} category="atendimento_recepcao" />
               </div>
             </div>
           </div>
 
-          {/* Row 3: Evolução NPS + Comentários */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Row 3: Evolução NPS + Comentários (desktop). Mobile: só Evolução aqui, Comentários por último */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {/* Evolução NPS */}
             {data.evolucao && data.evolucao.length > 0 && (
               <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
@@ -587,8 +573,8 @@ export default function NPSDashboardPage() {
               </div>
             )}
 
-            {/* Comentários Recentes */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+            {/* Comentários Recentes - desktop */}
+            <div className="hidden md:block bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -684,12 +670,42 @@ export default function NPSDashboardPage() {
             </div>
           </div>
 
-          {/* Row 4: Pesquisas - Frequência e Origem */}
+          {/* Row 4: Pesquisas - Frequência e Origem. Mobile: direto; desktop: cards */}
           {data.pesquisas && (data.pesquisas.frequencia?.length > 0 || data.pesquisas.origem?.length > 0) && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* Frequência de Visita */}
               {data.pesquisas.frequencia?.length > 0 && (
-                <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                <>
+                  <div className="md:hidden">
+                    <h3 className="text-base font-semibold text-gray-900 mb-1">Frequência de Visita</h3>
+                    <p className="text-sm text-gray-500 mb-4">Com que frequência os clientes visitam</p>
+                    <div className="space-y-4">
+                      {data.pesquisas.frequencia.map((item, index) => {
+                        const colors = ['bg-indigo-500', 'bg-blue-500', 'bg-cyan-500', 'bg-teal-500'];
+                        const total = data.pesquisas.frequencia.reduce((sum: number, i: any) => sum + i.frequencia, 0);
+                        const percent = total > 0 ? (item.frequencia / total) * 100 : 0;
+                        return (
+                          <div key={item.opcao} className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-gray-700">{item.opcao}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-500">{item.frequencia.toLocaleString()}</span>
+                                <span className="text-sm font-semibold text-gray-900">{percent.toFixed(1)}%</span>
+                              </div>
+                            </div>
+                            <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full transition-all duration-500 ${colors[index % colors.length]}`} style={{ width: `${percent}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between">
+                      <span className="text-sm text-gray-500">Total de respostas</span>
+                      <span className="font-semibold text-gray-900">{data.pesquisas.frequencia.reduce((sum: number, i: any) => sum + i.frequencia, 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <div className="hidden md:block bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
                     <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
                       <Users size={20} className="text-indigo-600" />
@@ -740,11 +756,45 @@ export default function NPSDashboardPage() {
                     </div>
                   </div>
                 </div>
+                </>
               )}
 
               {/* Origem / Como conheceu */}
               {data.pesquisas.origem?.length > 0 && (
-                <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                <>
+                  <div className="md:hidden">
+                    <h3 className="text-base font-semibold text-gray-900 mb-1">Como Conheceu o Izu</h3>
+                    <p className="text-sm text-gray-500 mb-4">Canal de origem dos clientes</p>
+                    <div className="space-y-4">
+                      {data.pesquisas.origem.map((item, index) => {
+                        const colors = ['bg-pink-500', 'bg-rose-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-500', 'bg-lime-500', 'bg-green-500'];
+                        const icons: Record<string, string> = { 'Instagram': '📸', 'TikTok': '🎵', 'Pedidos via delivery': '🛵', 'Passei em frente': '🚶', 'Ganhei um voucher': '🎟️', 'Indicação': '👥', 'Outros': '📌' };
+                        const total = data.pesquisas.origem.reduce((sum: number, i: any) => sum + i.frequencia, 0);
+                        const percent = total > 0 ? (item.frequencia / total) * 100 : 0;
+                        return (
+                          <div key={item.opcao} className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                <span>{icons[item.opcao] || '📌'}</span> {item.opcao}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-500">{item.frequencia.toLocaleString()}</span>
+                                <span className="text-sm font-semibold text-gray-900">{percent.toFixed(1)}%</span>
+                              </div>
+                            </div>
+                            <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full transition-all duration-500 ${colors[index % colors.length]}`} style={{ width: `${percent}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between">
+                      <span className="text-sm text-gray-500">Total de respostas</span>
+                      <span className="font-semibold text-gray-900">{data.pesquisas.origem.reduce((sum: number, i: any) => sum + i.frequencia, 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <div className="hidden md:block bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
                     <div className="w-10 h-10 bg-pink-100 rounded-xl flex items-center justify-center">
                       <TrendingUp size={20} className="text-pink-600" />
@@ -810,9 +860,71 @@ export default function NPSDashboardPage() {
                     </div>
                   </div>
                 </div>
+                </>
               )}
             </div>
           )}
+
+          {/* Comentários Recentes - mobile: por último, direto na tela */}
+          <div className="md:hidden mt-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">Comentários Recentes</h3>
+            <p className="text-sm text-gray-500 mb-3">{filteredComments.length} comentários</p>
+            <div className="flex flex-wrap gap-1 mb-4">
+              {['all', 'promotor', 'neutro', 'detrator'].map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setCommentFilter(filter as any)}
+                  className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                    commentFilter === filter 
+                      ? filter === 'promotor' ? 'bg-emerald-100 text-emerald-700' :
+                        filter === 'neutro' ? 'bg-amber-100 text-amber-700' :
+                        filter === 'detrator' ? 'bg-red-100 text-red-700' :
+                        'bg-blue-100 text-blue-700'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {filter === 'all' ? 'Todos' : filter === 'promotor' ? '😊' : filter === 'neutro' ? '😐' : '😞'}
+                </button>
+              ))}
+            </div>
+            <div className={`divide-y divide-gray-100 ${showAllComments ? 'max-h-96' : 'max-h-64'} overflow-y-auto`}>
+              {filteredComments.slice(0, showAllComments ? 20 : 5).map((comment, index) => (
+                <div key={index} className="py-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      comment.tipo === 'promotor' ? 'bg-emerald-100' :
+                      comment.tipo === 'neutro' ? 'bg-amber-100' : 'bg-red-100'
+                    }`}>
+                      <span className="text-sm">{comment.tipo === 'promotor' ? '😊' : comment.tipo === 'neutro' ? '😐' : '😞'}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-sm font-semibold ${
+                          comment.tipo === 'promotor' ? 'text-emerald-600' :
+                          comment.tipo === 'neutro' ? 'text-amber-600' : 'text-red-600'
+                        }`}>Nota {comment.nota}</span>
+                        <span className="text-xs text-gray-400">{comment.data}</span>
+                      </div>
+                      <p className="text-sm text-gray-700 line-clamp-2">{comment.comentario}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {filteredComments.length === 0 && (
+                <div className="py-8 text-center text-gray-500">Nenhum comentário encontrado</div>
+              )}
+            </div>
+            {filteredComments.length > 5 && (
+              <div className="py-3 border-t border-gray-100">
+                <button
+                  onClick={() => setShowAllComments(!showAllComments)}
+                  className="w-full flex items-center justify-center gap-2 text-sm text-blue-600 hover:text-blue-700"
+                >
+                  {showAllComments ? <><ChevronUp size={16} /> Ver menos</> : <><ChevronDown size={16} /> Ver mais ({filteredComments.length - 5} restantes)</>}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

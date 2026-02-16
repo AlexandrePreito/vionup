@@ -303,11 +303,12 @@ interface ProcessResult {
 // ============================================================
 export async function POST(req: NextRequest): Promise<NextResponse<ProcessResult>> {
   let queueIdForError: string | undefined;
-  
+  console.log('🔔 [SYNC-PROCESS] API chamada');
   try {
     // Usar supabaseAdmin (sem autenticação de usuário)
     const body = await req.json();
     const { queue_id } = body;
+    console.log('🔔 [SYNC-PROCESS] queue_id:', queue_id);
     queueIdForError = queue_id;
 
     // 1. Pegar próximo item para processar
@@ -345,6 +346,52 @@ export async function POST(req: NextRequest): Promise<NextResponse<ProcessResult
       } as any);
     }
 
+    // ============================================================
+    // VALIDAÇÃO DE SEGURANÇA: detectar dados corrompidos
+    // ============================================================
+    if (queueItem.total_days > 1095) {
+      console.error(`❌ ABORTANDO: total_days=${queueItem.total_days} (máx 1095). Bug de data detectado.`);
+      console.error(`❌ start_date=${queueItem.start_date}, end_date=${queueItem.end_date}`);
+
+      await supabaseAdmin
+        .from('sync_queue')
+        .update({
+          status: 'failed',
+          finished_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          error_message: `Abortado: total_days=${queueItem.total_days} indica bug de data (start=${queueItem.start_date}, end=${queueItem.end_date})`
+        })
+        .eq('id', queueItem.id);
+
+      return NextResponse.json({
+        status: 'day_error',
+        queue_id: queueItem.id,
+        error: `Período inválido: ${queueItem.total_days} dias (máx 1095). Corrija as datas e tente novamente.`,
+      }, { status: 400 });
+    }
+
+    // Validar anos das datas
+    const qStartYear = new Date(queueItem.start_date).getFullYear();
+    const qEndYear = new Date(queueItem.end_date).getFullYear();
+    if (qStartYear < 2000 || qEndYear < 2000) {
+      console.error(`❌ ABORTANDO: Ano inválido detectado: start=${qStartYear}, end=${qEndYear}`);
+
+      await supabaseAdmin
+        .from('sync_queue')
+        .update({
+          status: 'failed',
+          finished_at: new Date().toISOString(),
+          error_message: `Abortado: ano inválido (start=${qStartYear}, end=${qEndYear}). Formato de data incorreto.`
+        })
+        .eq('id', queueItem.id);
+
+      return NextResponse.json({
+        status: 'day_error',
+        queue_id: queueItem.id,
+        error: `Ano inválido: ${qStartYear}/${qEndYear}. Datas devem ser entre 2000-2100.`,
+      }, { status: 400 });
+    }
+
     // Item já completado
     // Verificar se item foi cancelado entre iterações
     if (queueItem.status === 'cancelled') {
@@ -367,9 +414,55 @@ export async function POST(req: NextRequest): Promise<NextResponse<ProcessResult
     }
 
     // ----------------------------------------------------------
-    // 2. Calcular próximos DIAS a processar (batch de 1 dia)
+    // 2. Buscar configuração (precisa do entity_type para batch size)
     // ----------------------------------------------------------
-    const DAYS_PER_BATCH = 1; // ✅ 1 dia por vez (evita timeout)
+    const { data: config, error: configError } = await supabaseAdmin
+      .from('powerbi_sync_configs')
+      .select('*, connection:powerbi_connections(*)')
+      .eq('id', queueItem.config_id)
+      .single();
+
+    if (configError) {
+      console.error('❌ Erro ao buscar configuração:', configError);
+      await supabaseAdmin.rpc('finish_sync_queue_item', {
+        p_queue_id: queueItem.id,
+        p_status: 'failed',
+        p_total_records: queueItem.processed_records || 0,
+        p_error_message: `Erro ao buscar configuração: ${configError.message}`,
+      });
+
+      return NextResponse.json({
+        status: 'day_error',
+        queue_id: queueItem.id,
+        error: `Erro ao buscar configuração: ${configError.message}`,
+      }, { status: 500 });
+    }
+
+    if (!config) {
+      await supabaseAdmin.rpc('finish_sync_queue_item', {
+        p_queue_id: queueItem.id,
+        p_status: 'failed',
+        p_total_records: queueItem.processed_records || 0,
+        p_error_message: 'Configuração não encontrada',
+      });
+
+      return NextResponse.json({
+        status: 'day_error',
+        queue_id: queueItem.id,
+        error: 'Configuração não encontrada',
+      }, { status: 500 });
+    }
+
+    const connName = (config.connection as any)?.name || 'N/A';
+    const groupId = queueItem.company_group_id || (config.connection as any)?.company_group_id;
+    console.log(`📦 Processando sync: entidade=${config.entity_type} | conexão=${connName} | grupo=${groupId?.slice(0, 8)}...`);
+
+    // ----------------------------------------------------------
+    // 3. Calcular próximos DIAS a processar (batch)
+    // ----------------------------------------------------------
+    // Vendas: 3 dias (query DAX grande, evita timeout no Power BI)
+    // Caixa: 7 dias (menos dados, pode ser maior)
+    const DAYS_PER_BATCH = config.entity_type === 'sales' ? 3 : 7;
     const startDate = new Date(queueItem.start_date);
     const endDate = new Date(queueItem.end_date);
     const processedDays = queueItem.processed_days || 0;
@@ -417,46 +510,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<ProcessResult
     console.log(`📊 Processando batch de ${daysInBatch} dias: ${batchStartDateStr} até ${batchEndDateStr}`);
 
     // ----------------------------------------------------------
-    // 3. Buscar configuração e dados do Power BI
+    // 4. Validar conexão (config já carregado no passo 2)
     // ----------------------------------------------------------
-    const { data: config, error: configError } = await supabaseAdmin
-      .from('powerbi_sync_configs')
-      .select('*, connection:powerbi_connections(*)')
-      .eq('id', queueItem.config_id)
-      .single();
-
-    if (configError) {
-      console.error('❌ Erro ao buscar configuração:', configError);
-      await supabaseAdmin.rpc('finish_sync_queue_item', {
-        p_queue_id: queueItem.id,
-        p_status: 'failed',
-        p_total_records: queueItem.processed_records || 0,
-        p_error_message: `Erro ao buscar configuração: ${configError.message}`,
-      });
-
-      return NextResponse.json({
-        status: 'day_error',
-        queue_id: queueItem.id,
-        error: `Erro ao buscar configuração: ${configError.message}`,
-      }, { status: 500 });
-    }
-
-    if (!config) {
-      await supabaseAdmin.rpc('finish_sync_queue_item', {
-        p_queue_id: queueItem.id,
-        p_status: 'failed',
-        p_total_records: queueItem.processed_records || 0,
-        p_error_message: 'Configuração não encontrada',
-      });
-
-      return NextResponse.json({
-        status: 'day_error',
-        queue_id: queueItem.id,
-        error: 'Configuração não encontrada',
-      }, { status: 500 });
-    }
-
-    // Validar conexão
     if (!config.connection) {
       console.error('❌ Conexão não encontrada na configuração:', config);
       await supabaseAdmin.rpc('finish_sync_queue_item', {
@@ -476,13 +531,15 @@ export async function POST(req: NextRequest): Promise<NextResponse<ProcessResult
     // Verificar se a entidade tem campo de data
     // Apenas vendas, caixa e fluxo de caixa têm campo de data
     const entitiesWithDate = ['sales', 'cash_flow', 'cash_flow_statement'];
+    // Entidades "tabela full": sempre trazem a tabela completa, sem filtro de período
+    const entitiesFullTable = ['companies', 'products', 'employees', 'categories'];
     // hasDateField: verifica se a entidade tem campo de data configurado
     // NOTA: NÃO depende de is_incremental. Sync FULL também precisa processar dia-a-dia
     // para evitar timeout. A diferença entre full e incremental é apenas o RANGE de datas.
     const hasDateField = config.date_field && entitiesWithDate.includes(config.entity_type);
 
     // ----------------------------------------------------------
-    // 4. Buscar token do Power BI
+    // 5. Buscar token do Power BI
     // ----------------------------------------------------------
     if (!config.connection.tenant_id || !config.connection.client_id || !config.connection.client_secret) {
       const missingFields = [];
@@ -538,7 +595,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<ProcessResult
     const endMonth = batchEndDate.getMonth() + 1;
     const endDay = batchEndDate.getDate();
 
-    console.log(`📊 Range de datas: ${startYear}-${startMonth}-${startDay} até ${endYear}-${endMonth}-${endDay}`);
+    if (entitiesFullTable.includes(config.entity_type)) {
+      console.log(`📋 [TABELA FULL] ${config.entity_type}: buscando tabela completa (independente de período)`);
+    } else {
+      console.log(`📊 Range de datas: ${startYear}-${startMonth}-${startDay} até ${endYear}-${endMonth}-${endDay}`);
+    }
 
     // Usar query do config se disponível, senão gerar query otimizada para vendas
     let daxQuery: string;
@@ -581,19 +642,20 @@ export async function POST(req: NextRequest): Promise<NextResponse<ProcessResult
       }
       
       // Adicionar TOPN apenas se necessário
-      // Para entidades com filtro de data: NÃO adicionar TOPN (o filtro já limita)
-      // Para entidades sem data: TOPN(5000) - proteção contra timeout
+      // - Entidades com data (vendas, caixa): NÃO adicionar TOPN (filtro já limita)
+      // - Tabela full (empresas, produtos, funcionários, categorias): TOPN(100000) - tabela completa
+      // - Outras sem data: TOPN(5000) - proteção contra timeout
       if (!daxQuery.toUpperCase().includes('TOPN')) {
-        // Remover TODOS os EVALUATE do início (evita "EVALUATE TOPN(..., EVALUATE FILTER(...))" inválido no DAX)
         const stripEvaluate = (q: string) => q.replace(/^(\s*EVALUATE\s*\n?\s*)+/i, '').trim();
         const cleanQuery = stripEvaluate(daxQuery);
 
-        // Não adicionar TOPN quando a query já tem FILTER com SUMMARIZECOLUMNS
-        // O filtro de data já limita os resultados suficientemente
         if (hasDateField) {
-          // Com filtro de data, o FILTER já limita. TOPN causa materialização desnecessária.
           daxQuery = `EVALUATE\n${cleanQuery}`;
           console.log('📊 Sem TOPN (filtro de data já limita resultados)');
+        } else if (entitiesFullTable.includes(config.entity_type)) {
+          const topN = 100000;
+          daxQuery = `EVALUATE TOPN(${topN}, ${cleanQuery})`;
+          console.log(`📋 [TABELA FULL] ${config.entity_type}: sem período, TOPN(${topN}) para tabela completa`);
         } else {
           daxQuery = `EVALUATE TOPN(5000, ${cleanQuery})`;
           console.log('📊 TOPN(5000) adicionado (sem filtro de data)');
@@ -688,6 +750,13 @@ TOPN(
 
     let rows = queryResult.rows;
     console.log(`📊 Power BI retornou ${rows.length} registros para o período ${batchStartDateStr} a ${batchEndDateStr}`);
+    if (config.entity_type === 'companies') {
+      console.log(`🏢 [Empresas] DAX retornou ${rows.length} empresas. Valores:`, rows.slice(0, 6).map((r: any) => {
+        const idKey = Object.keys(r).find(k => /id|cod|empresa/i.test(k));
+        const nameKey = Object.keys(r).find(k => /name|nome|fantasia/i.test(k));
+        return { id: idKey ? r[idKey] : r, name: nameKey ? r[nameKey] : '-' };
+      }));
+    }
 
     // API Power BI limita a 100k linhas por request; acima disso retorna truncado (200 OK). Refazer por empresa.
     if (config.entity_type === 'sales' && rows.length >= POWERBI_TRUNCATION_THRESHOLD) {
@@ -880,7 +949,7 @@ TOPN(
           'code', 'codigo', 'description'
         ]),
         sales: new Set([
-          'external_id', 'venda_id', 'external_product_id', 'external_employee_id',
+          'external_id', 'venda_id', 'sale_uuid', 'external_product_id', 'external_employee_id',
           'external_company_id', 'sale_date', 'sale_mode', 'period',
           'quantity', 'total_value', 'cost'
         ]),
@@ -1038,6 +1107,10 @@ TOPN(
             const recovered = recoverNumericFromRawData(record.raw_data, 'total_value', ['valor_total', 'totalvalue']);
             if (recovered !== null) record.total_value = recovered;
           }
+          // API usa sale_uuid para dedup; sync popula venda_id — garantir sale_uuid = venda_id quando ausente
+          if ((!record.sale_uuid || record.sale_uuid === '') && record.venda_id) {
+            record.sale_uuid = record.venda_id;
+          }
         }
       });
 
@@ -1051,92 +1124,133 @@ TOPN(
         }
       }
 
-      // Chave de conflito deve corresponder ao UNIQUE constraint de cada tabela
-      const conflictKeyMap: Record<string, string> = {
-        external_companies: 'company_group_id,external_id',
-        external_employees: 'company_group_id,external_id',
-        external_products: 'company_group_id,external_id',
-        external_sales: 'company_group_id,external_id',
-        external_cash_flow: 'company_group_id,external_id',
-        external_cash_flow_statement: 'company_group_id,external_id',
-        external_categories: 'company_group_id,external_id',
-        external_stock: 'company_group_id,external_id',
+      // ============================================================
+      // SALVAMENTO OTIMIZADO: Filtrar duplicados SÓ do período, depois INSERT
+      // Em vez de UPSERT (que escaneia índice UNIQUE da tabela inteira),
+      // buscamos os external_ids que JÁ existem no período e inserimos só os novos.
+      // ============================================================
+
+      // Mapa de campo de data por tabela (para filtrar só o período)
+      const dateFieldMap: Record<string, string> = {
+        external_sales: 'sale_date',
+        external_cash_flow: 'transaction_date',
+        external_cash_flow_statement: 'transaction_date',
+        external_stock: 'updated_at_external',
       };
-      const conflictKey = conflictKeyMap[tableName] || 'company_group_id,external_id';
+      const dateColumn = dateFieldMap[tableName];
 
-      console.log(`💾 Salvando ${cleanedRecords.length} registros em ${tableName} (conflict: ${conflictKey})...`);
+      // Coletar todos os external_ids do batch atual
+      const batchExternalIds = cleanedRecords.map((r: any) => r.external_id).filter(Boolean);
 
-      const batchSize = 200;
+      console.log(`💾 Salvando ${cleanedRecords.length} registros em ${tableName} (insert otimizado)...`);
+
+      // Buscar external_ids que JÁ existem no banco — FILTRADO pelo período
+      const existingIds = new Set<string>();
+      const LOOKUP_BATCH_SIZE = 500;
+
+      for (let i = 0; i < batchExternalIds.length; i += LOOKUP_BATCH_SIZE) {
+        const idChunk = batchExternalIds.slice(i, i + LOOKUP_BATCH_SIZE);
+
+        let query = supabaseAdmin
+          .from(tableName)
+          .select('external_id')
+          .eq('company_group_id', queueItem.company_group_id)
+          .in('external_id', idChunk);
+
+        // Se a entidade tem campo de data, filtrar só no período (MUITO mais rápido)
+        if (dateColumn && hasDateField) {
+          query = query
+            .gte(dateColumn, batchStartDateStr)
+            .lte(dateColumn, batchEndDateStr);
+        }
+
+        const { data: existingRows } = await query;
+        if (existingRows) {
+          existingRows.forEach((r: any) => existingIds.add(r.external_id));
+        }
+      }
+
+      // Filtrar: inserir APENAS registros que NÃO existem no período
+      const newRecords = cleanedRecords.filter((r: any) => !existingIds.has(r.external_id));
+      const skippedCount = cleanedRecords.length - newRecords.length;
+
+      if (skippedCount > 0) {
+        console.log(`⏭️ ${skippedCount} registros já existem no período — ignorados`);
+      }
+
+      const batchSize = 500; // Maior que antes (era 200) — INSERT simples é mais rápido
       let savedCount = 0;
       let failedBatches = 0;
-      const totalBatches = Math.ceil(cleanedRecords.length / batchSize);
+      const totalBatches = Math.ceil(newRecords.length / batchSize);
 
-      for (let i = 0; i < cleanedRecords.length; i += batchSize) {
-        const batch = cleanedRecords.slice(i, i + batchSize);
+      if (newRecords.length === 0) {
+        console.log(`✅ Nenhum registro novo para inserir (todos já existiam no período)`);
+      }
+
+      for (let i = 0; i < newRecords.length; i += batchSize) {
+        const batch = newRecords.slice(i, i + batchSize);
         const batchNumber = Math.floor(i / batchSize) + 1;
 
         let success = false;
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
-            const { error: upsertError } = await supabaseAdmin
+            // INSERT simples com ignoreDuplicates: true
+            // Se por acaso um registro duplicado escapar do filtro, é ignorado silenciosamente
+            const { error: insertError } = await supabaseAdmin
               .from(tableName)
-              .upsert(batch, { onConflict: conflictKey, ignoreDuplicates: false });
+              .upsert(batch, { onConflict: 'company_group_id,external_id', ignoreDuplicates: true });
 
-            if (!upsertError) {
+            if (!insertError) {
               savedCount += batch.length;
               success = true;
               break;
             }
 
             // Se é erro de schema/constraint, não adianta retry
-            if (upsertError.message.includes('column') ||
-                upsertError.message.includes('violates') ||
-                upsertError.message.includes('schema')) {
-              console.error(`❌ Erro de schema no lote ${batchNumber}:`, upsertError.message);
+            if (insertError.message.includes('column') ||
+                insertError.message.includes('violates') ||
+                insertError.message.includes('schema')) {
+              console.error(`❌ Erro de schema no lote ${batchNumber}:`, insertError.message);
               if (batch.length > 0) {
                 console.error(`❌ Exemplo de registro:`, JSON.stringify(batch[0], null, 2).substring(0, 500));
               }
-              break; // Não retry em erros de schema
+              break;
             }
 
             if (attempt < 3) {
-              console.warn(`⚠️ Lote ${batchNumber}: tentativa ${attempt} falhou, retry em 2s...`);
-              await new Promise(resolve => setTimeout(resolve, 2000));
+              console.warn(`⚠️ Lote ${batchNumber}: tentativa ${attempt} falhou, retry em 1s...`);
+              await new Promise(resolve => setTimeout(resolve, 1000));
             } else {
-              console.error(`❌ Lote ${batchNumber} falhou após 3 tentativas: ${upsertError.message}`);
+              console.error(`❌ Lote ${batchNumber} falhou após 3 tentativas: ${insertError.message}`);
             }
           } catch (error: any) {
             if (attempt >= 3) {
               console.error(`❌ Exceção no lote ${batchNumber}: ${error.message}`);
             } else {
-              await new Promise(resolve => setTimeout(resolve, 2000));
+              await new Promise(resolve => setTimeout(resolve, 1000));
             }
           }
         }
 
         if (!success) {
           failedBatches++;
-          // CONTINUAR para próximo batch em vez de falhar tudo
-          console.warn(`⚠️ Lote ${batchNumber}/${totalBatches} falhou, continuando com próximos lotes...`);
+          console.warn(`⚠️ Lote ${batchNumber}/${totalBatches} falhou, continuando...`);
         }
 
-        // Log de progresso a cada 5 batches
         if (batchNumber % 5 === 0 || batchNumber === totalBatches) {
-          console.log(`📊 Progresso: ${batchNumber}/${totalBatches} lotes (${savedCount} salvos, ${failedBatches} falharam)`);
+          console.log(`📊 Progresso: ${batchNumber}/${totalBatches} lotes (${savedCount} inseridos, ${failedBatches} falharam)`);
         }
       }
 
-      // Se TODOS os batches falharam, aí sim é erro
-      if (savedCount === 0 && cleanedRecords.length > 0) {
+      if (savedCount === 0 && newRecords.length > 0) {
         throw new Error(`Nenhum registro salvo. Todos os ${totalBatches} lotes falharam.`);
       }
 
-      // Se alguns batches falharam, logar warning mas não falhar
       if (failedBatches > 0) {
-        console.warn(`⚠️ ${failedBatches}/${totalBatches} lotes falharam. ${savedCount}/${cleanedRecords.length} registros salvos.`);
+        console.warn(`⚠️ ${failedBatches}/${totalBatches} lotes falharam. ${savedCount}/${newRecords.length} registros inseridos.`);
       }
 
-      console.log(`✅ Salvamento: ${savedCount}/${cleanedRecords.length} registros em ${tableName}`);
+      console.log(`✅ Salvamento: ${savedCount} novos + ${skippedCount} já existiam = ${cleanedRecords.length} total em ${tableName}`);
     }
 
     // ----------------------------------------------------------
@@ -1172,23 +1286,7 @@ TOPN(
         }, { status: 500 });
       }
 
-      // Verificar se o update realmente persistiu
-      const { data: verification } = await supabaseAdmin
-        .from('sync_queue')
-        .select('processed_days')
-        .eq('id', queueItem.id)
-        .single();
-
-      if (!verification || verification.processed_days !== newProcessedDays) {
-        console.error(`❌ VERIFICAÇÃO FALHOU: esperado processed_days=${newProcessedDays}, encontrado=${verification?.processed_days}`);
-        return NextResponse.json({
-          status: 'day_error',
-          queue_id: queueItem.id,
-          error: `Progresso não persistiu no banco. Esperado: ${newProcessedDays}, Atual: ${verification?.processed_days}. Loop interrompido.`,
-        }, { status: 500 });
-      }
-
-      console.log(`✅ Progresso verificado: ${newProcessedDays}/${queueItem.total_days} dias, ${newProcessedRecords} registros`);
+      console.log(`✅ Progresso salvo: ${newProcessedDays}/${queueItem.total_days} dias, ${newProcessedRecords} registros`);
 
       // Se não há mais dias E o update acima não marcou completed, finalizar via RPC
       if (!hasMore) {
@@ -1222,6 +1320,9 @@ TOPN(
       const newProcessedRecords = rows.length;
 
       console.log(`📊 Processando entidade sem data (${config.entity_type}): ${rows.length} registros`);
+      if (config.entity_type === 'companies') {
+        console.log(`🏢 [Empresas] Sync finalizada: ${rows.length} empresas gravadas/atualizadas`);
+      }
 
       // Finalizar item imediatamente
       await supabaseAdmin.rpc('finish_sync_queue_item', {

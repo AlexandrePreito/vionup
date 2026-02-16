@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
           .in('external_employee_id', codes)
           .gte('sale_date', startDate)
           .lte('sale_date', endDate)
-          .not('sale_uuid', 'is', null);
+          .or('sale_uuid.not.is.null,venda_id.not.is.null');
 
         const totalExpected = totalCount || 0;
         
@@ -141,14 +141,13 @@ export async function GET(request: NextRequest) {
           
           const { data: salesRows, error: salesError } = await supabaseAdmin
             .from('external_sales')
-            .select('total_value, sale_uuid, external_employee_id, sale_date')
+            .select('total_value, sale_uuid, venda_id, external_employee_id, sale_date')
             .eq('company_group_id', companyGroupId)
             .in('external_employee_id', codes)
             .gte('sale_date', startDate)
             .lte('sale_date', endDate)
-            .not('sale_uuid', 'is', null)
+            .or('sale_uuid.not.is.null,venda_id.not.is.null')
             .order('sale_date', { ascending: true })
-            .order('sale_uuid', { ascending: true })
             .range(from, to);
 
           if (salesError) {

@@ -351,7 +351,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className={`bg-white border-r border-gray-200 min-h-screen flex flex-col fixed left-0 top-0 z-40 transition-all duration-300 ${isExpanded ? 'w-64' : 'w-16'}`}>
+    <aside className={`hidden md:flex bg-white border-r border-gray-200 min-h-screen flex-col fixed left-0 top-0 z-40 transition-all duration-300 ${isExpanded ? 'w-64' : 'w-16'}`}>
       {/* Header */}
       <div className={`flex items-center ${isExpanded ? 'justify-between gap-3 px-4' : 'justify-center'} p-4 border-b border-gray-200 h-16 transition-all duration-300`}>
         <div className="flex items-center gap-3">

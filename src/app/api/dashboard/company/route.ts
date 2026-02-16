@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
     const year = searchParams.get('year');
     const month = searchParams.get('month');
     const groupId = searchParams.get('group_id');
+    const shiftFilter = searchParams.get('shift_filter'); // "Almoço" | "Jantar" | null = todos
 
     if (!companyId || !year || !month) {
       return NextResponse.json(
@@ -467,7 +468,9 @@ export async function GET(request: NextRequest) {
       .eq('goal_type', 'sale_mode')
       .eq('year', yearNum)
       .eq('month', monthNum)
-      .eq('is_active', true);
+      .eq('is_active', true)
+      .order('shift_id', { ascending: true, nullsFirst: true })
+      .order('sale_mode_id', { ascending: true });
 
     if (saleModeGoalsError) {
       console.error('Erro ao buscar metas de modo de venda:', saleModeGoalsError);
@@ -481,13 +484,23 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Calcular realizado por modo de venda
+    // Calcular realizado por modo de venda — apenas 2 cards (Local, Delivery)
+    // USA external_sales (sale_mode de VendaItemGeral) — mais correto que cash_flow (CaixaItem)
+    // Fallback para external_cash_flow se external_sales não tiver dados
     let saleModesWithRealized: any[] = [];
     try {
-      // Buscar todos os cash_flow do período para mapear por transaction_mode
-      let cashFlowByMode: Record<string, number> = {
-        'delivery': 0,
-        'local': 0
+      type ModeShiftMap = { almoço: number; jantar: number };
+      let realizedByModeAndShift: Record<string, ModeShiftMap> = {
+        'delivery': { almoço: 0, jantar: 0 },
+        'local': { almoço: 0, jantar: 0 }
+      };
+
+      /** Mapeia valor do modo para 'delivery' ou 'local' */
+      const mapToMode = (val: string): 'delivery' | 'local' | null => {
+        const m = (val || '').toLowerCase().trim();
+        if (m.includes('entreg') || m === 'delivery' || m.includes('ifood') || m.includes('i-food')) return 'delivery';
+        if (m.includes('mesa') || m.includes('balc') || m.includes('local') || m.includes('comanda')) return 'local';
+        return null;
       };
 
       if (companyMappings && companyMappings.length > 0) {
@@ -504,59 +517,86 @@ export async function GET(request: NextRequest) {
           const startDateStr = startDate.toISOString().split('T')[0];
           const endDateStr = endDate.toISOString().split('T')[0];
 
-          // Buscar cash_flow com transaction_mode
-          const { data: allCashFlow } = await supabaseAdmin
-            .from('external_cash_flow')
-            .select('amount, transaction_mode')
+          // 1. Tentar external_sales (modo_venda_descr) — fonte correta de vendas
+          const { data: allSales } = await supabaseAdmin
+            .from('external_sales')
+            .select('total_value, sale_mode, period')
             .eq('company_group_id', companyGroupId)
             .in('external_company_id', externalCodesForMode)
-            .gte('transaction_date', startDateStr)
-            .lte('transaction_date', endDateStr)
-            .limit(100000);
+            .gte('sale_date', startDateStr)
+            .lte('sale_date', endDateStr)
+            .limit(500000);
 
-          if (allCashFlow && allCashFlow.length > 0) {
-            for (const cf of allCashFlow) {
-              const mode = (cf.transaction_mode || '').toLowerCase().trim();
-              const amount = cf.amount || 0;
-              
-              if (mode === 'entrega') {
-                cashFlowByMode['delivery'] += amount;
-              } else if (mode === 'balcão' || mode === 'balcao' || mode === 'mesa') {
-                cashFlowByMode['local'] += amount;
-              }
+          if (allSales && allSales.length > 0) {
+            for (const s of allSales) {
+              const mode = mapToMode(s.sale_mode || '');
+              const period = (s.period || '').toString().toLowerCase();
+              const shift: 'almoço' | 'jantar' = (period.includes('almo') || period.includes('lunch')) ? 'almoço' : 'jantar';
+              const val = s.total_value || 0;
+              if (mode) realizedByModeAndShift[mode][shift] += val;
             }
-            console.log('Cash flow por modo:', cashFlowByMode);
+            console.log('Realizado por modo (external_sales):', JSON.stringify(realizedByModeAndShift));
+          } else {
+            // 2. Fallback: external_cash_flow
+            const { data: allCashFlow } = await supabaseAdmin
+              .from('external_cash_flow')
+              .select('amount, transaction_mode, period')
+              .eq('company_group_id', companyGroupId)
+              .in('external_company_id', externalCodesForMode)
+              .gte('transaction_date', startDateStr)
+              .lte('transaction_date', endDateStr)
+              .limit(100000);
+
+            if (allCashFlow && allCashFlow.length > 0) {
+              for (const cf of allCashFlow) {
+                const mode = mapToMode(cf.transaction_mode || '');
+                const period = (cf.period || '').toString().toLowerCase();
+                const shift: 'almoço' | 'jantar' = (period.includes('almo') || period.includes('lunch')) ? 'almoço' : 'jantar';
+                const amount = cf.amount || 0;
+                if (mode) realizedByModeAndShift[mode][shift] += amount;
+              }
+              console.log('Realizado por modo (fallback cash_flow):', JSON.stringify(realizedByModeAndShift));
+            }
           }
         }
       }
 
-      // Mapear para cada meta de modo de venda
-      saleModesWithRealized = (saleModeGoals || []).map((goal: any) => {
+      // Cada meta = 1 card (não agrupar). 4 metas → 4 cards: Almoço Delivery, Almoço Local, Jantar Delivery, Jantar Local
+      const getRealizedForCombo = (modeKey: 'delivery' | 'local', shift: 'almoço' | 'jantar') => {
+        return realizedByModeAndShift[modeKey]?.[shift] ?? 0;
+      };
+
+      saleModesWithRealized = (saleModeGoals || []).map((goal: any, index: number) => {
         const modeName = (goal.sale_mode?.name || '').toLowerCase().trim();
-        let realized = 0;
-
-        if (modeName === 'delivery') {
-          realized = cashFlowByMode['delivery'];
-        } else if (modeName === 'local') {
-          realized = cashFlowByMode['local'];
-        }
-
-        const progress = goal.goal_value > 0 ? (realized / goal.goal_value) * 100 : 0;
-
+        const shiftName = goal.shift?.name || '';
+        const modeKey: 'delivery' | 'local' = modeName.includes('delivery') || modeName.includes('entreg') ? 'delivery' : 'local';
+        const isAlmoco = shiftName.toLowerCase().includes('almo') || shiftName.toLowerCase().includes('lunch');
+        const hasShift = !!shiftName;
+        // Fallback: quando não tem turno no goal, inferir pela ordem (Almoço nos 2 primeiros, Jantar nos 2 últimos)
+        const inferredAlmoco = !hasShift && (saleModeGoals?.length === 4) ? index < 2 : isAlmoco;
+        const realized = hasShift
+          ? getRealizedForCombo(modeKey, isAlmoco ? 'almoço' : 'jantar')
+          : (realizedByModeAndShift[modeKey]?.almoço ?? 0) + (realizedByModeAndShift[modeKey]?.jantar ?? 0);
+        const goalValue = goal.goal_value || 0;
+        const progress = goalValue > 0 ? (realized / goalValue) * 100 : 0;
+        const shiftLabel = shiftName || ((saleModeGoals?.length === 4) ? (inferredAlmoco ? 'Almoço' : 'Jantar') : '');
+        const modeLabel = goal.sale_mode?.name || (modeKey === 'delivery' ? 'Delivery' : 'Local');
+        const cardLabel = shiftLabel ? `${shiftLabel} ${modeLabel}` : modeLabel;
         return {
           id: goal.id,
           saleModeId: goal.sale_mode_id,
-          saleModeName: goal.sale_mode?.name || 'Modo de Venda',
+          saleModeName: goal.sale_mode?.name || 'Modo',
           shiftId: goal.shift_id,
-          shiftName: goal.shift?.name || null,
-          goalValue: goal.goal_value,
-          goalUnit: goal.goal_unit,
+          shiftName: shiftLabel,
+          goalValue,
+          goalUnit: 'BRL',
           realized: Math.round(realized * 100) / 100,
           progress: Math.round(progress * 10) / 10,
-          status: progress >= 100 ? 'achieved' : progress >= 70 ? 'ontrack' : 'behind'
+          status: progress >= 100 ? 'achieved' : progress >= 70 ? 'ontrack' : 'behind',
+          cardLabel
         };
       });
-      console.log('saleModesWithRealized:', JSON.stringify(saleModesWithRealized, null, 2));
+      console.log('saleModesWithRealized (4 cards quando 4 metas):', JSON.stringify(saleModesWithRealized, null, 2));
     } catch (saleModeError: any) {
       console.error('Erro ao calcular realizados de modo de venda:', saleModeError);
       saleModesWithRealized = [];

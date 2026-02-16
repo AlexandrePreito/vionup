@@ -26,6 +26,7 @@ import {
   Tooltip,
   ResponsiveContainer
 } from 'recharts';
+import { MobileExpandableCard } from '@/components/MobileExpandableCard';
 
 interface NPSData {
   periodo: { year: number; month: number };
@@ -219,17 +220,17 @@ export default function DashboardNPSPage() {
   const years = [currentYear - 1, currentYear, currentYear + 1];
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard NPS</h1>
-        <p className="text-gray-500">Acompanhamento de satisfação dos clientes</p>
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Dashboard NPS</h1>
+        <p className="text-gray-500 text-sm mt-1">Acompanhamento de satisfação dos clientes</p>
       </div>
 
-      {/* Filtros */}
-      <div className="flex flex-wrap items-end gap-4">
+      {/* Filtros - em mobile: um abaixo do outro, mesma largura */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-4">
         {/* Grupo */}
-        <div className="w-48">
+        <div className="w-full sm:w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
           {isGroupReadOnly ? (
             <input
@@ -257,7 +258,7 @@ export default function DashboardNPSPage() {
         </div>
 
         {/* Empresa */}
-        <div className="w-48">
+        <div className="w-full sm:w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
           <select
             value={selectedCompanyId}
@@ -276,7 +277,7 @@ export default function DashboardNPSPage() {
         </div>
 
         {/* Funcionário */}
-        <div className="w-64">
+        <div className="w-full sm:w-64">
           <label className="block text-sm font-medium text-gray-700 mb-1">Funcionário</label>
           <select
             value={selectedEmployeeId}
@@ -292,7 +293,7 @@ export default function DashboardNPSPage() {
         </div>
 
         {/* Mês */}
-        <div className="w-40">
+        <div className="w-full sm:w-40">
           <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
           <select
             value={selectedMonth}
@@ -306,7 +307,7 @@ export default function DashboardNPSPage() {
         </div>
 
         {/* Ano */}
-        <div className="w-28">
+        <div className="w-full sm:w-28">
           <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
           <select
             value={selectedYear}
@@ -320,7 +321,7 @@ export default function DashboardNPSPage() {
         </div>
 
         {/* Botão Atualizar */}
-        <div>
+        <div className="w-full sm:w-auto">
           <label className="block text-sm font-medium text-gray-700 mb-2">&nbsp;</label>
           <button
             onClick={fetchNPSData}
@@ -355,9 +356,9 @@ export default function DashboardNPSPage() {
 
       {/* Dashboard Content */}
       {!loading && data && (
-        <div className="space-y-6">
-          {/* Row 1: NPS Principal + Distribuição */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-4 md:space-y-6">
+          {/* Row 1: NPS Principal + Distribuição - em mobile: um abaixo do outro */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Card NPS Principal */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-500/10 to-teal-500/10 rounded-bl-full" />
@@ -431,8 +432,8 @@ export default function DashboardNPSPage() {
                 </div>
               </div>
 
-              {/* Cards de cada tipo */}
-              <div className="grid grid-cols-3 gap-4">
+              {/* Cards de cada tipo - em mobile: uma coluna */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {/* Promotores */}
                 <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
                   <div className="flex items-center gap-2 mb-2">
@@ -469,19 +470,31 @@ export default function DashboardNPSPage() {
             </div>
           </div>
 
-          {/* Row 2: Scores por Categoria */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-              <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
-                <Star size={20} className="text-purple-600" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900">Avaliações por Categoria</h3>
-                <p className="text-sm text-gray-500">Média das notas de 0 a 5</p>
-              </div>
+          {/* Row 2: Scores por Categoria - mobile: dados direto na tela; desktop: card */}
+          <div className="md:hidden">
+            <h3 className="text-base font-semibold text-gray-900 mb-3">Avaliações por Categoria</h3>
+            <p className="text-sm text-gray-500 mb-4">Média das notas de 0 a 5</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              {data.scores.medio_geral !== undefined && (
+                <ScoreCard label="Média Geral" score={data.scores.medio_geral} />
+              )}
+              {Object.entries(data.scores)
+                .filter(([key]) => key !== 'medio_geral')
+                .map(([key, value]) => (
+                  <ScoreCard
+                    key={key}
+                    label={key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    score={value}
+                  />
+                ))}
             </div>
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          </div>
+          <div className="hidden md:block">
+            <MobileExpandableCard
+              title="Avaliações por Categoria"
+              subtitle="Média das notas de 0 a 5"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {data.scores.medio_geral !== undefined && (
                   <ScoreCard label="Média Geral" score={data.scores.medio_geral} />
                 )}
@@ -495,26 +508,20 @@ export default function DashboardNPSPage() {
                     />
                   ))}
               </div>
-            </div>
+            </MobileExpandableCard>
           </div>
 
           {/* Row 3: Evolução NPS + Comentários */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {/* Evolução NPS */}
             {data.evolucao && data.evolucao.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                    <TrendingUp size={20} className="text-blue-600" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Evolução do NPS</h3>
-                    <p className="text-sm text-gray-500">Últimos meses</p>
-                  </div>
-                </div>
-                <div className="p-6">
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
+              <MobileExpandableCard
+                title="Evolução do NPS"
+                subtitle="Últimos meses"
+              >
+                <div className="pt-2">
+                  <div className="h-64 min-h-[256px] w-full min-w-0">
+                    <ResponsiveContainer width="100%" height="100%" minHeight={256} minWidth={0}>
                       <LineChart data={data.evolucao}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="mesNome" stroke="#9ca3af" fontSize={12} />
@@ -535,25 +542,17 @@ export default function DashboardNPSPage() {
                     </ResponsiveContainer>
                   </div>
                 </div>
-              </div>
+              </MobileExpandableCard>
             )}
 
-            {/* Comentários Recentes */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
-                      <MessageSquare size={20} className="text-orange-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Comentários Recentes</h3>
-                      <p className="text-sm text-gray-500">{filteredComments.length} comentários</p>
-                    </div>
-                  </div>
-                  
-                  {/* Filtro de comentários */}
-                  <div className="flex gap-1">
+            {/* Comentários Recentes - desktop: MobileExpandableCard (mobile fica por último) */}
+            <div className="hidden md:block">
+              <MobileExpandableCard
+                title="Comentários Recentes"
+                subtitle={`${filteredComments.length} comentários`}
+              >
+                <div className="pt-2">
+                  <div className="flex flex-wrap gap-1 mb-4">
                     {['todos', 'promotor', 'neutro', 'detrator'].map((filter) => (
                       <button
                         key={filter}
@@ -573,77 +572,69 @@ export default function DashboardNPSPage() {
                       </button>
                     ))}
                   </div>
-                </div>
-              </div>
-              
-              <div className={`divide-y divide-gray-100 ${showAllComments ? 'max-h-96' : 'max-h-64'} overflow-y-auto`}>
-                {displayedComments.length > 0 ? (
-                  displayedComments.map((c, i) => (
-                    <div key={i} className="px-6 py-4 hover:bg-gray-50 transition-colors">
-                      <div className="flex items-start gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          c.tipo === 'promotor' ? 'bg-emerald-100' :
-                          c.tipo === 'neutro' ? 'bg-amber-100' : 'bg-red-100'
-                        }`}>
-                          <span className="text-sm">
-                            {c.tipo === 'promotor' ? '😊' :
-                             c.tipo === 'neutro' ? '😐' : '😞'}
-                          </span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-sm font-semibold ${
-                              c.tipo === 'promotor' ? 'text-emerald-600' :
-                              c.tipo === 'neutro' ? 'text-amber-600' : 'text-red-600'
+                  <div className={`divide-y divide-gray-100 ${showAllComments ? 'max-h-96' : 'max-h-64'} overflow-y-auto`}>
+                    {displayedComments.length > 0 ? (
+                      displayedComments.map((c, i) => (
+                        <div key={i} className="py-4 hover:bg-gray-50 transition-colors">
+                          <div className="flex items-start gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                              c.tipo === 'promotor' ? 'bg-emerald-100' :
+                              c.tipo === 'neutro' ? 'bg-amber-100' : 'bg-red-100'
                             }`}>
-                              Nota {c.nota}
-                            </span>
-                            <span className="text-xs text-gray-400">{c.data}</span>
-                            {c.unidade && <span className="text-xs text-gray-400">• {c.unidade}</span>}
+                              <span className="text-sm">
+                                {c.tipo === 'promotor' ? '😊' :
+                                 c.tipo === 'neutro' ? '😐' : '😞'}
+                              </span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-sm font-semibold ${
+                                  c.tipo === 'promotor' ? 'text-emerald-600' :
+                                  c.tipo === 'neutro' ? 'text-amber-600' : 'text-red-600'
+                                }`}>
+                                  Nota {c.nota}
+                                </span>
+                                <span className="text-xs text-gray-400">{c.data}</span>
+                                {c.unidade && <span className="text-xs text-gray-400">• {c.unidade}</span>}
+                              </div>
+                              <p className="text-sm text-gray-700 line-clamp-2">{c.comentario}</p>
+                            </div>
                           </div>
-                          <p className="text-sm text-gray-700 line-clamp-2">{c.comentario}</p>
                         </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="px-6 py-8 text-center text-gray-500">
-                    Nenhum comentário encontrado
-                  </div>
-                )}
-              </div>
-              {filteredComments.length > 5 && (
-                <div className="px-6 py-3 border-t border-gray-100">
-                  <button
-                    onClick={() => setShowAllComments(!showAllComments)}
-                    className="w-full flex items-center justify-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
-                  >
-                    {showAllComments ? (
-                      <><ChevronUp size={16} /> Ver menos</>
+                      ))
                     ) : (
-                      <><ChevronDown size={16} /> Ver mais ({filteredComments.length - 5})</>
+                      <div className="py-8 text-center text-gray-500">
+                        Nenhum comentário encontrado
+                      </div>
                     )}
-                  </button>
+                  </div>
+                  {filteredComments.length > 5 && (
+                    <div className="py-3 border-t border-gray-100">
+                      <button
+                        onClick={() => setShowAllComments(!showAllComments)}
+                        className="w-full flex items-center justify-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
+                      >
+                        {showAllComments ? (
+                          <><ChevronUp size={16} /> Ver menos</>
+                        ) : (
+                          <><ChevronDown size={16} /> Ver mais ({filteredComments.length - 5})</>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
+              </MobileExpandableCard>
             </div>
           </div>
 
-          {/* Row 4: Frequência + Origem */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Row 4: Frequência + Origem - mobile: direto na tela; desktop: MobileExpandableCard */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {/* Frequência de Visita */}
             {data.frequencia.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
-                    <Users size={20} className="text-indigo-600" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Frequência de Visita</h3>
-                    <p className="text-sm text-gray-500">Distribuição de frequência</p>
-                  </div>
-                </div>
-                <div className="p-6">
+              <>
+                <div className="md:hidden">
+                  <h3 className="text-base font-semibold text-gray-900 mb-1">Frequência de Visita</h3>
+                  <p className="text-sm text-gray-500 mb-4">Distribuição de frequência</p>
                   <div className="space-y-4">
                     {data.frequencia.map((item, i) => {
                       const total = data.frequencia.reduce((sum, f) => sum + f.frequencia, 0);
@@ -669,22 +660,48 @@ export default function DashboardNPSPage() {
                     })}
                   </div>
                 </div>
-              </div>
+                <div className="hidden md:block">
+                  <MobileExpandableCard
+                    title="Frequência de Visita"
+                    subtitle="Distribuição de frequência"
+                  >
+                    <div className="pt-2">
+                      <div className="space-y-4">
+                        {data.frequencia.map((item, i) => {
+                          const total = data.frequencia.reduce((sum, f) => sum + f.frequencia, 0);
+                          const percent = total > 0 ? (item.frequencia / total) * 100 : 0;
+                          const colors = ['bg-indigo-500', 'bg-blue-500', 'bg-cyan-500', 'bg-teal-500'];
+                          return (
+                            <div key={item.opcao}>
+                              <div className="flex justify-between mb-1">
+                                <span className="text-sm font-medium text-gray-700">{item.opcao}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-gray-500">{item.frequencia}</span>
+                                  <span className="text-sm font-semibold">{percent.toFixed(1)}%</span>
+                                </div>
+                              </div>
+                              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all ${colors[i % colors.length]}`}
+                                  style={{ width: `${percent}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </MobileExpandableCard>
+                </div>
+              </>
             )}
 
             {/* Como Conheceu */}
             {data.origem.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-pink-100 rounded-xl flex items-center justify-center">
-                    <TrendingUp size={20} className="text-pink-600" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Como Conheceu</h3>
-                    <p className="text-sm text-gray-500">Origem dos clientes</p>
-                  </div>
-                </div>
-                <div className="p-6">
+              <>
+                <div className="md:hidden">
+                  <h3 className="text-base font-semibold text-gray-900 mb-1">Como Conheceu</h3>
+                  <p className="text-sm text-gray-500 mb-4">Origem dos clientes</p>
                   <div className="space-y-4">
                     {data.origem.map((item, i) => {
                       const total = data.origem.reduce((sum, o) => sum + o.frequencia, 0);
@@ -712,6 +729,117 @@ export default function DashboardNPSPage() {
                     })}
                   </div>
                 </div>
+                <div className="hidden md:block">
+                  <MobileExpandableCard
+                    title="Como Conheceu"
+                    subtitle="Origem dos clientes"
+                  >
+                    <div className="pt-2">
+                      <div className="space-y-4">
+                        {data.origem.map((item, i) => {
+                          const total = data.origem.reduce((sum, o) => sum + o.frequencia, 0);
+                          const percent = total > 0 ? (item.frequencia / total) * 100 : 0;
+                          const colors = ['bg-pink-500', 'bg-rose-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-500', 'bg-lime-500', 'bg-green-500'];
+                          return (
+                            <div key={item.opcao}>
+                              <div className="flex justify-between mb-1">
+                                <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                  <span>{item.icone}</span> {item.opcao}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-gray-500">{item.frequencia}</span>
+                                  <span className="text-sm font-semibold">{percent.toFixed(1)}%</span>
+                                </div>
+                              </div>
+                              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all ${colors[i % colors.length]}`}
+                                  style={{ width: `${percent}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </MobileExpandableCard>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Comentários Recentes - mobile: por último, direto na tela */}
+          <div className="md:hidden mt-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">Comentários Recentes</h3>
+            <p className="text-sm text-gray-500 mb-3">{filteredComments.length} comentários</p>
+            <div className="flex flex-wrap gap-1 mb-4">
+              {['todos', 'promotor', 'neutro', 'detrator'].map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setCommentFilter(filter as any)}
+                  className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                    commentFilter === filter 
+                      ? filter === 'promotor' ? 'bg-emerald-100 text-emerald-700' :
+                        filter === 'neutro' ? 'bg-amber-100 text-amber-700' :
+                        filter === 'detrator' ? 'bg-red-100 text-red-700' :
+                        'bg-blue-100 text-blue-700'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {filter === 'todos' ? 'Todos' : 
+                   filter === 'promotor' ? '😊' :
+                   filter === 'neutro' ? '😐' : '😞'}
+                </button>
+              ))}
+            </div>
+            <div className={`divide-y divide-gray-100 ${showAllComments ? 'max-h-96' : 'max-h-64'} overflow-y-auto`}>
+              {displayedComments.length > 0 ? (
+                displayedComments.map((c, i) => (
+                  <div key={i} className="py-4 hover:bg-gray-50 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        c.tipo === 'promotor' ? 'bg-emerald-100' :
+                        c.tipo === 'neutro' ? 'bg-amber-100' : 'bg-red-100'
+                      }`}>
+                        <span className="text-sm">
+                          {c.tipo === 'promotor' ? '😊' :
+                           c.tipo === 'neutro' ? '😐' : '😞'}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-sm font-semibold ${
+                            c.tipo === 'promotor' ? 'text-emerald-600' :
+                            c.tipo === 'neutro' ? 'text-amber-600' : 'text-red-600'
+                          }`}>
+                            Nota {c.nota}
+                          </span>
+                          <span className="text-xs text-gray-400">{c.data}</span>
+                          {c.unidade && <span className="text-xs text-gray-400">• {c.unidade}</span>}
+                        </div>
+                        <p className="text-sm text-gray-700 line-clamp-2">{c.comentario}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-8 text-center text-gray-500">
+                  Nenhum comentário encontrado
+                </div>
+              )}
+            </div>
+            {filteredComments.length > 5 && (
+              <div className="py-3 border-t border-gray-100">
+                <button
+                  onClick={() => setShowAllComments(!showAllComments)}
+                  className="w-full flex items-center justify-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
+                >
+                  {showAllComments ? (
+                    <><ChevronUp size={16} /> Ver menos</>
+                  ) : (
+                    <><ChevronDown size={16} /> Ver mais ({filteredComments.length - 5})</>
+                  )}
+                </button>
               </div>
             )}
           </div>

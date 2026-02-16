@@ -40,3 +40,43 @@ input.no-spin-input {
   -moz-appearance: textfield !important;
   appearance: textfield !important;
 }
+
+/* Drawer mobile - slide da esquerda */
+.mobile-drawer[data-state="open"] {
+  animation: mobile-drawer-in 0.25s ease-out forwards;
+}
+.mobile-drawer[data-state="closed"] {
+  animation: mobile-drawer-out 0.2s ease-in forwards;
+}
+@keyframes mobile-drawer-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+@keyframes mobile-drawer-out {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+/* Esconder botão close padrão do Dialog quando usado como drawer (temos nosso próprio) */
+.mobile-drawer > button.absolute {
+  display: none;
+}
+
+/* Forçar texto e ícones visíveis no menu mobile (sobrescreve dark mode do body) */
+.mobile-drawer,
+.mobile-drawer nav,
+.mobile-drawer button,
+.mobile-drawer a {
+  color: #111827 !important;
+}
+.mobile-drawer a[data-active="true"],
+.mobile-drawer a[data-active="true"] span {
+  color: #1d4ed8 !important;
+}
+.mobile-drawer .text-blue-600,
+.mobile-drawer [class*="text-blue"] {
+  color: #2563eb !important;
+}
+.mobile-drawer svg {
+  color: inherit;
+}

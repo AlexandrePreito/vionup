@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { config_id, sync_type = 'full', end_date: endDateParam, start_date: startDateParam } = body;
+    const { config_id, sync_type = 'full', end_date: endDateParam } = body;
 
     if (!config_id) {
       return NextResponse.json({ error: 'config_id obrigatório' }, { status: 400 });
@@ -98,17 +98,7 @@ export async function POST(request: NextRequest) {
       startDate.setDate(startDate.getDate() - daysBack);
       endDate = new Date(today);
     } else {
-      // Para sync full: usar start_date do body se fornecido, senão initial_date da config
-      if (startDateParam && typeof startDateParam === 'string') {
-        const parsed = new Date(startDateParam);
-        if (!isNaN(parsed.getTime())) {
-          startDate = parsed;
-        } else {
-          startDate = config.initial_date ? new Date(config.initial_date) : new Date('2024-01-01');
-        }
-      } else {
-        startDate = config.initial_date ? new Date(config.initial_date) : new Date('2024-01-01');
-      }
+      startDate = config.initial_date ? new Date(config.initial_date) : new Date('2024-01-01');
       // Permite informar end_date (ex.: fim do mês) para trazer período fechado (ex.: fevereiro inteiro)
       if (endDateParam && typeof endDateParam === 'string') {
         const parsed = new Date(endDateParam);
@@ -129,37 +119,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ============================================================
-    // VALIDAÇÃO DE DATAS — impede bugs como ano 0206
-    // ============================================================
-    const startYear = startDate.getFullYear();
-    const endYear = endDate.getFullYear();
-
-    if (startYear < 2000 || startYear > 2100) {
-      console.error(`❌ Ano inválido em start_date: ${startYear} (original: ${startDateParam || config.initial_date})`);
-      return NextResponse.json({
-        error: `Ano inicial inválido: ${startYear}. Verifique o campo "Data Inicial" da configuração (initial_date). Deve estar entre 2000 e 2100.`,
-      }, { status: 400 });
-    }
-
-    if (endYear < 2000 || endYear > 2100) {
-      console.error(`❌ Ano inválido em end_date: ${endYear}`);
-      return NextResponse.json({
-        error: `Ano final inválido: ${endYear}. Deve estar entre 2000 e 2100.`,
-      }, { status: 400 });
-    }
-
     // Calcular total de dias
     const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (86400000)) + 1;
-
-    // Limitar a no máximo 3 anos (1095 dias) para evitar processamento absurdo
-    if (totalDays > 1095) {
-      return NextResponse.json({
-        error: `Período muito grande: ${totalDays} dias (máx 1095 = ~3 anos). Reduza o intervalo ou use sincronização incremental.`,
-      }, { status: 400 });
-    }
-
-    console.log(`📅 Período validado: ${startDate.toISOString().split('T')[0]} até ${endDate.toISOString().split('T')[0]} (${totalDays} dias)`);
 
     // Pegar company_group_id da conexão ou da config
     const companyGroupId = config.company_group_id || config.connection?.company_group_id;
@@ -181,7 +142,6 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (existingItem) {
-      console.log(`⚠️ [SYNC-QUEUE] Bloqueado: já existe item ${existingItem.status} para config ${config_id}`);
       return NextResponse.json({ 
         error: `Já existe uma sincronização ${existingItem.status === 'pending' ? 'pendente' : 'em andamento'} para esta configuração`,
         existing_queue_id: existingItem.id 
@@ -211,8 +171,6 @@ export async function POST(request: NextRequest) {
       console.error('❌ Erro ao inserir na fila:', insertError);
       return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
-
-    console.log(`📥 [SYNC-QUEUE] Item adicionado: ${config.entity_type} | queue_id=${queueItem.id} | grupo=${companyGroupId?.slice(0, 8)}...`);
 
     return NextResponse.json({ 
       success: true, 
@@ -309,165 +267,5 @@ export async function DELETE(request: NextRequest) {
       { error: error.message || 'Erro ao cancelar item' },
       { status: 500 }
     );
-  }
-}
-
-// ============================================================
-// PATCH - Cancelar ou alterar status de item(ns) da fila
-// ============================================================
-export async function PATCH(request: NextRequest): Promise<NextResponse> {
-  try {
-    // Verificar autenticação
-    const user = await getAuthenticatedUser(request);
-    if (!user) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const { action, queue_id, queue_ids } = body;
-
-    // -------------------------------------------------------
-    // Ação: cancel — cancela 1 item (pending ou processing)
-    // -------------------------------------------------------
-    if (action === 'cancel' && queue_id) {
-      const { data: item, error: fetchError } = await supabaseAdmin
-        .from('sync_queue')
-        .select('id, status')
-        .eq('id', queue_id)
-        .single();
-
-      if (fetchError || !item) {
-        return NextResponse.json({ error: 'Item não encontrado' }, { status: 404 });
-      }
-
-      if (item.status === 'completed' || item.status === 'cancelled') {
-        return NextResponse.json({
-          error: `Item já está ${item.status}. Não é possível cancelar.`
-        }, { status: 400 });
-      }
-
-      const { error: updateError } = await supabaseAdmin
-        .from('sync_queue')
-        .update({
-          status: 'cancelled',
-          finished_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          error_message: 'Cancelado pelo usuário'
-        })
-        .eq('id', queue_id);
-
-      if (updateError) {
-        return NextResponse.json({ error: updateError.message }, { status: 500 });
-      }
-
-      console.log(`🚫 Item ${queue_id} cancelado pelo usuário`);
-      return NextResponse.json({ success: true, message: 'Item cancelado', queue_id });
-    }
-
-    // -------------------------------------------------------
-    // Ação: cancel_all — cancela todos os pending/processing
-    // -------------------------------------------------------
-    if (action === 'cancel_all') {
-      const { data, error } = await supabaseAdmin
-        .from('sync_queue')
-        .update({
-          status: 'cancelled',
-          finished_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          error_message: 'Cancelado em lote pelo usuário'
-        })
-        .in('status', ['pending', 'processing'])
-        .select('id');
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-
-      const count = data?.length || 0;
-      console.log(`🚫 ${count} itens cancelados em lote`);
-      return NextResponse.json({ success: true, message: `${count} itens cancelados`, cancelled_count: count });
-    }
-
-    // -------------------------------------------------------
-    // Ação: remove — remove itens finalizados do banco (completed/failed/cancelled)
-    // -------------------------------------------------------
-    if (action === 'remove' && queue_id) {
-      // Só permite remover itens que NÃO estão ativos
-      const { data: item } = await supabaseAdmin
-        .from('sync_queue')
-        .select('id, status')
-        .eq('id', queue_id)
-        .single();
-
-      if (!item) {
-        return NextResponse.json({ error: 'Item não encontrado' }, { status: 404 });
-      }
-
-      if (item.status === 'processing') {
-        return NextResponse.json({
-          error: 'Item está processando. Cancele primeiro antes de remover.'
-        }, { status: 400 });
-      }
-
-      const { error } = await supabaseAdmin
-        .from('sync_queue')
-        .delete()
-        .eq('id', queue_id);
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-
-      console.log(`🗑️ Item ${queue_id} removido da fila`);
-      return NextResponse.json({ success: true, message: 'Item removido', queue_id });
-    }
-
-    // -------------------------------------------------------
-    // Ação: cleanup — remove todos finalizados (completed/failed/cancelled)
-    // -------------------------------------------------------
-    if (action === 'cleanup') {
-      const { data, error } = await supabaseAdmin
-        .from('sync_queue')
-        .delete()
-        .in('status', ['completed', 'failed', 'cancelled'])
-        .select('id');
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-
-      const count = data?.length || 0;
-      console.log(`🗑️ ${count} itens finalizados removidos da fila`);
-      return NextResponse.json({ success: true, message: `${count} itens removidos`, removed_count: count });
-    }
-
-    // -------------------------------------------------------
-    // Ação: force_cancel — força cancelamento mesmo que esteja processing
-    // (útil se o processamento travou)
-    // -------------------------------------------------------
-    if (action === 'force_cancel' && queue_id) {
-      const { error } = await supabaseAdmin
-        .from('sync_queue')
-        .update({
-          status: 'cancelled',
-          finished_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          error_message: 'Forçado cancelamento pelo usuário (processo pode ter travado)'
-        })
-        .eq('id', queue_id);
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-
-      console.log(`⚠️ Item ${queue_id} forçado cancelamento`);
-      return NextResponse.json({ success: true, message: 'Item forçado cancelamento', queue_id });
-    }
-
-    return NextResponse.json({ error: 'Ação inválida. Use: cancel, cancel_all, remove, cleanup, force_cancel' }, { status: 400 });
-
-  } catch (error: any) {
-    console.error('❌ Erro no PATCH sync-queue:', error);
-    return NextResponse.json({ error: error.message || 'Erro interno' }, { status: 500 });
   }
 }

@@ -35,6 +35,7 @@ import {
   LabelList
 } from 'recharts';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
+import { MobileExpandableCard } from '@/components/MobileExpandableCard';
 
 interface CompanyGroup {
   id: string;
@@ -484,10 +485,10 @@ export default function DashboardRealizadoMesPage() {
         </div>
       </div>
 
-      {/* Filtros */}
-      <div className="flex flex-wrap items-end gap-4">
+      {/* Filtros - em mobile: todos do mesmo tamanho (full width) */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-4">
         {/* Grupo */}
-        <div className="w-48">
+        <div className="w-full sm:w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
           {isGroupReadOnly ? (
             <input
@@ -512,7 +513,7 @@ export default function DashboardRealizadoMesPage() {
 
         {/* Empresa - Dropdown com checkboxes */}
         {realizadoData && (
-          <div className="w-64 relative">
+          <div className="w-full sm:w-64 relative">
             <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
             <div className="relative">
               <button
@@ -582,7 +583,7 @@ export default function DashboardRealizadoMesPage() {
 
         {/* Mês - Dropdown com checkboxes */}
         {realizadoData && (
-          <div className="w-64 relative">
+          <div className="w-full sm:w-64 relative">
             <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
             <div className="relative">
               <button
@@ -651,7 +652,7 @@ export default function DashboardRealizadoMesPage() {
         )}
 
         {/* Ano */}
-        <div className="w-28">
+        <div className="w-full sm:w-28">
           <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
           <select
             value={selectedYear}
@@ -718,7 +719,7 @@ export default function DashboardRealizadoMesPage() {
       {!loading && !error && filteredData && realizadoData && (
         <div className="space-y-6">
           {/* Cards de Empresas */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
             {realizadoData.companies.map((company, index) => {
               const colors = getCompanyColor(index);
               const isSelected = selectedCompanyIds.includes(company.id);
@@ -810,8 +811,8 @@ export default function DashboardRealizadoMesPage() {
             })}
           </div>
 
-          {/* Cards de Resumo */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Cards de Resumo - em mobile 1 coluna (empilhados) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
             {/* Faturamento Total */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 rounded-bl-full" />
@@ -882,27 +883,13 @@ export default function DashboardRealizadoMesPage() {
             </div>
           </div>
 
-          {/* Gráfico de Faturamento Mensal com Metas */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-6">
-            <div className="mb-6">
-              <h3 className="text-lg font-bold text-gray-900">Faturamento Mês a Mês</h3>
-              <p className="text-sm text-gray-500">
-                {filteredData.period.year}
-                {selectedCompanyIds.length > 0 && selectedCompanyIds.length < realizadoData.companies.length && (
-                  <span className="ml-2 text-blue-600">
-                    • {selectedCompanyIds.length} empresa(s) selecionada(s)
-                  </span>
-                )}
-                {selectedMonths.length > 0 && selectedMonths.length < realizadoData.monthlyRevenue.length && (
-                  <span className="ml-2 text-blue-600">
-                    • {selectedMonths.length} mês(es) selecionado(s)
-                  </span>
-                )}
-              </p>
-            </div>
-            
-            <div className="h-80 min-h-[320px] w-full" style={{ minWidth: 0 }}>
-              <ResponsiveContainer width="100%" height="100%" minHeight={320} minWidth={0}>
+          {/* Gráfico de Faturamento Mensal com Metas - em mobile: só o card, expandir ao clicar */}
+          <MobileExpandableCard
+            title="Faturamento Mês a Mês"
+            subtitle={`${filteredData.period.year}${selectedCompanyIds.length > 0 && selectedCompanyIds.length < realizadoData.companies.length ? ` • ${selectedCompanyIds.length} empresa(s) selecionada(s)` : ''}${selectedMonths.length > 0 && selectedMonths.length < realizadoData.monthlyRevenue.length ? ` • ${selectedMonths.length} mês(es) selecionado(s)` : ''}`}
+          >
+              <div className="h-80 min-h-[260px] w-full" style={{ minWidth: 0 }}>
+                <ResponsiveContainer width="100%" height="100%" minHeight={260} minWidth={0}>
                 <ComposedChart data={chartData}>
                   <defs>
                     <linearGradient id="colorRevenueGradient" x1="0" y1="0" x2="0" y2="1">
@@ -958,22 +945,18 @@ export default function DashboardRealizadoMesPage() {
                     fill="url(#colorGoalGradient)"
                   />
                 </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Gráfico de Linha - Faturamento por Empresa */}
-          {filteredData && filteredData.companies.length > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-6">
-              <div className="mb-6">
-                <h3 className="text-lg font-bold text-gray-900">Faturamento Mensal por Empresa</h3>
-                <p className="text-sm text-gray-500">
-                  Evolução do faturamento de cada empresa ao longo dos meses
-                </p>
+                </ResponsiveContainer>
               </div>
-              
-              <div className="h-[500px] min-h-[500px] w-full" style={{ minWidth: 0 }}>
-                <ResponsiveContainer width="100%" height="100%" minHeight={500} minWidth={0}>
+          </MobileExpandableCard>
+
+          {/* Gráfico de Linha - Faturamento por Empresa - em mobile: só o card, expandir ao clicar */}
+          {filteredData && filteredData.companies.length > 0 && (
+            <MobileExpandableCard
+              title="Faturamento Mensal por Empresa"
+              subtitle="Evolução do faturamento de cada empresa ao longo dos meses"
+            >
+                <div className="h-[400px] min-h-[300px] w-full md:h-[500px] md:min-h-[500px]" style={{ minWidth: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
                   <LineChart data={lineChartData}>
                     <defs>
                       {filteredData.companies.map((company, index) => {
@@ -1041,21 +1024,17 @@ export default function DashboardRealizadoMesPage() {
                       );
                     })}
                   </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+                  </ResponsiveContainer>
+                </div>
+            </MobileExpandableCard>
           )}
 
-          {/* Matriz de Faturamento por Mês e Filial */}
+          {/* Matriz de Faturamento por Mês e Filial - em mobile: só o card, expandir ao clicar */}
           {filteredData.monthlyRevenueByCompany && filteredData.monthlyRevenueByCompany.length > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-6">
-              <div className="mb-6 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">Faturamento por Mês e Filial</h3>
-                  <p className="text-sm text-gray-500">
-                    Valor faturado por filial em cada mês do ano {filteredData.period.year}
-                  </p>
-                </div>
+            <MobileExpandableCard
+              title="Faturamento por Mês e Filial"
+              subtitle={`Valor faturado por filial em cada mês do ano ${filteredData.period.year}`}
+              headerAction={
                 <button
                   onClick={handleExportToExcel}
                   className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
@@ -1063,8 +1042,8 @@ export default function DashboardRealizadoMesPage() {
                 >
                   <Download size={18} />
                 </button>
-              </div>
-
+              }
+            >
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
@@ -1158,7 +1137,7 @@ export default function DashboardRealizadoMesPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </MobileExpandableCard>
           )}
         </div>
       )}

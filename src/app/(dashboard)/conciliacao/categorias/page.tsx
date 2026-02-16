@@ -124,9 +124,9 @@ export default function ConciliacaoCategoriasPage() {
   const formatExternalPath = (cat: ExternalCategory) =>
     [cat.layer_01, cat.layer_02, cat.layer_03, cat.layer_04].filter(Boolean).join(' > ');
 
-  /** Segunda e terceira camadas: "Camada2 - Camada3" (ex: Receita op. - Vendas) */
+  /** Apenas Layer 02 e Layer 04 */
   const formatExternalPathTwoLayers = (cat: ExternalCategory) =>
-    [cat.layer_02, cat.layer_03].filter(Boolean).join(' - ') || formatExternalPath(cat);
+    [cat.layer_02, cat.layer_04].filter(Boolean).join(' - ') || formatExternalPath(cat);
 
   /** Receita = azul, Despesa = laranja (baseado no primeiro layer) */
   const getTipoFromExternalCategory = (cat: ExternalCategory): 'receita' | 'despesa' => {

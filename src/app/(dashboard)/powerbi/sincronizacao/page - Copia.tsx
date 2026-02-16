@@ -304,12 +304,6 @@ export default function PowerBISincronizacaoPage() {
   // Até data (opcional) para Sync Completa — ex.: 2026-02-28 para trazer fevereiro inteiro
   const [syncEndDateOptional, setSyncEndDateOptional] = useState('');
 
-  // Modal de Sync Completa com intervalo de datas
-  const [isFullSyncModalOpen, setIsFullSyncModalOpen] = useState(false);
-  const [fullSyncEntityType, setFullSyncEntityType] = useState<string>('');
-  const [fullSyncStartDate, setFullSyncStartDate] = useState('');
-  const [fullSyncEndDate, setFullSyncEndDate] = useState('');
-
   // Modal de importação via planilha
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importEntityType, setImportEntityType] = useState<string>('');
@@ -464,18 +458,17 @@ export default function PowerBISincronizacaoPage() {
   // ============================================================
   // SINCRONIZAÇÃO COM FILA
   // ============================================================
-  const handleSync = async (config: PowerBISyncConfig, forceFullSync: boolean = false, optionalEndDate?: string, optionalStartDate?: string) => {
+  const handleSync = async (config: PowerBISyncConfig, forceFullSync: boolean = false, optionalEndDate?: string) => {
     try {
       setSyncingEntity(config.entity_type);
       abortRef.current = false;
 
       const syncType = forceFullSync ? 'full' : (config.is_incremental ? 'incremental' : 'full');
-      const body: { config_id: string; sync_type: string; end_date?: string; start_date?: string } = {
+      const body: { config_id: string; sync_type: string; end_date?: string } = {
         config_id: config.id,
         sync_type: syncType,
       };
       if (syncType === 'full' && optionalEndDate?.trim()) body.end_date = optionalEndDate.trim();
-      if (syncType === 'full' && optionalStartDate?.trim()) body.start_date = optionalStartDate.trim();
 
       // 1. Adicionar à fila
       const response = await fetch('/api/powerbi/sync-queue', {
@@ -614,8 +607,7 @@ export default function PowerBISincronizacaoPage() {
 
       try {
         const controller = new AbortController();
-        // Timeout 15min: Vendas pode demorar (query DAX grande); Caixa é mais rápido
-        const timeoutId = setTimeout(() => controller.abort(), 15 * 60 * 1000);
+        const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
 
         const response = await fetch('/api/powerbi/sync-queue/process', {
           method: 'POST',
@@ -704,7 +696,7 @@ export default function PowerBISincronizacaoPage() {
 
         // Continuar para o próximo dia
         if (result.has_more && !abortRef.current) {
-          processTimeoutRef.current = setTimeout(processLoop, 300);
+          processTimeoutRef.current = setTimeout(processLoop, 1500);
         } else {
           isProcessingRef.current = false;
           setSyncingEntity(null);
@@ -1049,15 +1041,7 @@ export default function PowerBISincronizacaoPage() {
         table_name: tableMatch ? tableMatch[1] : '',
         field_mappings: invertedMapping,
         date_field: existingConfig.date_field || '',
-        initial_date: (() => {
-          const d = existingConfig.initial_date || '';
-          if (!d || d.length < 10) return d;
-          const year = parseInt(d.slice(0, 4), 10);
-          if (year > 0 && year < 2000) {
-            return `20${d.slice(2)}`; // 0206-11-14 -> 2006-11-14
-          }
-          return d;
-        })(),
+        initial_date: existingConfig.initial_date || '',
         incremental_days: existingConfig.incremental_days || 7,
         is_incremental: existingConfig.is_incremental || false,
         dax_query: existingConfig.dax_query || ''
@@ -1132,14 +1116,6 @@ export default function PowerBISincronizacaoPage() {
     if (configForm.is_incremental && (!configForm.date_field || !configForm.initial_date)) {
       toast.warning('Para sincronização incremental, informe o campo de data e a data inicial');
       return;
-    }
-
-    if (configForm.is_incremental && configForm.initial_date) {
-      const year = parseInt(configForm.initial_date.slice(0, 4), 10);
-      if (year < 2000 || year > 2100) {
-        toast.warning(`Data inválida: o ano deve estar entre 2000 e 2100. Verifique o campo "Data Inicial" (ano atual: ${year}). Use 2006 em vez de 0206.`);
-        return;
-      }
     }
 
     setSavingConfig(true);
@@ -1601,20 +1577,7 @@ export default function PowerBISincronizacaoPage() {
                             )}
 
                             {syncConfig?.is_incremental && (
-                              <button onClick={() => {
-                                if (syncConfig) {
-                                  setFullSyncEntityType(entityType);
-                                  // Pré-preencher com initial_date da config e hoje (normalizar ano 0206 -> 2006)
-                                  const initDate = syncConfig.initial_date || '';
-                                  const normalized = initDate && initDate.length >= 10
-                                    ? (() => { const y = parseInt(initDate.slice(0, 4), 10); return y > 0 && y < 2000 ? `20${initDate.slice(2)}` : initDate; })()
-                                    : initDate;
-                                  setFullSyncStartDate(normalized);
-                                  const today = new Date().toISOString().split('T')[0];
-                                  setFullSyncEndDate(today);
-                                  setIsFullSyncModalOpen(true);
-                                }
-                              }} disabled={isSyncing || !syncConfig?.is_active} className="p-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg disabled:opacity-50" title="Sync Completa"><RefreshCw size={18} /></button>
+                              <button onClick={() => syncConfig && handleSync(syncConfig, true)} disabled={isSyncing || !syncConfig?.is_active} className="p-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg disabled:opacity-50" title="Sync Completa"><RefreshCw size={18} /></button>
                             )}
 
                             {/* Importar Planilha — só para entidades de fato */}
@@ -2138,7 +2101,7 @@ export default function PowerBISincronizacaoPage() {
                   <X size={20} className="text-gray-500" />
                 </button>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowRecentOnly(!showRecentOnly)}
                   className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
@@ -2165,39 +2128,6 @@ export default function PowerBISincronizacaoPage() {
                   title="Remover itens completed/failed/cancelled com mais de 30 dias"
                 >
                   Limpar Antigos
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!confirm('Tem certeza que deseja apagar toda a fila? Itens pendentes serão cancelados e os finalizados removidos.')) return;
-                    try {
-                      const resCancel = await fetch('/api/powerbi/sync-queue', {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'cancel_all' }),
-                      });
-                      const resCleanup = await fetch('/api/powerbi/sync-queue', {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'cleanup' }),
-                      });
-                      const dataCancel = resCancel.ok ? await resCancel.json() : null;
-                      const dataCleanup = resCleanup.ok ? await resCleanup.json() : null;
-                      const cancelled = dataCancel?.cancelled_count ?? 0;
-                      const removed = dataCleanup?.removed_count ?? 0;
-                      if (cancelled > 0 || removed > 0) {
-                        toast.success(`Fila apagada: ${cancelled} cancelados, ${removed} removidos`);
-                      } else {
-                        toast.success('Fila apagada');
-                      }
-                      fetchQueue();
-                    } catch (err) {
-                      toast.error('Erro ao apagar fila');
-                    }
-                  }}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition-colors font-medium"
-                  title="Cancelar todos pendentes e remover todos os itens da fila"
-                >
-                  Apagar Toda a Fila
                 </button>
               </div>
             </div>
@@ -2235,40 +2165,6 @@ export default function PowerBISincronizacaoPage() {
                   };
                   const st = statusMap[item.status] || statusMap.pending;
 
-                  const handleDeleteItem = async () => {
-                    const isActive = item.status === 'pending' || item.status === 'processing';
-                    const actionText = isActive ? 'cancelar' : 'remover';
-                    if (!confirm(`Tem certeza que deseja ${actionText} este item da fila?`)) return;
-                    try {
-                      if (isActive) {
-                        const res = await fetch('/api/powerbi/sync-queue', {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ action: 'cancel', queue_id: item.id }),
-                        });
-                        if (!res.ok) {
-                          const d = await res.json();
-                          throw new Error(d.error);
-                        }
-                        toast.success('Item cancelado');
-                      } else {
-                        const res = await fetch('/api/powerbi/sync-queue', {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ action: 'remove', queue_id: item.id }),
-                        });
-                        if (!res.ok) {
-                          const d = await res.json();
-                          throw new Error(d.error);
-                        }
-                        toast.success('Item removido da fila');
-                      }
-                      fetchQueue();
-                    } catch (err: any) {
-                      toast.error(err?.message || 'Erro ao excluir item');
-                    }
-                  };
-
                   return (
                     <div key={item.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                       <div className="flex items-center justify-between mb-2">
@@ -2276,18 +2172,9 @@ export default function PowerBISincronizacaoPage() {
                           {entityConf && <span className={entityConf.color}>{entityConf.icon}</span>}
                           <span className="text-sm font-medium">{entityConf?.label || 'Desconhecido'}</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${st.bg} ${st.color} font-medium`}>
-                            {st.text}
-                          </span>
-                          <button
-                            onClick={handleDeleteItem}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                            title={item.status === 'pending' || item.status === 'processing' ? 'Cancelar e remover' : 'Excluir da fila'}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${st.bg} ${st.color} font-medium`}>
+                          {st.text}
+                        </span>
                       </div>
                       
                       <div className="text-xs text-gray-500 space-y-1">
@@ -2665,83 +2552,6 @@ export default function PowerBISincronizacaoPage() {
           </div>
         </>
       )}
-
-      {/* Modal de Sync Completa com intervalo de datas */}
-      <Modal
-        isOpen={isFullSyncModalOpen}
-        onClose={() => setIsFullSyncModalOpen(false)}
-        title={`Sync Completa — ${entityTypeConfig[fullSyncEntityType]?.label || ''}`}
-        size="md"
-      >
-        <div className="space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-sm text-blue-800">
-              <strong>⚠️ Atenção:</strong> A sincronização completa irá buscar todos os dados do Power BI 
-              no intervalo selecionado e atualizar os registros existentes (upsert).
-            </p>
-          </div>
-
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Data Início *</label>
-              <input
-                type="date"
-                value={fullSyncStartDate}
-                onChange={(e) => setFullSyncStartDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Data Fim *</label>
-              <input
-                type="date"
-                value={fullSyncEndDate}
-                onChange={(e) => setFullSyncEndDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-          </div>
-
-          {fullSyncStartDate && fullSyncEndDate && (
-            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-              <div className="flex items-center gap-2 text-sm text-gray-700">
-                <Calendar size={16} className="text-blue-600" />
-                <span>
-                  {(() => {
-                    const start = new Date(fullSyncStartDate + 'T00:00:00');
-                    const end = new Date(fullSyncEndDate + 'T00:00:00');
-                    const days = Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1;
-                    const batches = Math.ceil(days / 7);
-                    return `${days} dias → ~${batches} requests (batches de 7 dias)`;
-                  })()}
-                </span>
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button variant="secondary" onClick={() => setIsFullSyncModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={() => {
-                const config = configs[fullSyncEntityType];
-                if (config && fullSyncStartDate && fullSyncEndDate) {
-                  setIsFullSyncModalOpen(false);
-                  handleSync(config, true, fullSyncEndDate, fullSyncStartDate);
-                } else {
-                  toast.error('Preencha as datas de início e fim');
-                }
-              }}
-              disabled={!fullSyncStartDate || !fullSyncEndDate}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              <RefreshCw size={16} className="mr-2" />
-              Iniciar Sync Completa
-            </Button>
-          </div>
-        </div>
-      </Modal>
 
       {/* Input file oculto para importação */}
       <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.txt" onChange={handleFileSelected} className="hidden" />

@@ -102,7 +102,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <Header />
       {isLoading && <LoadingSpinner />}
-      <main className={`pt-16 pb-6 px-6 transition-all duration-300 ${isExpanded ? 'ml-64' : 'ml-16'}`}>
+      <main className={`pt-14 md:pt-16 pb-6 px-4 md:px-6 transition-all duration-300 
+        ${isExpanded ? 'md:ml-64' : 'md:ml-16'}`}>
         <PageGuard>
           {children}
         </PageGuard>

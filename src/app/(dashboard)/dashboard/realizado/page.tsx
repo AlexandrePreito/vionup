@@ -43,6 +43,7 @@ import {
   LabelList
 } from 'recharts';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
+import { MobileExpandableCard } from '@/components/MobileExpandableCard';
 
 interface CompanyGroup {
   id: string;
@@ -430,19 +431,19 @@ export default function DashboardRealizadoMensalPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Realizado por Dia</h1>
-          <p className="text-gray-500">Dashboard de performance por empresa</p>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Realizado por Dia</h1>
+          <p className="text-gray-500 text-sm">Dashboard de performance por empresa</p>
         </div>
       </div>
 
       {/* Filtros */}
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-end gap-3 md:gap-4">
         {/* Grupo */}
-        <div className="w-48">
+        <div className="w-full sm:w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
           {isGroupReadOnly ? (
             <input
@@ -466,7 +467,7 @@ export default function DashboardRealizadoMensalPage() {
         </div>
 
         {/* Mês */}
-        <div className="w-40">
+        <div className="w-full sm:w-40">
           <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
           <select
             value={selectedMonth}
@@ -480,7 +481,7 @@ export default function DashboardRealizadoMensalPage() {
         </div>
 
         {/* Ano */}
-        <div className="w-28">
+        <div className="w-full sm:w-28">
           <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
           <select
             value={selectedYear}
@@ -645,8 +646,8 @@ export default function DashboardRealizadoMensalPage() {
             })}
           </div>
 
-          {/* Cards de Resumo */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Cards de Resumo - em mobile 1 coluna (empilhados), em desktop 4 colunas */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Faturamento Total */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 rounded-bl-full" />
@@ -737,22 +738,13 @@ export default function DashboardRealizadoMensalPage() {
             </div>
           </div>
 
-          {/* Gráfico de Faturamento Diário */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-6">
-            <div className="mb-6">
-              <h3 className="text-lg font-bold text-gray-900">Faturamento Dia a Dia</h3>
-              <p className="text-sm text-gray-500">
-                {MONTHS[filteredData.period.month - 1]?.label} {filteredData.period.year}
-                {selectedCompanyId && realizadoData.companies.find(c => c.id === selectedCompanyId) && (
-                  <span className="ml-2 text-blue-600">
-                    • {realizadoData.companies.find(c => c.id === selectedCompanyId)?.name}
-                  </span>
-                )}
-              </p>
-            </div>
-            
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
+          {/* Faturamento Dia a Dia - card expansível em mobile */}
+          <MobileExpandableCard
+            title="Faturamento Dia a Dia"
+            subtitle={`${MONTHS[filteredData.period.month - 1]?.label} ${filteredData.period.year}${selectedCompanyId && realizadoData.companies.find(c => c.id === selectedCompanyId) ? ` • ${realizadoData.companies.find(c => c.id === selectedCompanyId)?.name}` : ''}`}
+          >
+            <div className="h-80 w-full min-h-[240px]">
+              <ResponsiveContainer width="100%" height="100%" minHeight={240} minWidth={0}>
                 <BarChart data={filteredData.dailyRevenue}>
                   <defs>
                     <linearGradient id="colorRevenueGradient" x1="0" y1="0" x2="0" y2="1">
@@ -793,7 +785,7 @@ export default function DashboardRealizadoMensalPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </MobileExpandableCard>
 
           {/* Grid de Gráficos - Modo de Venda e Período */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -806,9 +798,9 @@ export default function DashboardRealizadoMensalPage() {
 
               {filteredData.saleModeRevenue.length > 0 ? (
                 <div className="flex items-center gap-8">
-                  {/* Gráfico de Pizza */}
-                  <div className="w-44 h-44">
-                    <ResponsiveContainer width="100%" height="100%">
+                  {/* Gráfico de rosca - oculto em mobile */}
+                  <div className="hidden md:block w-44 h-44 min-h-[176px] shrink-0">
+                    <ResponsiveContainer width="100%" height="100%" minHeight={176} minWidth={0}>
                       <PieChart>
                         <Pie
                           data={filteredData.saleModeRevenue}
@@ -929,16 +921,14 @@ export default function DashboardRealizadoMensalPage() {
             </div>
           </div>
 
-          {/* Gráfico de Média Diária por Dia da Semana */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-6">
-            <div className="mb-6">
-              <h3 className="text-lg font-bold text-gray-900">Média Diária por Dia da Semana</h3>
-              <p className="text-sm text-gray-500">Faturamento médio por dia da semana no período</p>
-            </div>
-            
-            {filteredData.weekdayAverage && filteredData.weekdayAverage.length > 0 ? (
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
+          {/* Média por Dia Semanal - card expansível em mobile */}
+          {filteredData.weekdayAverage && filteredData.weekdayAverage.length > 0 ? (
+            <MobileExpandableCard
+              title="Média por Dia Semanal"
+              subtitle="Faturamento médio por dia da semana no período"
+            >
+              <div className="h-80 w-full min-h-[240px]">
+                <ResponsiveContainer width="100%" height="100%" minHeight={240} minWidth={0}>
                   <BarChart data={filteredData.weekdayAverage}>
                     <defs>
                       <linearGradient id="colorWeekdayGradient" x1="0" y1="0" x2="0" y2="1">
@@ -983,32 +973,29 @@ export default function DashboardRealizadoMensalPage() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                Sem dados disponíveis
-              </div>
-            )}
-          </div>
-
-          {/* Tabela de Faturamento por Dia e Filial */}
-          {filteredData.dailyRevenueByCompany && filteredData.dailyRevenueByCompany.length > 0 && (
+            </MobileExpandableCard>
+          ) : (
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
-              <div className="mb-6 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">Faturamento por Dia e Filial</h3>
-                  <p className="text-sm text-gray-500">
-                    Valor faturado por filial em cada dia de {MONTHS[filteredData.period.month - 1]?.label} {filteredData.period.year}
-                  </p>
-                </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Média por Dia Semanal</h3>
+              <div className="text-center py-8 text-gray-500">Sem dados disponíveis</div>
+            </div>
+          )}
+
+          {/* Faturamento por Filial - card expansível em mobile */}
+          {filteredData.dailyRevenueByCompany && filteredData.dailyRevenueByCompany.length > 0 && (
+            <MobileExpandableCard
+              title="Faturamento por Filial"
+              subtitle={`Valor faturado por filial em cada dia de ${MONTHS[filteredData.period.month - 1]?.label} ${filteredData.period.year}`}
+              headerAction={
                 <button
                   onClick={handleExportToExcel}
-                  className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                  className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors touch-manipulation"
                   title="Exportar Excel"
                 >
                   <Download size={18} />
                 </button>
-              </div>
-
+              }
+            >
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
@@ -1159,7 +1146,7 @@ export default function DashboardRealizadoMensalPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </MobileExpandableCard>
           )}
         </div>
       )}

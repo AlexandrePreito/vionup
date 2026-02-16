@@ -12,10 +12,15 @@ import {
   Clock,
   ShoppingCart,
   DollarSign,
-  Calendar
+  Calendar,
+  Bike,
+  UtensilsCrossed,
+  Truck,
+  ChefHat
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
+import { MobileExpandableCard } from '@/components/MobileExpandableCard';
 
 interface CompanyGroup {
   id: string;
@@ -45,6 +50,7 @@ interface SaleModeGoal {
   saleModeName: string;
   shiftId?: string;
   shiftName?: string;
+  cardLabel?: string;
   goalValue: number;
   goalUnit: string;
   realized: number;
@@ -260,7 +266,7 @@ export default function DashboardEmpresaPage() {
     }
   };
 
-  // Buscar automaticamente quando empresa ou período mudar
+  // Buscar automaticamente quando empresa, período ou turno selecionado mudar
   useEffect(() => {
     if (selectedCompany) {
       fetchDashboard();
@@ -372,9 +378,9 @@ export default function DashboardEmpresaPage() {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'achieved': return <CheckCircle size={16} className="text-emerald-600" />;
-      case 'ontrack': return <TrendingUp size={16} className="text-amber-500" />;
-      case 'behind': return <AlertTriangle size={16} className="text-red-500" />;
+      case 'achieved': return <CheckCircle size={14} className="text-emerald-600 shrink-0" />;
+      case 'ontrack': return <TrendingUp size={14} className="text-amber-500 shrink-0" />;
+      case 'behind': return <AlertTriangle size={14} className="text-red-500 shrink-0" />;
       default: return null;
     }
   };
@@ -387,10 +393,10 @@ export default function DashboardEmpresaPage() {
         <p className="text-gray-500">Acompanhamento de metas por empresa</p>
       </div>
 
-      {/* Filtros */}
-      <div className="flex flex-wrap items-end gap-4">
+      {/* Filtros - em mobile: um abaixo do outro, mesmo tamanho */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-4">
         {/* Grupo */}
-        <div className="w-48">
+        <div className="w-full sm:w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
           {isGroupReadOnly ? (
             <input
@@ -414,7 +420,7 @@ export default function DashboardEmpresaPage() {
         </div>
 
         {/* Empresa */}
-        <div className="w-56">
+        <div className="w-full sm:w-56">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Empresa <span className="text-red-500">*</span>
           </label>
@@ -431,7 +437,7 @@ export default function DashboardEmpresaPage() {
         </div>
 
         {/* Mês */}
-        <div className="w-40">
+        <div className="w-full sm:w-40">
           <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
           <select
             value={selectedMonth}
@@ -445,7 +451,7 @@ export default function DashboardEmpresaPage() {
         </div>
 
         {/* Ano */}
-        <div className="w-28">
+        <div className="w-full sm:w-28">
           <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
           <select
             value={selectedYear}
@@ -478,8 +484,8 @@ export default function DashboardEmpresaPage() {
       {/* Dashboard Content */}
       {!loading && dashboardData && (
         <div className="space-y-6">
-          {/* Card da Empresa + Meta Faturamento */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Card da Empresa + Meta Faturamento - em mobile: um abaixo do outro */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Card da Empresa - Minimalista */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 rounded-bl-full" />
@@ -535,25 +541,25 @@ export default function DashboardEmpresaPage() {
                       <p className="text-sm text-gray-500">Valor total em vendas</p>
                     </div>
                   </div>
-                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${getStatusBgColor(dashboardData.revenue.status)}`}>
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full shrink-0 ${getStatusBgColor(dashboardData.revenue.status)}`}>
                     {getStatusIcon(dashboardData.revenue.status)}
-                    <span className={`text-sm font-medium ${getStatusColor(dashboardData.revenue.status)}`}>
+                    <span className={`text-xs font-medium whitespace-nowrap ${getStatusColor(dashboardData.revenue.status)}`}>
                       {dashboardData.revenue.status === 'achieved' ? 'Atingida!' : 
                        dashboardData.revenue.status === 'ontrack' ? 'No Caminho' : 'Atenção'}
                     </span>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6 mb-4">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-4">
+                  <div className="min-w-0">
                     <p className="text-sm text-gray-500 mb-1">Realizado</p>
-                    <p className={`text-3xl font-bold ${getStatusColor(dashboardData.revenue.status)}`}>
+                    <p className={`text-2xl sm:text-3xl font-bold break-words ${getStatusColor(dashboardData.revenue.status)}`}>
                       {formatCurrency(dashboardData.revenue.realized)}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="min-w-0 sm:text-right">
                     <p className="text-sm text-gray-500 mb-1">Meta</p>
-                    <p className="text-3xl font-bold text-gray-700">
+                    <p className="text-2xl sm:text-3xl font-bold text-gray-700 break-words">
                       {formatCurrency(dashboardData.revenue.goal)}
                     </p>
                   </div>
@@ -594,24 +600,24 @@ export default function DashboardEmpresaPage() {
                       <p className="text-sm text-gray-500">Avaliação de qualidade</p>
                     </div>
                   </div>
-                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${getStatusBgColor(qualityData.status)}`}>
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full shrink-0 ${getStatusBgColor(qualityData.status)}`}>
                     {getStatusIcon(qualityData.status)}
-                    <span className={`text-sm font-medium ${getStatusColor(qualityData.status)}`}>
+                    <span className={`text-xs font-medium whitespace-nowrap ${getStatusColor(qualityData.status)}`}>
                       {qualityData.status === 'achieved' ? 'Atingida!' : 'Não Atingida'}
                     </span>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6 mb-4">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-4">
+                  <div className="min-w-0">
                     <p className="text-sm text-gray-500 mb-1">Realizado</p>
-                    <p className={`text-3xl font-bold ${getStatusColor(qualityData.status)}`}>
+                    <p className={`text-2xl sm:text-3xl font-bold break-words ${getStatusColor(qualityData.status)}`}>
                       {qualityData.realized.toFixed(1)}%
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="min-w-0 sm:text-right">
                     <p className="text-sm text-gray-500 mb-1">Meta</p>
-                    <p className="text-3xl font-bold text-gray-700">
+                    <p className="text-2xl sm:text-3xl font-bold text-gray-700 break-words">
                       {qualityData.goal.toFixed(1)}%
                     </p>
                   </div>
@@ -636,26 +642,14 @@ export default function DashboardEmpresaPage() {
             </div>
           )}
 
-          {/* Card de Tendência */}
+          {/* Tendência do Mês - em mobile: só o card, expandir ao clicar */}
           {dashboardData.tendency && dashboardData.revenue.goal > 0 && (
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                  dashboardData.tendency.willMeetGoal ? 'bg-emerald-100' : 'bg-orange-100'
-                }`}>
-                  <TrendingUp size={20} className={
-                    dashboardData.tendency.willMeetGoal ? 'text-emerald-600' : 'text-orange-600'
-                  } />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900">Tendência do Mês</h3>
-                  <p className="text-sm text-gray-500">
-                    Projeção baseada em {dashboardData.tendency.confidence === 'high' ? 'dados consolidados' : 
-                      dashboardData.tendency.confidence === 'medium' ? 'dados parciais' : 'poucos dados'}
-                  </p>
-                </div>
-              </div>
-              <div className="p-6">
+            <MobileExpandableCard
+              title="Tendência do Mês"
+              subtitle={`Projeção baseada em ${dashboardData.tendency.confidence === 'high' ? 'dados consolidados' : 
+                dashboardData.tendency.confidence === 'medium' ? 'dados parciais' : 'poucos dados'}`}
+            >
+              <div className="pt-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Projeção */}
                   <div className={`rounded-xl p-6 ${
@@ -754,27 +748,21 @@ export default function DashboardEmpresaPage() {
                   </div>
                 </div>
               </div>
-            </div>
+            </MobileExpandableCard>
           )}
 
-          {/* Metas por Turno */}
           {dashboardData.shifts.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-                <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
-                  <Clock size={20} className="text-orange-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900">Metas por Turno</h3>
-                  <p className="text-sm text-gray-500">
-                    {dashboardData.summary.shiftsAchieved} de {dashboardData.summary.totalShifts} turnos atingiram a meta
-                  </p>
-                </div>
-              </div>
-              <div className="p-6">
+            <MobileExpandableCard
+              title="Metas por Turno"
+              subtitle={`${dashboardData.summary.shiftsAchieved} de ${dashboardData.summary.totalShifts} turnos atingiram a meta`}
+            >
+              <div className="pt-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {dashboardData.shifts.map((shift) => (
-                    <div key={shift.id} className="bg-gray-50 rounded-xl p-5 border border-gray-200">
+                    <div
+                      key={shift.id}
+                      className="bg-gray-50 rounded-xl p-5 border-2 border-gray-200"
+                    >
                       <div className="flex items-center justify-between mb-3">
                         <h4 className="font-semibold text-gray-900">{shift.shiftName}</h4>
                         <div className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBgColor(shift.status)} ${getStatusColor(shift.status)}`}>
@@ -806,42 +794,29 @@ export default function DashboardEmpresaPage() {
                   ))}
                 </div>
               </div>
-            </div>
+            </MobileExpandableCard>
           )}
 
-          {/* Metas por Modo de Venda */}
           {dashboardData.saleModes.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-                <div className="w-10 h-10 bg-teal-100 rounded-xl flex items-center justify-center">
-                  <ShoppingCart size={20} className="text-teal-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900">Metas por Modo de Venda</h3>
-                  <p className="text-sm text-gray-500">
-                    {dashboardData.summary.saleModesAchieved} de {dashboardData.summary.totalSaleModes} modos atingiram a meta
-                  </p>
-                </div>
-              </div>
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {dashboardData.saleModes.map((mode) => (
+            <MobileExpandableCard
+              title="Metas por Modo de Venda"
+              subtitle={`${dashboardData.summary.saleModesAchieved} de ${dashboardData.summary.totalSaleModes} modos atingiram a meta`}
+            >
+              <div className="pt-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {dashboardData.saleModes.map((mode) => {
+                    const label = (mode.cardLabel || mode.saleModeName || '').toLowerCase();
+                    const isAlmoco = label.includes('almoço') || label.includes('almo');
+                    const isDelivery = label.includes('delivery') || label.includes('entrega');
+                    const Icon = isAlmoco && isDelivery ? Bike : isAlmoco && !isDelivery ? UtensilsCrossed : !isAlmoco && isDelivery ? Truck : ChefHat;
+                    return (
                     <div key={mode.id} className="bg-gray-50 rounded-xl p-5 border border-gray-200">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-lg">
-                            {mode.saleModeName === 'Delivery' 
-                              ? '🛵' 
-                              : '🍽️'}
-                          </span>
-                          <div>
-                            <h4 className="font-semibold text-gray-900">{mode.saleModeName}</h4>
-                            {mode.shiftName && (
-                              <span className="text-xs text-gray-500 flex items-center gap-1">
-                                {mode.shiftName === 'Almoço' ? '☀️' : '🌙'} {mode.shiftName}
-                              </span>
-                            )}
+                          <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center text-teal-600">
+                            <Icon size={18} />
                           </div>
+                          <h4 className="font-semibold text-gray-900">{mode.cardLabel || `${mode.shiftName || ''} ${mode.saleModeName}`.trim() || mode.saleModeName}</h4>
                         </div>
                         <div className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBgColor(mode.status)} ${getStatusColor(mode.status)}`}>
                           {mode.status === 'achieved' ? '✓' : mode.status === 'ontrack' ? '→' : '!'}
@@ -869,10 +844,11 @@ export default function DashboardEmpresaPage() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               </div>
-            </div>
+            </MobileExpandableCard>
           )}
         </div>
       )}

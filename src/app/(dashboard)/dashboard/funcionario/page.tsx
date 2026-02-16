@@ -18,6 +18,17 @@ import {
   Medal,
   Trophy
 } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LabelList
+} from 'recharts';
+import { MobileExpandableCard } from '@/components/MobileExpandableCard';
 import confetti from 'canvas-confetti';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
 import '@/lib/api-interceptor'; // Garantir que o interceptor está carregado
@@ -97,6 +108,7 @@ interface DashboardData {
     confidence: 'low' | 'medium' | 'high';
   };
   products: ProductGoal[];
+  dailyRevenue?: { date: string; day: number; dayOfWeek: string; revenue: number; transactions: number }[];
   summary: {
     totalProductGoals: number;
     productsAchieved: number;
@@ -519,6 +531,32 @@ export default function DashboardFuncionarioPage() {
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
+  // Formato compacto para eixo Y do gráfico (1K, 1M)
+  const formatCompact = (value: number) => {
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+    if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+    return value.toFixed(0);
+  };
+
+  // Tooltip para gráfico de vendas diárias
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white/95 backdrop-blur-sm p-4 border border-gray-200 rounded-xl shadow-xl">
+          <p className="font-semibold text-gray-900 mb-2">Dia {label}</p>
+          {payload.map((entry: any, index: number) => (
+            <p key={index} className="text-sm flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }}></span>
+              <span className="text-gray-600">{entry.name}:</span>
+              <span className="font-medium text-gray-900">{formatCurrency(entry.value)}</span>
+            </p>
+          ))}
+        </div>
+      );
+    }
+    return null;
+  };
+
   // Formatar número
   const formatNumber = (value: number) => {
     return value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -609,19 +647,19 @@ export default function DashboardFuncionarioPage() {
   const years = Array.from({ length: 6 }, (_, i) => 2025 + i);
 
   return (
-    <div className="p-6 space-y-6 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard Funcionário</h1>
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Dashboard Funcionário</h1>
         <p className="text-gray-500 text-sm mt-1">
           Acompanhe as metas e o desempenho individual do funcionário
         </p>
       </div>
 
-      {/* Filtros */}
-      <div className="flex flex-wrap gap-4 items-end">
+      {/* Filtros - em mobile: um abaixo do outro, mesmo tamanho */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-4">
         {/* Grupo */}
-        <div className="w-48">
+        <div className="w-full sm:w-48">
           <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
           {isGroupReadOnly ? (
             <input
@@ -645,7 +683,7 @@ export default function DashboardFuncionarioPage() {
         </div>
 
         {/* Filial */}
-        <div className="w-56">
+        <div className="w-full sm:w-56">
           <label className="block text-sm font-medium text-gray-700 mb-1">Filial</label>
           <select
             value={selectedCompany}
@@ -661,7 +699,7 @@ export default function DashboardFuncionarioPage() {
         </div>
 
         {/* Funcionário */}
-        <div className="w-64">
+        <div className="w-full sm:w-64">
           <label className="block text-sm font-medium text-gray-700 mb-1">Funcionário</label>
           <select
             value={selectedEmployee}
@@ -677,7 +715,7 @@ export default function DashboardFuncionarioPage() {
         </div>
 
         {/* Mês */}
-        <div className="w-40">
+        <div className="w-full sm:w-40">
           <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
           <select
             value={selectedMonth}
@@ -691,7 +729,7 @@ export default function DashboardFuncionarioPage() {
         </div>
 
         {/* Ano */}
-        <div className="w-28">
+        <div className="w-full sm:w-28">
           <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
           <select
             value={selectedYear}
@@ -715,8 +753,8 @@ export default function DashboardFuncionarioPage() {
       {/* Dashboard Content */}
       {!loading && dashboardData && (
         <div className="space-y-6">
-          {/* Card do Funcionário + Meta Faturamento */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Card do Funcionário + Meta Faturamento - em mobile: um abaixo do outro */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Card do Funcionário */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 relative overflow-hidden">
               {/* Decoração */}
@@ -799,7 +837,7 @@ export default function DashboardFuncionarioPage() {
                   </div>
                   
                   {/* Quantidade de Vendas e Ticket Médio */}
-                  <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-4">
+                  <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <p className="text-xs text-gray-500 mb-1">Quantidade de Vendas</p>
                       <p className="text-xl font-bold text-gray-900">
@@ -833,9 +871,9 @@ export default function DashboardFuncionarioPage() {
                       <p className="text-sm text-gray-500">Valor total em vendas</p>
                     </div>
                   </div>
-                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${getStatusBgColor(dashboardData.revenue.status)}`}>
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full shrink-0 ${getStatusBgColor(dashboardData.revenue.status)}`}>
                     {getStatusIcon(dashboardData.revenue.status)}
-                    <span className={`text-sm font-medium ${getStatusColor(dashboardData.revenue.status)}`}>
+                    <span className={`text-xs font-medium whitespace-nowrap ${getStatusColor(dashboardData.revenue.status)}`}>
                       {dashboardData.revenue.status === 'achieved' ? 'Atingida!' : 
                        dashboardData.revenue.status === 'ontrack' ? 'No Caminho' : 'Atenção'}
                     </span>
@@ -843,16 +881,16 @@ export default function DashboardFuncionarioPage() {
                 </div>
 
                 {/* Valores */}
-                <div className="grid grid-cols-2 gap-6 mb-4">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-4">
+                  <div className="min-w-0">
                     <p className="text-sm text-gray-500 mb-1">Realizado</p>
-                    <p className={`text-3xl font-bold ${getStatusColor(dashboardData.revenue.status)}`}>
+                    <p className={`text-2xl sm:text-3xl font-bold break-words ${getStatusColor(dashboardData.revenue.status)}`}>
                       {formatCurrency(dashboardData.revenue.realized)}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="min-w-0 sm:text-right">
                     <p className="text-sm text-gray-500 mb-1">Meta</p>
-                    <p className="text-3xl font-bold text-gray-400">
+                    <p className="text-2xl sm:text-3xl font-bold text-gray-700 break-words">
                       {formatCurrency(dashboardData.revenue.goal)}
                     </p>
                   </div>
@@ -898,25 +936,25 @@ export default function DashboardFuncionarioPage() {
                       <p className="text-sm text-gray-500">Quantidade de pesquisas NPS</p>
                     </div>
                   </div>
-                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${getStatusBgColor(researchData.status)}`}>
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full shrink-0 ${getStatusBgColor(researchData.status)}`}>
                     {getStatusIcon(researchData.status)}
-                    <span className={`text-sm font-medium ${getStatusColor(researchData.status)}`}>
+                    <span className={`text-xs font-medium whitespace-nowrap ${getStatusColor(researchData.status)}`}>
                       {researchData.status === 'achieved' ? 'Atingida!' : 
                        researchData.status === 'ontrack' ? 'No Caminho' : 'Atenção'}
                     </span>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6 mb-4">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-4">
+                  <div className="min-w-0">
                     <p className="text-sm text-gray-500 mb-1">Realizado</p>
-                    <p className={`text-3xl font-bold ${getStatusColor(researchData.status)}`}>
+                    <p className={`text-2xl sm:text-3xl font-bold break-words ${getStatusColor(researchData.status)}`}>
                       {formatNumber(researchData.realized)}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="min-w-0 sm:text-right">
                     <p className="text-sm text-gray-500 mb-1">Meta</p>
-                    <p className="text-3xl font-bold text-gray-700">
+                    <p className="text-2xl sm:text-3xl font-bold text-gray-700 break-words">
                       {formatNumber(researchData.goal)}
                     </p>
                   </div>
@@ -943,7 +981,11 @@ export default function DashboardFuncionarioPage() {
 
           {/* Card de Tendência */}
           {dashboardData.tendency && dashboardData.revenue.goal > 0 && dashboardData.revenue.status !== 'achieved' && (
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 relative overflow-hidden">
+            <MobileExpandableCard
+              title="Tendência do Mês"
+              subtitle={`${MONTHS[dashboardData.period.month - 1]?.label} ${dashboardData.period.year} • Projeção baseada no desempenho atual`}
+            >
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 relative overflow-hidden">
               {/* Decoração */}
               <div className={`absolute top-0 right-0 w-48 h-48 rounded-bl-full ${
                 dashboardData.tendency.willMeetGoal 
@@ -1078,11 +1120,12 @@ export default function DashboardFuncionarioPage() {
                 </div>
               </div>
             </div>
+            </MobileExpandableCard>
           )}
 
           {/* Resumo das Metas de Produtos */}
           {dashboardData.products.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
               <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
                 <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
                   <Target size={24} className="text-blue-600" />
@@ -1133,16 +1176,11 @@ export default function DashboardFuncionarioPage() {
 
           {/* Tabela de Metas de Produtos */}
           {dashboardData.products.length > 0 && (
+            <MobileExpandableCard
+              title="Metas de Produtos"
+              subtitle={`${dashboardData.products.length} produto(s) • Desempenho por produto`}
+            >
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-                <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
-                  <Package size={20} className="text-indigo-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Metas de Produtos</h3>
-                  <p className="text-sm text-gray-500">Desempenho por produto</p>
-                </div>
-              </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
@@ -1189,9 +1227,11 @@ export default function DashboardFuncionarioPage() {
                           </div>
                         </td>
                         <td className="px-6 py-4 text-center">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${getStatusBgColor(product.status)} ${getStatusColor(product.status)}`}>
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full shrink-0 ${getStatusBgColor(product.status)} ${getStatusColor(product.status)}`}>
                             {getStatusIcon(product.status)}
-                            {getProductStatusLabel(product.status, dashboardData.period?.isCurrentMonth)}
+                            <span className="text-xs font-medium whitespace-nowrap">
+                              {getProductStatusLabel(product.status, dashboardData.period?.isCurrentMonth)}
+                            </span>
                           </span>
                         </td>
                       </tr>
@@ -1200,6 +1240,58 @@ export default function DashboardFuncionarioPage() {
                 </table>
               </div>
             </div>
+            </MobileExpandableCard>
+          )}
+
+          {/* Faturamento Dia a Dia - gráfico vendas diárias */}
+          {dashboardData.dailyRevenue && dashboardData.dailyRevenue.length > 0 && (
+            <MobileExpandableCard
+              title="Vendas Diárias"
+              subtitle={`${MONTHS[dashboardData.period.month - 1]?.label} ${dashboardData.period.year} • ${dashboardData.employee.name}`}
+            >
+              <div className="h-80 w-full min-h-[240px]">
+                <ResponsiveContainer width="100%" height="100%" minHeight={240} minWidth={0}>
+                  <BarChart data={dashboardData.dailyRevenue}>
+                    <defs>
+                      <linearGradient id="colorRevenueGradientFunc" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/>
+                        <stop offset="100%" stopColor="#93c5fd" stopOpacity={1}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                    <XAxis
+                      dataKey="day"
+                      stroke="#9ca3af"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      stroke="#9ca3af"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(value) => formatCompact(value)}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar
+                      dataKey="revenue"
+                      name="Faturamento"
+                      fill="url(#colorRevenueGradientFunc)"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={40}
+                    >
+                      <LabelList
+                        dataKey="revenue"
+                        position="top"
+                        formatter={(value: number) => formatCompact(value)}
+                        style={{ fontSize: '10px', fill: '#6b7280' }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </MobileExpandableCard>
           )}
 
           {/* Sem metas de produtos, mas tem meta de faturamento */}
