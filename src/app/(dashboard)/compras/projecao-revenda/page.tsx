@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
-  Search, Loader2, Download, Package, TrendingUp, AlertTriangle, 
+  Search, Loader2, Package, TrendingUp, AlertTriangle, 
   CheckCircle, XCircle, Calendar, BarChart3, ChevronDown,
   Sun, Moon, Coffee, Tag, List, Plus, X, MoreVertical, Calculator,
-  Eye, ShoppingCart, Warehouse, ArrowRight, Minus
+  Eye, ShoppingCart, Warehouse, ArrowRight, Minus, ClipboardList, Save
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { CompanyGroup, Company } from '@/types';
@@ -70,9 +71,10 @@ interface ProjectionSummary {
 export default function ProjecaoRevendaPage() {
   const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyMappings, setCompanyMappings] = useState<{ company_id: string; external_company?: { external_id: string } }[]>([]);
   const [selectedCompany, setSelectedCompany] = useState('');
   const [projectionDays, setProjectionDays] = useState(10);
-  const [historyDays, setHistoryDays] = useState(7);
+  const [historyDays, setHistoryDays] = useState(14);
   const [projectionType, setProjectionType] = useState<'linear' | 'weekly'>('weekly');
   const [loading, setLoading] = useState(false);
   const [projection, setProjection] = useState<ProjectionItem[]>([]);
@@ -95,6 +97,26 @@ export default function ProjecaoRevendaPage() {
   // Modal de detalhes do produto
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedProductDetail, setSelectedProductDetail] = useState<ProjectionItem | null>(null);
+
+  // Modal salvar lista de compra
+  const [showSaveListModal, setShowSaveListModal] = useState(false);
+  const [saveListName, setSaveListName] = useState('');
+  const [saveListDate, setSaveListDate] = useState(new Date().toISOString().split('T')[0]);
+  const [saveListNotes, setSaveListNotes] = useState('');
+  const [savingList, setSavingList] = useState(false);
+
+  // Modal "Adicionar à lista" (botão ficha/lista azul): existente ou nova
+  const [showAddToListModal, setShowAddToListModal] = useState(false);
+  const [existingLists, setExistingLists] = useState<{ id: string; name: string }[]>([]);
+  const [addToListMode, setAddToListMode] = useState<'existing' | 'new'>('new');
+  const [selectedExistingListId, setSelectedExistingListId] = useState('');
+  const [newListNameForModal, setNewListNameForModal] = useState('');
+  const [selectedCompanyIdsForList, setSelectedCompanyIdsForList] = useState<string[]>([]);
+  const [loadingExistingLists, setLoadingExistingLists] = useState(false);
+  const [addingToExistingList, setAddingToExistingList] = useState(false);
+  const [creatingNewListFromModal, setCreatingNewListFromModal] = useState(false);
+
+  const router = useRouter();
 
   // Paginação
   const [currentPage, setCurrentPage] = useState(1);
@@ -129,6 +151,19 @@ export default function ProjecaoRevendaPage() {
       setCompanies(filteredCompanies);
     } catch (error) {
       console.error('Erro ao buscar empresas:', error);
+    }
+  };
+
+  // Buscar mapeamentos empresa interna ↔ código externo (para exibir filial por produto)
+  const fetchCompanyMappings = async () => {
+    if (!selectedGroupId) return;
+    try {
+      const res = await fetch(`/api/mappings/companies?group_id=${selectedGroupId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setCompanyMappings(data.mappings || []);
+    } catch (error) {
+      console.error('Erro ao buscar mapeamentos de empresas:', error);
     }
   };
 
@@ -262,6 +297,196 @@ export default function ProjecaoRevendaPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleSavePurchaseList = async () => {
+    const selectedItems = filteredProjection.filter((p: any) => selectedProducts.has(p.externalId));
+    if (selectedItems.length === 0) {
+      alert('Selecione pelo menos um produto');
+      return;
+    }
+    if (!saveListName.trim()) {
+      alert('Informe um nome para a lista');
+      return;
+    }
+
+    try {
+      setSavingList(true);
+      const res = await fetch('/api/purchase-lists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_group_id: selectedGroupId,
+          company_id: selectedCompany || null,
+          name: saveListName,
+          target_date: saveListDate,
+          projection_days: projectionDays,
+          notes: saveListNotes || null,
+          items: selectedItems.map((item: any) => ({
+            external_product_id: item.externalId,
+            raw_material_name: item.name,
+            parent_name: item.productGroup || item.category || '',
+            unit: item.purchaseUnit || item.unit,
+            projected_quantity: item.purchaseQuantity > 0 ? Math.ceil(item.purchaseQuantity) : item.projectedConsumption,
+            adjusted_quantity: item.purchaseQuantity > 0 ? Math.ceil(item.purchaseQuantity) : item.projectedConsumption,
+            current_stock: item.currentStock,
+            min_stock: item.minStock,
+            loss_factor: 0,
+          }))
+        })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || 'Erro ao salvar lista');
+        return;
+      }
+
+      setShowSaveListModal(false);
+      setSaveListName('');
+      setSaveListNotes('');
+      setSelectedProducts(new Set());
+      alert('Lista de compra salva com sucesso!');
+    } catch (error) {
+      console.error('Erro ao salvar lista:', error);
+      alert('Erro ao salvar lista de compra');
+    } finally {
+      setSavingList(false);
+    }
+  };
+
+  // Abrir modal "Adicionar à lista" (botão ficha azul) e carregar listas existentes
+  const openAddToListModal = async () => {
+    const selectedItems = filteredProjection.filter((p: any) => selectedProducts.has(p.externalId));
+    if (selectedItems.length === 0) {
+      alert('Selecione pelo menos um produto para adicionar à lista.');
+      return;
+    }
+    if (!selectedGroupId) {
+      alert('Selecione um grupo.');
+      return;
+    }
+    const todayFormatted = new Date().toLocaleDateString('pt-BR');
+    setNewListNameForModal(`Compra Revenda ${todayFormatted}`);
+    setAddToListMode('new');
+    setSelectedExistingListId('');
+    setSelectedCompanyIdsForList([]);
+    setShowAddToListModal(true);
+    setLoadingExistingLists(true);
+    try {
+      const res = await fetch(`/api/purchase-lists?group_id=${selectedGroupId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setExistingLists((data.lists || []).map((l: any) => ({ id: l.id, name: l.name || '' })));
+      }
+    } catch (e) {
+      console.error('Erro ao carregar listas:', e);
+    } finally {
+      setLoadingExistingLists(false);
+    }
+  };
+
+  // Adicionar itens a uma lista existente
+  const handleAddToExistingList = async () => {
+    if (!selectedExistingListId) {
+      alert('Selecione uma lista.');
+      return;
+    }
+    const selectedItems = filteredProjection.filter((p: any) => selectedProducts.has(p.externalId));
+    if (selectedItems.length === 0) return;
+    try {
+      setAddingToExistingList(true);
+      for (const item of selectedItems) {
+        const payload = {
+          external_product_id: item.externalId,
+          raw_material_name: item.name,
+          parent_name: item.productGroup || item.category || '',
+          unit: item.purchaseUnit || item.unit,
+          projected_quantity: item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption,
+          adjusted_quantity: item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption,
+          current_stock: item.currentStock,
+          min_stock: item.minStock,
+          loss_factor: 0,
+        };
+        const res = await fetch(`/api/purchase-lists/${selectedExistingListId}/items`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Erro ao adicionar item');
+        }
+      }
+      setShowAddToListModal(false);
+      setSelectedProducts(new Set());
+      alert('Itens adicionados à lista com sucesso!');
+      router.push('/compras/listas-compra');
+    } catch (error: any) {
+      console.error('Erro:', error);
+      alert(error.message || 'Erro ao adicionar à lista');
+    } finally {
+      setAddingToExistingList(false);
+    }
+  };
+
+  // Criar nova lista a partir do modal (nome editável, sem nomes duplicados)
+  const handleCreateNewListFromModal = async () => {
+    const nameTrimmed = newListNameForModal.trim();
+    if (!nameTrimmed) {
+      alert('Informe um nome para a lista.');
+      return;
+    }
+    const nomeRepetido = existingLists.some(
+      (l) => l.name.trim().toLowerCase() === nameTrimmed.toLowerCase()
+    );
+    if (nomeRepetido) {
+      alert('Já existe uma lista com este nome. Escolha outro nome.');
+      return;
+    }
+    const selectedItems = filteredProjection.filter((p: any) => selectedProducts.has(p.externalId));
+    if (selectedItems.length === 0) return;
+    if (!selectedGroupId) return;
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      setCreatingNewListFromModal(true);
+      const res = await fetch('/api/purchase-lists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_group_id: selectedGroupId,
+          company_ids: selectedCompanyIdsForList,
+          name: nameTrimmed,
+          target_date: today,
+          projection_days: projectionDays,
+          notes: null,
+          items: selectedItems.map((item: any) => ({
+            external_product_id: item.externalId,
+            raw_material_name: item.name,
+            parent_name: item.productGroup || item.category || '',
+            unit: item.purchaseUnit || item.unit,
+            projected_quantity: item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption,
+            adjusted_quantity: item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption,
+            current_stock: item.currentStock,
+            min_stock: item.minStock,
+            loss_factor: 0,
+          }))
+        })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Erro ao criar lista');
+      }
+      setShowAddToListModal(false);
+      setSelectedProducts(new Set());
+      alert('Lista criada com sucesso!');
+      router.push('/compras/listas-compra');
+    } catch (error: any) {
+      console.error('Erro:', error);
+      alert(error.message || 'Erro ao criar lista');
+    } finally {
+      setCreatingNewListFromModal(false);
+    }
+  };
+
   // Abrir modal de detalhes do produto
   const openProductDetail = (item: ProjectionItem) => {
     setSelectedProductDetail(item);
@@ -334,12 +559,34 @@ export default function ProjecaoRevendaPage() {
   useEffect(() => {
     if (selectedGroupId) {
       fetchCompanies();
+      fetchCompanyMappings();
       fetchProjection();
       fetchTags();
       fetchTagAssignments();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGroupId]);
+
+  // Mapa código externo (ex: "03") → nome da empresa/filial (conciliação/empresas)
+  const filialNameByCode = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const m of companyMappings) {
+      const code = (m.external_company as { external_id?: string } | null)?.external_id;
+      if (code) {
+        const name = companies.find((c: Company) => c.id === m.company_id)?.name;
+        if (name) map[code] = name;
+      }
+    }
+    return map;
+  }, [companyMappings, companies]);
+
+  // Extrai o código de filial do externalId do produto (ex: "1011-03" → "03") e retorna o nome da filial
+  const getFilialNameForProduct = (externalId: string) => {
+    const parts = String(externalId || '').split('-');
+    const code = parts.length > 1 ? parts[parts.length - 1]?.trim() : '';
+    if (!code) return undefined;
+    return filialNameByCode[code] || code;
+  };
 
   // Filtrar produtos
   const filteredProjection = projection.filter((item: any) => {
@@ -470,12 +717,11 @@ export default function ProjecaoRevendaPage() {
           </p>
         </div>
         <button
-          onClick={exportToCSV}
-          disabled={filteredProjection.length === 0}
-          className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-lg transition-colors"
-          title="Exportar CSV"
+          onClick={openAddToListModal}
+          className="p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          title="Adicionar à lista"
         >
-          <Download size={20} />
+          <ClipboardList size={20} />
         </button>
       </div>
 
@@ -686,6 +932,22 @@ export default function ProjecaoRevendaPage() {
                     <Tag size={16} />
                     Adicionar Tag
                   </button>
+                  <div className="border-t border-gray-100 my-1" />
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      const today = new Date().toISOString().split('T')[0];
+                      const todayFormatted = new Date().toLocaleDateString('pt-BR');
+                      setSaveListName(`Compra Revenda ${todayFormatted}`);
+                      setSaveListDate(today);
+                      setSaveListNotes('');
+                      setShowSaveListModal(true);
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <Save size={16} />
+                    Salvar Lista de Compra
+                  </button>
                 </div>
               )}
             </div>
@@ -754,6 +1016,10 @@ export default function ProjecaoRevendaPage() {
                           <p className="font-medium text-gray-900 truncate">{item.name}</p>
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs text-gray-500">{item.externalId}</span>
+                            {/* Filial (código no externalId do produto → nome da empresa conforme conciliação/empresas) */}
+                            <span className="text-xs text-gray-500">
+                              Filial: {getFilialNameForProduct(item.externalId) ?? '—'}
+                            </span>
                             {/* Tags do produto */}
                             {tagsByProduct[item.externalId]?.map((tag: any) => (
                               <span 
@@ -1370,6 +1636,267 @@ export default function ProjecaoRevendaPage() {
               >
                 Adicionar Tag
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Adicionar à lista (botão ficha azul): existente ou nova */}
+      {showAddToListModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <ClipboardList size={20} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">Adicionar à lista</h2>
+                    <p className="text-sm text-gray-500">{selectedProducts.size} produto(s) selecionado(s)</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowAddToListModal(false)} className="p-2 hover:bg-white/80 rounded-lg">
+                  <X size={20} className="text-gray-500" />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setAddToListMode('existing')}
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                    addToListMode === 'existing' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Lista existente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddToListMode('new')}
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors border-l border-gray-300 ${
+                    addToListMode === 'new' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Nova lista
+                </button>
+              </div>
+
+              {addToListMode === 'existing' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Selecione a lista</label>
+                  {loadingExistingLists ? (
+                    <div className="flex items-center gap-2 text-gray-500 text-sm py-2">
+                      <Loader2 size={18} className="animate-spin" />
+                      Carregando listas...
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedExistingListId}
+                      onChange={(e) => setSelectedExistingListId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Selecione...</option>
+                      {existingLists.map((l) => (
+                        <option key={l.id} value={l.id}>{l.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  {!loadingExistingLists && existingLists.length === 0 && (
+                    <p className="text-sm text-amber-600 mt-1">Nenhuma lista no grupo. Crie uma nova lista.</p>
+                  )}
+                </div>
+              )}
+
+              {addToListMode === 'new' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome da nova lista *</label>
+                    <input
+                      type="text"
+                      value={newListNameForModal}
+                      onChange={(e) => setNewListNameForModal(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Ex: Compra Revenda 21/02/2026"
+                    />
+                    {existingLists.some((l) => l.name.trim().toLowerCase() === newListNameForModal.trim().toLowerCase()) && newListNameForModal.trim() && (
+                      <p className="text-sm text-red-600 mt-1">Já existe uma lista com este nome.</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Filial</label>
+                    <label className="flex items-center gap-2 cursor-pointer mb-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedCompanyIdsForList.length === 0}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedCompanyIdsForList([]);
+                        }}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Todas as filiais</span>
+                    </label>
+                    {companies.length > 0 && (
+                      <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+                        {companies.map((company) => (
+                          <label key={company.id} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selectedCompanyIdsForList.includes(company.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedCompanyIdsForList((prev) => [...prev, company.id]);
+                                } else {
+                                  setSelectedCompanyIdsForList((prev) => prev.filter((id) => id !== company.id));
+                                }
+                              }}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">{company.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">Itens ({selectedProducts.size})</p>
+                <div className="max-h-40 overflow-y-auto space-y-1 border border-gray-200 rounded-lg p-2">
+                  {filteredProjection
+                    .filter((p: any) => selectedProducts.has(p.externalId))
+                    .map((item: any) => (
+                      <div key={item.externalId} className="flex items-center justify-between text-sm py-1">
+                        <span className="text-gray-700 truncate flex-1">{item.name}</span>
+                        <span className="text-blue-600 font-medium ml-2 whitespace-nowrap">
+                          {formatNumber(item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption)} {item.unit}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex gap-2 justify-end">
+              <button
+                onClick={() => setShowAddToListModal(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Cancelar
+              </button>
+              {addToListMode === 'existing' ? (
+                <Button
+                  onClick={handleAddToExistingList}
+                  isLoading={addingToExistingList}
+                  disabled={!selectedExistingListId || loadingExistingLists}
+                >
+                  Adicionar à lista
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleCreateNewListFromModal}
+                  isLoading={creatingNewListFromModal}
+                  disabled={!newListNameForModal.trim() || existingLists.some((l) => l.name.trim().toLowerCase() === newListNameForModal.trim().toLowerCase())}
+                >
+                  Criar lista
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Salvar Lista de Compra */}
+      {showSaveListModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-amber-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
+                    <ClipboardList size={20} className="text-orange-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">Salvar Lista de Compra</h2>
+                    <p className="text-sm text-gray-500">{selectedProducts.size} produto(s) selecionado(s)</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowSaveListModal(false)} className="p-2 hover:bg-white/80 rounded-lg">
+                  <X size={20} className="text-gray-500" />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Lista *</label>
+                <input
+                  type="text"
+                  value={saveListName}
+                  onChange={(e) => setSaveListName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  placeholder="Ex: Compra Revenda 21/02/2026"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Alvo da Compra *</label>
+                <input
+                  type="date"
+                  value={saveListDate}
+                  onChange={(e) => setSaveListDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Observações</label>
+                <textarea
+                  value={saveListNotes}
+                  onChange={(e) => setSaveListNotes(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  rows={2}
+                  placeholder="Observações opcionais..."
+                />
+              </div>
+
+              {/* Preview dos itens */}
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">Itens ({selectedProducts.size})</p>
+                <div className="max-h-40 overflow-y-auto space-y-1 border border-gray-200 rounded-lg p-2">
+                  {filteredProjection
+                    .filter((p: any) => selectedProducts.has(p.externalId))
+                    .map((item: any) => (
+                      <div key={item.externalId} className="flex items-center justify-between text-sm py-1">
+                        <span className="text-gray-700 truncate flex-1">{item.name}</span>
+                        <span className="text-orange-600 font-medium ml-2 whitespace-nowrap">
+                          {Math.ceil(item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption)} {item.purchaseUnit || item.unit}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex gap-2 justify-end">
+              <button
+                onClick={() => setShowSaveListModal(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSavePurchaseList}
+                disabled={savingList}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-300 text-white rounded-lg transition-colors flex items-center gap-2 font-medium"
+              >
+                {savingList ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                Salvar Lista
+              </button>
             </div>
           </div>
         </div>

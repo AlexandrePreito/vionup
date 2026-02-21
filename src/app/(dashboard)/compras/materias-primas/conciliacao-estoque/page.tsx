@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, DragEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Package, Loader2, Link2, ChevronLeft, ChevronRight, ArrowLeft, Boxes, X, GripVertical, Check } from 'lucide-react';
+import { Search, Package, Loader2, Link2, ChevronLeft, ChevronRight, Boxes, X, GripVertical, Check } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { RawMaterial, CompanyGroup, ExternalStock, Company, CompanyMapping, ExternalCompany } from '@/types';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
@@ -279,6 +279,9 @@ export default function ConciliacaoEstoquePage() {
 
   // Filtrar matérias-primas
   const filteredMPs = rawMaterials.filter(mp => {
+    // Mostrar apenas nível 2
+    if ((mp.level || 1) !== 2) return false;
+
     const matchesSearch = mp.name.toLowerCase().includes(searchMP.toLowerCase()) ||
       mp.category?.toLowerCase().includes(searchMP.toLowerCase());
     
@@ -351,8 +354,9 @@ export default function ConciliacaoEstoquePage() {
   }, [searchStock, filterStockStatus, filterStockGroup]);
 
   // Estatísticas
-  const totalMPs = rawMaterials?.length || 0;
-  const mappedMPs = rawMaterials?.filter(mp => getMPStockLinks(mp.id).length > 0).length || 0;
+  const n2Materials = rawMaterials?.filter(mp => (mp.level || 1) === 2) || [];
+  const totalMPs = n2Materials.length;
+  const mappedMPs = n2Materials.filter(mp => getMPStockLinks(mp.id).length > 0).length;
   const totalStock = externalStock?.length || 0;
   const mappedStock = externalStock?.filter(s => isStockLinked(s.id)).length || 0;
 
@@ -367,11 +371,10 @@ export default function ConciliacaoEstoquePage() {
           </div>
           <div className="flex items-center gap-4">
             <Button
-              variant="secondary"
               onClick={() => router.push('/compras/materias-primas')}
+              className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 font-medium"
             >
-              <ArrowLeft size={18} className="mr-2" />
-              Voltar
+              Matérias-Primas
             </Button>
           </div>
         </div>
@@ -394,11 +397,10 @@ export default function ConciliacaoEstoquePage() {
         </div>
         <div className="flex items-center gap-4">
           <Button
-            variant="secondary"
             onClick={() => router.push('/compras/materias-primas')}
+            className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 font-medium"
           >
-            <ArrowLeft size={18} className="mr-2" />
-            Voltar
+            Matérias-Primas
           </Button>
         </div>
       </div>
@@ -520,9 +522,17 @@ export default function ConciliacaoEstoquePage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-gray-500">
-                          {mp.category || 'Sem categoria'} • {mp.unit}
-                        </p>
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          {mp.parent_id && (() => {
+                            const parent = rawMaterials.find(m => m.id === mp.parent_id);
+                            return parent ? (
+                              <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-medium">
+                                {parent.name}
+                              </span>
+                            ) : null;
+                          })()}
+                          <span>{mp.category || 'Sem categoria'} • {mp.unit}</span>
+                        </div>
                         
                         {/* Estoques vinculados */}
                         {stockLinks.length > 0 && (

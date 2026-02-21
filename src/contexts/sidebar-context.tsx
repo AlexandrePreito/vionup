@@ -34,7 +34,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
       setActiveSection('compras');
     } else if (pathname.startsWith('/metas')) {
       setActiveSection('metas');
-    } else if (pathname.startsWith('/dashboard')) {
+    } else if (pathname.startsWith('/dashboard') || pathname === '/dashboard-financeiro') {
       setActiveSection('dashboard');
     } else if (pathname.startsWith('/nps')) {
       setActiveSection('nps');

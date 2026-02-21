@@ -24,6 +24,7 @@ import {
   Upload,
   Star,
   BarChart3,
+  PieChart,
   Calendar,
   Target,
   Award,
@@ -31,6 +32,7 @@ import {
   ChevronRight,
   ChevronDown,
   X,
+  ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UserMenu } from '@/components/UserMenu';
@@ -56,6 +58,7 @@ const sectionItems: Record<
     title: 'Dashboard',
     icon: <LayoutDashboard size={20} />,
     items: [
+      { href: '/dashboard-financeiro', label: 'Financeiro', icon: <PieChart size={18} /> },
       { href: '/dashboard/realizado', label: 'Realizado', icon: <BarChart3 size={18} /> },
       { href: '/dashboard/realizado-mes', label: 'Realizado por Mês', icon: <Calendar size={18} /> },
       { href: '/dashboard/previsao', label: 'Previsão', icon: <TrendingUp size={18} /> },
@@ -71,6 +74,7 @@ const sectionItems: Record<
     title: 'Metas',
     icon: <Target size={20} />,
     items: [
+      { href: '/metas/financeiro', label: 'Meta Financeiro', icon: <PieChart size={18} /> },
       { href: '/metas', label: 'Meta Faturamento', icon: <DollarSign size={18} /> },
       { href: '/metas/pesquisas', label: 'Meta Pesquisas', icon: <Target size={18} /> },
       { href: '/metas/produtos', label: 'Meta Produtos', icon: <Package size={18} /> },
@@ -86,6 +90,7 @@ const sectionItems: Record<
       { href: '/compras/materias-primas', label: 'Matérias-Primas', icon: <ShoppingBag size={18} /> },
       { href: '/compras/projecao-revenda', label: 'Projeção Revenda', icon: <TrendingUp size={18} /> },
       { href: '/compras/projecao-mp', label: 'Projeção MP', icon: <Package size={18} /> },
+      { href: '/compras/listas-compra', label: 'Listas de Compra', icon: <ClipboardList size={18} /> },
     ],
   },
   cadastros: {
@@ -116,7 +121,7 @@ const sectionItems: Record<
     items: [
       { href: '/powerbi/conexoes', label: 'Conexões', icon: <Database size={18} /> },
       { href: '/powerbi/sincronizacao', label: 'Sincronização', icon: <RefreshCw size={18} /> },
-      { href: '/dashboard/importar', label: 'Importar', icon: <Upload size={18} /> },
+      { href: '/powerbi/sincronizacao', label: 'Importar', icon: <Upload size={18} /> },
     ],
   },
   config: {

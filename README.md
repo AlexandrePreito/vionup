@@ -14,13 +14,15 @@ Sistema completo de gestão empresarial com foco em metas, previsões, compras e
 ## 📋 Funcionalidades
 
 ### Dashboard
-- **Previsão de Vendas**: Projeções baseadas em histórico com cenários otimista, realista e pessimista
+- **Previsão de Vendas**: Projeções baseadas em histórico com cenários otimista, realista e pessimista; meta da empresa com indicador “bate/não bate” por cenário; salvar projeção e acompanhar vs realizado (gráfico e tabela dia a dia)
 - **Dashboard Empresa**: Visão geral de metas e realizações por modo de venda e turno
+- **Dashboard Financeiro**: Metas por categoria (entradas/saídas)
 - **NPS Dashboard**: Análise de satisfação do cliente com comentários e pesquisas
 
 ### Metas
 - Gestão de metas por funcionário, turno e modo de venda
 - Metas de produtos com distribuição entre funcionários
+- Metas financeiras (entradas/saídas por categoria) e responsáveis
 - Importação em massa via Excel
 - Clonagem de metas entre períodos
 
@@ -33,6 +35,7 @@ Sistema completo de gestão empresarial com foco em metas, previsões, compras e
 - Empresas e grupos
 - Produtos e categorias
 - Funcionários
+- Responsáveis (metas financeiras)
 - Turnos e modos de venda
 - Usuários e permissões
 
@@ -115,9 +118,11 @@ O sistema utiliza Supabase (PostgreSQL) com as seguintes tabelas principais:
 - `companies` - Empresas
 - `products` - Produtos
 - `employees` - Funcionários
-- `sales_goals` - Metas de vendas
+- `sales_goals` - Metas de vendas (faturamento, turno, modo, produtos)
+- `saved_projections` - Projeções de previsão salvas (acompanhamento vs realizado)
+- `financial_goals` - Metas financeiras por categoria
 - `external_cash_flow` - Fluxo de caixa externo
-- `goomer_*` - Dados do Goomer (NPS, feedbacks, etc)
+- `goomer_*` - Dados do Goomer (NPS, feedbacks, etc.)
 
 ## 🚀 Deploy
 

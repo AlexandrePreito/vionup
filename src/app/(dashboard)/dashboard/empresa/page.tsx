@@ -16,11 +16,16 @@ import {
   Bike,
   UtensilsCrossed,
   Truck,
-  ChefHat
+  ChefHat,
+  BarChart3,
+  ArrowUp,
+  ArrowDown,
+  Minus
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
 import { MobileExpandableCard } from '@/components/MobileExpandableCard';
+import { FinancialGoalCard, type FinancialGoalItem } from '@/components/dashboard/FinancialGoalCard';
 
 interface CompanyGroup {
   id: string;
@@ -104,6 +109,18 @@ interface DashboardData {
   };
 }
 
+interface SavedProjection {
+  id: string;
+  cenario_otimista: number;
+  cenario_realista: number;
+  cenario_pessimista: number;
+  meta_empresa: number;
+  realizado_no_save: number;
+  dias_passados_no_save: number;
+  saved_at: string;
+  description?: string;
+}
+
 const MONTHS = [
   { value: 1, label: 'Janeiro' },
   { value: 2, label: 'Fevereiro' },
@@ -138,6 +155,10 @@ export default function DashboardEmpresaPage() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [qualityData, setQualityData] = useState<QualityData | null>(null);
   const [loadingQuality, setLoadingQuality] = useState(false);
+  const [financeiroData, setFinanceiroData] = useState<{ goals: FinancialGoalItem[] } | null>(null);
+  const [loadingFinanceiro, setLoadingFinanceiro] = useState(false);
+  const [savedProjection, setSavedProjection] = useState<SavedProjection | null>(null);
+  const [loadingProjection, setLoadingProjection] = useState(false);
 
   // Buscar empresas quando grupo mudar
   useEffect(() => {
@@ -266,14 +287,76 @@ export default function DashboardEmpresaPage() {
     }
   };
 
+  // Buscar metas financeiras da empresa
+  const fetchFinanceiroData = async () => {
+    if (!selectedCompany || !selectedGroupId) {
+      setFinanceiroData(null);
+      return;
+    }
+
+    setLoadingFinanceiro(true);
+    try {
+      const params = new URLSearchParams({
+        group_id: selectedGroupId,
+        year: String(selectedYear),
+        month: String(selectedMonth),
+        company_id: selectedCompany
+      });
+      const res = await fetch(`/api/dashboard-financeiro?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setFinanceiroData(data);
+      } else {
+        setFinanceiroData(null);
+      }
+    } catch {
+      setFinanceiroData(null);
+    } finally {
+      setLoadingFinanceiro(false);
+    }
+  };
+
+  const fetchSavedProjection = async () => {
+    if (!selectedCompany || !selectedGroupId) {
+      setSavedProjection(null);
+      return;
+    }
+    setLoadingProjection(true);
+    try {
+      const params = new URLSearchParams({
+        group_id: selectedGroupId,
+        company_id: selectedCompany,
+        year: String(selectedYear),
+        month: String(selectedMonth),
+      });
+      const res = await fetch(`/api/saved-projections?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        const projections = data?.projections || [];
+        setSavedProjection(projections.length > 0 ? projections[0] : null);
+      } else {
+        setSavedProjection(null);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar projeção salva:', error);
+      setSavedProjection(null);
+    } finally {
+      setLoadingProjection(false);
+    }
+  };
+
   // Buscar automaticamente quando empresa, período ou turno selecionado mudar
   useEffect(() => {
     if (selectedCompany) {
       fetchDashboard();
       fetchQualityData();
+      fetchFinanceiroData();
+      fetchSavedProjection();
     } else {
       setDashboardData(null);
       setQualityData(null);
+      setFinanceiroData(null);
+      setSavedProjection(null);
     }
   }, [selectedCompany, selectedYear, selectedMonth, selectedGroupId]);
 
@@ -584,6 +667,60 @@ export default function DashboardEmpresaPage() {
             </div>
           </div>
 
+          {/* Meta Financeira */}
+          {(loadingFinanceiro || (financeiroData && financeiroData.goals.length > 0)) && (
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <BarChart3 size={20} />
+                Meta Financeira
+              </h2>
+              {loadingFinanceiro ? (
+                <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex justify-center">
+                  <Loader2 size={24} className="animate-spin text-blue-500" />
+                </div>
+              ) : financeiroData && financeiroData.goals.length > 0 && (
+                <div className="space-y-6">
+                  {(financeiroData.goals.filter(g => g.category_type === 'entrada').length > 0) && (
+                    <div>
+                      <h3 className="text-base font-medium text-emerald-800 mb-3">Entradas</h3>
+                      <div className="space-y-4">
+                        {financeiroData.goals
+                          .filter(g => g.category_type === 'entrada')
+                          .map(goal => (
+                            <FinancialGoalCard
+                              key={goal.id}
+                              goal={goal}
+                              formatCurrency={formatCurrency}
+                              isSaida={false}
+                              variant="destaque"
+                            />
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                  {(financeiroData.goals.filter(g => g.category_type === 'saida').length > 0) && (
+                    <div>
+                      <h3 className="text-base font-medium text-red-800 mb-3">Saídas</h3>
+                      <div className="space-y-4">
+                        {financeiroData.goals
+                          .filter(g => g.category_type === 'saida')
+                          .map(goal => (
+                            <FinancialGoalCard
+                              key={goal.id}
+                              goal={goal}
+                              formatCurrency={formatCurrency}
+                              isSaida={true}
+                              variant="destaque"
+                            />
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Meta de Qualidade */}
           {qualityData && (
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 relative overflow-hidden">
@@ -643,110 +780,196 @@ export default function DashboardEmpresaPage() {
           )}
 
           {/* Tendência do Mês - em mobile: só o card, expandir ao clicar */}
-          {dashboardData.tendency && dashboardData.revenue.goal > 0 && (
+          {dashboardData.revenue.goal > 0 && (
             <MobileExpandableCard
               title="Tendência do Mês"
-              subtitle={`Projeção baseada em ${dashboardData.tendency.confidence === 'high' ? 'dados consolidados' : 
-                dashboardData.tendency.confidence === 'medium' ? 'dados parciais' : 'poucos dados'}`}
+              subtitle={
+                savedProjection
+                  ? `Baseado na projeção salva em ${new Date(savedProjection.saved_at).toLocaleDateString('pt-BR')} às ${new Date(savedProjection.saved_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                  : loadingProjection
+                    ? 'Carregando projeção...'
+                    : 'Nenhuma projeção salva — salve uma na tela de Previsão'
+              }
             >
               <div className="pt-2">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Projeção */}
-                  <div className={`rounded-xl p-6 ${
-                    dashboardData.tendency.willMeetGoal 
-                      ? 'bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200' 
-                      : 'bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200'
-                  }`}>
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        dashboardData.tendency.willMeetGoal ? 'bg-emerald-100' : 'bg-orange-100'
-                      }`}>
-                        {dashboardData.tendency.willMeetGoal 
-                          ? <CheckCircle size={20} className="text-emerald-600" />
-                          : <AlertTriangle size={20} className="text-orange-600" />
-                        }
+                {loadingProjection && (
+                  <div className="flex justify-center py-8">
+                    <Loader2 size={24} className="animate-spin text-indigo-500" />
+                  </div>
+                )}
+
+                {!loadingProjection && !savedProjection && (
+                  <div className="bg-gray-50 rounded-xl p-6 text-center">
+                    <TrendingUp size={32} className="mx-auto text-gray-300 mb-3" />
+                    <p className="text-gray-500 font-medium">Nenhuma projeção salva para este período</p>
+                    <p className="text-gray-400 text-sm mt-1">
+                      Acesse <span className="font-semibold text-indigo-500">Previsão de Vendas</span> e salve uma projeção para ver a tendência aqui.
+                    </p>
+                  </div>
+                )}
+
+                {!loadingProjection && savedProjection && (() => {
+                  const realizado = dashboardData.revenue.realized;
+                  const meta = dashboardData.revenue.goal;
+                  const diasNoMes = new Date(selectedYear, selectedMonth, 0).getDate();
+                  const diasPassadosAtual = dashboardData.tendency?.remainingDays !== undefined
+                    ? diasNoMes - dashboardData.tendency.remainingDays
+                    : new Date().getDate();
+                  const proporcao = diasNoMes > 0 ? diasPassadosAtual / diasNoMes : 0;
+
+                  const cenarios = [
+                    {
+                      label: 'Otimista',
+                      value: savedProjection.cenario_otimista,
+                      expected: savedProjection.cenario_otimista * proporcao,
+                      icon: ArrowUp,
+                      gradient: 'from-emerald-500/10 to-green-500/10',
+                      iconBg: 'bg-emerald-100',
+                      iconColor: 'text-emerald-600',
+                      barColor: 'bg-emerald-500',
+                    },
+                    {
+                      label: 'Realista',
+                      value: savedProjection.cenario_realista,
+                      expected: savedProjection.cenario_realista * proporcao,
+                      icon: Minus,
+                      gradient: 'from-amber-500/10 to-yellow-500/10',
+                      iconBg: 'bg-amber-100',
+                      iconColor: 'text-amber-600',
+                      barColor: 'bg-amber-500',
+                    },
+                    {
+                      label: 'Pessimista',
+                      value: savedProjection.cenario_pessimista,
+                      expected: savedProjection.cenario_pessimista * proporcao,
+                      icon: ArrowDown,
+                      gradient: 'from-rose-500/10 to-red-500/10',
+                      iconBg: 'bg-rose-100',
+                      iconColor: 'text-rose-600',
+                      barColor: 'bg-rose-500',
+                    },
+                  ];
+
+                  let situacao: { label: string; color: string; icon: React.ReactNode };
+                  if (realizado >= cenarios[0].expected) {
+                    situacao = { label: 'Acima do cenário otimista', color: 'bg-emerald-50 text-emerald-800 border-emerald-200', icon: <CheckCircle className="text-emerald-600 shrink-0" size={22} /> };
+                  } else if (realizado >= cenarios[1].expected) {
+                    situacao = { label: 'Entre otimista e realista', color: 'bg-blue-50 text-blue-800 border-blue-200', icon: <CheckCircle className="text-blue-600 shrink-0" size={22} /> };
+                  } else if (realizado >= cenarios[2].expected) {
+                    situacao = { label: 'Entre realista e pessimista — atenção', color: 'bg-amber-50 text-amber-800 border-amber-200', icon: <AlertTriangle className="text-amber-600 shrink-0" size={22} /> };
+                  } else {
+                    situacao = { label: 'Abaixo do cenário pessimista', color: 'bg-red-50 text-red-800 border-red-200', icon: <AlertTriangle className="text-red-600 shrink-0" size={22} /> };
+                  }
+
+                  const realistaBateMeta = savedProjection.cenario_realista >= meta;
+
+                  return (
+                    <div className="space-y-6">
+                      <div className={`rounded-xl border p-4 flex items-start sm:items-center gap-4 ${situacao.color}`}>
+                        {situacao.icon}
+                        <div className="min-w-0">
+                          <p className="font-semibold text-base">{situacao.label}</p>
+                          <p className="text-sm text-gray-600 mt-0.5">
+                            Realizado: <span className="font-medium text-gray-900">{formatCurrency(realizado)}</span>
+                            <span className="mx-2 text-gray-300">·</span>
+                            Dia {diasPassadosAtual} de {diasNoMes}
+                            <span className="mx-2 text-gray-300">·</span>
+                            {realistaBateMeta ? '✨ Cenário realista bate a meta!' : '⚠️ Cenário realista não bate a meta'}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className={`font-semibold ${
-                          dashboardData.tendency.willMeetGoal ? 'text-emerald-700' : 'text-orange-700'
-                        }`}>
-                          {dashboardData.tendency.remainingDays === 0
-                            ? (dashboardData.tendency.willMeetGoal 
-                                ? '✅ Meta batida!' 
-                                : '❌ Meta não batida')
-                            : (dashboardData.tendency.willMeetGoal 
-                                ? '✨ Vai bater a meta!' 
-                                : '⚠️ Risco de não bater a meta')}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          {dashboardData.tendency.remainingDays === 0
-                            ? 'Resultado final do mês'
-                            : 'Projeção para o final do mês'}
-                        </p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        {cenarios.map((cenario) => {
+                          const IconCenario = cenario.icon;
+                          const pctEsperado = cenario.expected > 0 ? Math.min((realizado / cenario.expected) * 100, 100) : 0;
+                          const diffPctEsperado = cenario.expected > 0 ? Math.round(((realizado - cenario.expected) / cenario.expected) * 100) : 0;
+                          const dentroDoEsperado = realizado >= cenario.expected;
+
+                          return (
+                            <div key={cenario.label} className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5 relative overflow-hidden">
+                              <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${cenario.gradient} rounded-bl-full`} />
+                              <div className="relative">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className={`w-10 h-10 rounded-xl ${cenario.iconBg} flex items-center justify-center`}>
+                                    <IconCenario size={20} className={cenario.iconColor} />
+                                  </div>
+                                  <p className="text-sm font-medium text-gray-500">{cenario.label}</p>
+                                </div>
+                                <div className="space-y-3">
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Projetado final</span>
+                                    <span className="font-semibold text-gray-900">{formatCurrency(cenario.value)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Esperado até hoje</span>
+                                    <span className="font-semibold text-gray-700">{formatCurrency(cenario.expected)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Realizado</span>
+                                    <span className="font-bold text-gray-900">{formatCurrency(realizado)}</span>
+                                  </div>
+                                  <div className="pt-2">
+                                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                      <span>Realizado vs esperado</span>
+                                      <span>{cenario.expected > 0 ? Math.round(pctEsperado) : 0}%</span>
+                                    </div>
+                                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                      <div
+                                        className={`h-full rounded-full transition-all duration-500 ${cenario.barColor}`}
+                                        style={{ width: `${Math.min(pctEsperado, 100)}%` }}
+                                      />
+                                    </div>
+                                    <div className={`mt-2 text-center py-1.5 px-2 rounded-lg text-xs font-semibold ${dentroDoEsperado ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                      {dentroDoEsperado ? `+${diffPctEsperado}% acima do esperado` : `${diffPctEsperado}% abaixo do esperado`}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    </div>
-                    
-                    <div className="flex items-baseline gap-2">
-                      <span className={`text-3xl font-bold ${
-                        dashboardData.tendency.willMeetGoal ? 'text-emerald-600' : 'text-orange-600'
-                      }`}>
-                        {formatCurrency(dashboardData.tendency.projectedTotal)}
-                      </span>
-                      <span className="text-gray-500">
-                        / {formatCurrency(dashboardData.revenue.goal)}
-                      </span>
-                    </div>
-                    
-                    <div className="mt-2 text-sm text-gray-600">
-                      {dashboardData.tendency.willMeetGoal ? (
-                        <span>
-                          Projeção {formatCurrency(dashboardData.tendency.projectedTotal - dashboardData.revenue.goal)} acima da meta
-                        </span>
-                      ) : (
-                        <span>
-                          Faltam {formatCurrency(dashboardData.revenue.goal - dashboardData.tendency.projectedTotal)} para atingir
-                        </span>
+
+                      {dashboardData.tendency && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Média por tipo de dia</p>
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm text-gray-600">📅 Dias úteis</span>
+                                <span className="font-semibold text-gray-900">{formatCurrency(dashboardData.tendency.avgWeekday)}</span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm text-gray-600">🏖️ FDS/Feriados</span>
+                                <span className="font-semibold text-gray-900">{formatCurrency(dashboardData.tendency.avgWeekend)}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="bg-blue-50 rounded-xl p-4">
+                            <p className="text-xs text-blue-600 uppercase tracking-wide mb-2">Dias restantes</p>
+                            <div className="flex items-center justify-between">
+                              <div className="text-center">
+                                <p className="text-2xl font-bold text-blue-600">{dashboardData.tendency.remainingWeekdays}</p>
+                                <p className="text-xs text-blue-500">úteis</p>
+                              </div>
+                              <div className="text-gray-300">+</div>
+                              <div className="text-center">
+                                <p className="text-2xl font-bold text-blue-600">{dashboardData.tendency.remainingWeekends}</p>
+                                <p className="text-xs text-blue-500">FDS/feriado</p>
+                              </div>
+                              <div className="text-gray-300">=</div>
+                              <div className="text-center">
+                                <p className="text-2xl font-bold text-blue-700">{dashboardData.tendency.remainingDays}</p>
+                                <p className="text-xs text-blue-500">total</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       )}
                     </div>
-                  </div>
-
-                  {/* Médias e dias restantes */}
-                  <div className="space-y-4">
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Média por tipo de dia</p>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">📅 Dias úteis</span>
-                          <span className="font-semibold text-gray-900">{formatCurrency(dashboardData.tendency.avgWeekday)}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">🏖️ FDS/Feriados</span>
-                          <span className="font-semibold text-gray-900">{formatCurrency(dashboardData.tendency.avgWeekend)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-blue-50 rounded-xl p-4">
-                      <p className="text-xs text-blue-600 uppercase tracking-wide mb-2">Dias restantes</p>
-                      <div className="flex items-center justify-between">
-                        <div className="text-center">
-                          <p className="text-2xl font-bold text-blue-600">{dashboardData.tendency.remainingWeekdays}</p>
-                          <p className="text-xs text-blue-500">úteis</p>
-                        </div>
-                        <div className="text-gray-300">+</div>
-                        <div className="text-center">
-                          <p className="text-2xl font-bold text-blue-600">{dashboardData.tendency.remainingWeekends}</p>
-                          <p className="text-xs text-blue-500">FDS/feriado</p>
-                        </div>
-                        <div className="text-gray-300">=</div>
-                        <div className="text-center">
-                          <p className="text-2xl font-bold text-blue-700">{dashboardData.tendency.remainingDays}</p>
-                          <p className="text-xs text-blue-500">total</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()}
               </div>
             </MobileExpandableCard>
           )}

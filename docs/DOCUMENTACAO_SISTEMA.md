@@ -54,11 +54,12 @@ Todas as telas são arquivos **`page.tsx`** dentro de `src/app`. A URL segue o c
 |-------|-----|-----------|
 | `(dashboard)/dashboard/funcionario/page.tsx` | `/dashboard/funcionario` | Dashboard por funcionário |
 | `(dashboard)/dashboard/equipe/page.tsx` | `/dashboard/equipe` | Dashboard equipe |
-| `(dashboard)/dashboard/empresa/page.tsx` | `/dashboard/empresa` | Dashboard por empresa |
+| `(dashboard)/dashboard/empresa/page.tsx` | `/dashboard/empresa` | Dashboard por empresa (metas faturamento, turnos, qualidade, tendência) |
 | `(dashboard)/dashboard/empresas/page.tsx` | `/dashboard/empresas` | Lista empresas |
 | `(dashboard)/dashboard/realizado/page.tsx` | `/dashboard/realizado` | Realizado |
 | `(dashboard)/dashboard/realizado-mes/page.tsx` | `/dashboard/realizado-mes` | Realizado do mês |
-| `(dashboard)/dashboard/previsao/page.tsx` | `/dashboard/previsao` | Previsão |
+| `(dashboard)/dashboard/previsao/page.tsx` | `/dashboard/previsao` | Previsão de vendas (cenários Otimista/Realista/Pessimista, meta da empresa, salvar projeção, acompanhamento vs realizado) |
+| `(dashboard)/dashboard-financeiro/page.tsx` | `/dashboard-financeiro` | Dashboard financeiro (metas por categoria) |
 | `(dashboard)/dashboard/importar/page.tsx` | `/dashboard/importar` | Importar |
 | `(dashboard)/dashboard/nps/page.tsx` | `/dashboard/nps` | NPS (dashboard) |
 | `(dashboard)/dashboard/nps_interno/page.tsx` | `/dashboard/nps_interno` | NPS interno |
@@ -67,9 +68,10 @@ Todas as telas são arquivos **`page.tsx`** dentro de `src/app`. A URL segue o c
 
 | Pasta | URL | Descrição |
 |-------|-----|-----------|
-| `(dashboard)/metas/page.tsx` | `/metas` | Metas (geral) |
+| `(dashboard)/metas/page.tsx` | `/metas` | Metas (geral, faturamento empresa/turno/modo) |
 | `(dashboard)/metas/produtos/page.tsx` | `/metas/produtos` | Metas de produtos |
 | `(dashboard)/metas/pesquisas/page.tsx` | `/metas/pesquisas` | Metas de pesquisas |
+| `(dashboard)/metas/financeiro/page.tsx` | `/metas/financeiro` | Metas financeiras (entradas/saídas por categoria) |
 | `(dashboard)/metas/qualidade/page.tsx` | `/metas/qualidade` | Metas de qualidade |
 | `(dashboard)/metas/qualidade/realizado/page.tsx` | `/metas/qualidade/realizado` | Realizado qualidade |
 | `(dashboard)/metas/qualidade/categorias/page.tsx` | `/metas/qualidade/categorias` | Categorias qualidade |
@@ -81,6 +83,7 @@ Todas as telas são arquivos **`page.tsx`** dentro de `src/app`. A URL segue o c
 | `(dashboard)/cadastros/produtos/page.tsx` | `/cadastros/produtos` | Produtos |
 | `(dashboard)/cadastros/categorias/page.tsx` | `/cadastros/categorias` | Categorias |
 | `(dashboard)/cadastros/funcionarios/page.tsx` | `/cadastros/funcionarios` | Funcionários |
+| `(dashboard)/cadastros/responsaveis/page.tsx` | `/cadastros/responsaveis` | Responsáveis (metas financeiras) |
 | `(dashboard)/cadastros/turnos/page.tsx` | `/cadastros/turnos` | Turnos |
 | `(dashboard)/cadastros/modo-venda/page.tsx` | `/cadastros/modo-venda` | Modo de venda |
 
@@ -144,13 +147,16 @@ Todas as APIs são **Route Handlers** em arquivos **`route.ts`** dentro de `src/
 |---------|-------------|----------------|
 | `api/dashboard/employee/route.ts` | `GET /api/dashboard/employee` | Dados do dashboard funcionário |
 | `api/dashboard/team/route.ts` | `GET /api/dashboard/team` | Dados do dashboard equipe |
-| `api/dashboard/company/route.ts` | `GET /api/dashboard/company` | Dashboard empresa |
+| `api/dashboard/company/route.ts` | `GET /api/dashboard/company` | Dashboard empresa (meta faturamento, turnos, modos, tendência) |
 | `api/dashboard/companies/route.ts` | `GET /api/dashboard/companies` | Lista empresas (dashboard) |
 | `api/dashboard/realizado/route.ts` | `GET /api/dashboard/realizado` | Realizado |
 | `api/dashboard/realizado-mes/route.ts` | `GET /api/dashboard/realizado-mes` | Realizado do mês |
-| `api/dashboard/previsao/route.ts` | `GET /api/dashboard/previsao` | Previsão |
+| `api/dashboard/previsao/route.ts` | `GET /api/dashboard/previsao` | Previsão (cenários, gráficos, projeção dia a dia) |
 | `api/dashboard/nps/route.ts` | (se existir) | NPS dashboard |
 | `api/dashboard/refresh-view/route.ts` | `POST /api/dashboard/refresh-view` | Atualizar view materializada |
+| `api/dashboard-financeiro/route.ts` | `GET /api/dashboard-financeiro` | Dashboard financeiro (metas por categoria) |
+| `api/saved-projections/route.ts` | `GET/POST /api/saved-projections` | Listar e salvar projeções de previsão |
+| `api/saved-projections/[id]/route.ts` | `DELETE /api/saved-projections/[id]` | Excluir (soft) projeção salva |
 
 ### 4.2 Metas e metas de pesquisa
 
@@ -163,6 +169,10 @@ Todas as APIs são **Route Handlers** em arquivos **`route.ts`** dentro de `src/
 | `api/goals/import/route.ts` | `POST /api/goals/import` | Importar metas |
 | `api/goals/duplicate/route.ts` | `POST /api/goals/duplicate` | Duplicar metas |
 | `api/research-goals/route.ts` | `GET /api/research-goals` | Metas de pesquisa |
+| `api/financial-goals/route.ts` | `GET/POST /api/financial-goals` | Metas financeiras (entradas/saídas) |
+| `api/financial-goals/[id]/route.ts` | `GET/PUT/DELETE /api/financial-goals/[id]` | Meta financeira por ID |
+| `api/financial-responsibles/route.ts` | `GET/POST /api/financial-responsibles` | Responsáveis (metas financeiras) |
+| `api/financial-responsibles/[id]/route.ts` | `GET/PUT/DELETE /api/financial-responsibles/[id]` | Responsável por ID |
 
 ### 4.3 Metas de qualidade
 
@@ -285,7 +295,22 @@ Todas as APIs são **Route Handlers** em arquivos **`route.ts`** dentro de `src/
 
 ---
 
-## 5. Outras pastas importantes
+## 5. Previsão de vendas e projeções salvas
+
+A tela **Previsão** (`/dashboard/previsao`) oferece:
+
+- **Cenários:** Otimista, Realista e Pessimista (projeção de faturamento do mês com base em histórico).
+- **Meta da empresa:** Card com a meta de faturamento (fonte: `sales_goals`, `goal_type = company_revenue`) e barra de progresso realizado vs meta.
+- **Indicador por cenário:** Badge em cada card indicando se o valor do cenário bate ou não a meta (e quanto falta ou sobra).
+- **Linha da meta no gráfico:** No gráfico de Projeção Acumulada, uma linha tracejada indica a meta.
+- **Salvar projeção:** Botão para salvar a projeção atual (cenários + gráfico dia a dia + meta e realizado no momento). Dados gravados na tabela `saved_projections`.
+- **Acompanhamento:** Seção que lista as projeções salvas do período; ao selecionar uma, exibe comparação (realizado atual vs esperado pela projeção), gráfico Projeção Salva vs Realizado e tabela dia a dia com status por dia.
+
+**APIs:** `GET/POST /api/saved-projections` (listar/salvar), `DELETE /api/saved-projections/[id]` (soft delete). **Banco:** tabela `saved_projections` (migration `supabase/migrations/20260220_create_saved_projections.sql`).
+
+---
+
+## 6. Outras pastas importantes
 
 | Pasta | Conteúdo |
 |-------|----------|
@@ -298,7 +323,7 @@ Todas as APIs são **Route Handlers** em arquivos **`route.ts`** dentro de `src/
 
 ---
 
-## 6. Convenções
+## 7. Convenções
 
 - **Telas:** uma pasta por rota, com `page.tsx` (e opcionalmente `layout.tsx`). Rotas dinâmicas usam `[param]`.
 - **APIs:** uma pasta por recurso, com `route.ts` exportando `GET`, `POST`, `PUT`, `PATCH` ou `DELETE`.
@@ -308,3 +333,5 @@ Todas as APIs são **Route Handlers** em arquivos **`route.ts`** dentro de `src/
 ---
 
 *Documento gerado para o projeto meta10. Atualize este arquivo quando adicionar novas telas ou APIs.*
+
+*Última atualização: Fevereiro 2026*

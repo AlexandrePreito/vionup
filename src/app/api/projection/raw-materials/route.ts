@@ -221,7 +221,7 @@ export async function GET(request: NextRequest) {
     ]);
     const allHolidays = [...holidaysCurrentYear, ...holidaysNextYear];
 
-    // Buscar todas as matérias-primas ativas do grupo
+    // Buscar apenas matérias-primas de nível 2 (N2) ativas do grupo
     const { data: rawMaterials, error: rmError } = await supabaseAdmin
       .from('raw_materials')
       .select(`
@@ -231,6 +231,7 @@ export async function GET(request: NextRequest) {
         min_stock,
         category,
         loss_factor,
+        parent_id,
         raw_material_products (
           id,
           external_product_id,
@@ -243,6 +244,7 @@ export async function GET(request: NextRequest) {
       `)
       .eq('company_group_id', groupId)
       .eq('is_active', true)
+      .eq('level', 2)
       .order('name');
 
     if (rmError) {
@@ -260,6 +262,19 @@ export async function GET(request: NextRequest) {
           historyDays: validHistoryDays
         }
       });
+    }
+
+    // Buscar nomes dos pais (N1)
+    const parentIds = [...new Set(rawMaterials.filter((rm: any) => rm.parent_id).map((rm: any) => rm.parent_id))];
+    let parentMap: Record<string, string> = {};
+    if (parentIds.length > 0) {
+      const { data: parents } = await supabaseAdmin
+        .from('raw_materials')
+        .select('id, name')
+        .in('id', parentIds);
+      if (parents) {
+        parentMap = Object.fromEntries(parents.map((p: { id: string; name: string }) => [p.id, p.name]));
+      }
     }
 
     console.log(`[MP] Matérias-primas encontradas: ${rawMaterials.length}`);
@@ -488,6 +503,8 @@ export async function GET(request: NextRequest) {
         name: rm.name,
         unit: rm.unit,
         category: rm.category || '',
+        parentId: rm.parent_id,
+        parentName: parentMap[rm.parent_id] || '',
         lossFactor,
         // Histórico
         totalHistorySales: Math.round(totalHistorySales * 1000) / 1000,
@@ -508,7 +525,7 @@ export async function GET(request: NextRequest) {
         dailyProjection: projection.dailyProjection,
         // Estoque
         currentStock: Math.round(currentStock * 1000) / 1000,
-        minStock: Math.round(minStock * 1000) / 1000,
+        minStock: Math.round((rm.min_stock || 0) * 1000) / 1000,
         // Conversão
         conversionFactor: Math.round(conversionFactor * 1000) / 1000,
         purchaseUnit,

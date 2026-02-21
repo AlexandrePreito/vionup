@@ -23,7 +23,6 @@ import {
   DollarSign,
   LayoutDashboard,
   User,
-  Upload,
   Star,
   BarChart3,
   Calendar,
@@ -35,7 +34,8 @@ import {
   Search,
   Award,
   Target,
-  CheckCircle2
+  CheckCircle2,
+  PieChart
 } from 'lucide-react';
 
 interface SidebarItem {
@@ -74,6 +74,11 @@ const cadastrosItems: SidebarItem[] = [
     href: '/cadastros/categorias',
     icon: <FolderTree size={20} />,
     tooltip: 'Categorias'
+  },
+  {
+    href: '/cadastros/responsaveis',
+    icon: <Users size={20} />,
+    tooltip: 'Responsáveis'
   }
 ];
 
@@ -105,11 +110,6 @@ const powerbiItems: SidebarItem[] = [
     href: '/powerbi/sincronizacao',
     icon: <RefreshCw size={20} />,
     tooltip: 'Sincronização'
-  },
-  {
-    href: '/dashboard/importar',
-    icon: <Upload size={20} />,
-    tooltip: 'Importar'
   }
 ];
 
@@ -128,10 +128,20 @@ const comprasItems: SidebarItem[] = [
     href: '/compras/projecao-mp',
     icon: <Package size={20} />,
     tooltip: 'Projeção MP'
+  },
+  {
+    href: '/compras/listas-compra',
+    icon: <ClipboardList size={20} />,
+    tooltip: 'Listas de Compra'
   }
 ];
 
 const metasItems: (SidebarItem | SidebarGroup)[] = [
+  {
+    href: '/metas/financeiro',
+    icon: <Target size={20} />,
+    tooltip: 'Meta Financeiro'
+  },
   {
     href: '/metas',
     icon: <DollarSign size={20} />,
@@ -170,6 +180,11 @@ const metasItems: (SidebarItem | SidebarGroup)[] = [
 ];
 
 const dashboardItems: (SidebarItem | SidebarGroup)[] = [
+  {
+    href: '/dashboard-financeiro',
+    icon: <PieChart size={20} />,
+    tooltip: 'Financeiro'
+  },
   {
     title: 'Realizado',
     items: [
@@ -276,24 +291,29 @@ export function Sidebar() {
   const { user } = useAuth();
   const { canViewRoute, loading: permLoading } = usePagePermissions();
 
-  const isActive = (href: string, allItemsInGroup?: SidebarItem[]) => {
+  const getActiveHref = (items: (SidebarItem | SidebarGroup)[]): string | null => {
+    const allHrefs: string[] = [];
+    items.forEach((it) => {
+      if ('items' in it) (it as SidebarGroup).items.forEach((gi) => allHrefs.push(gi.href));
+      else allHrefs.push((it as SidebarItem).href);
+    });
+    const matching = allHrefs.filter(
+      (h) => pathname === h || (h !== '/' && pathname.startsWith(h + '/'))
+    );
+    if (matching.length === 0) return null;
+    return matching.reduce((a, b) => (a.length >= b.length ? a : b));
+  };
+
+  const isActive = (href: string, allItemsInGroup?: SidebarItem[], allSectionItems?: (SidebarItem | SidebarGroup)[]) => {
     if (href === '/') return pathname === '/';
-    
-    // Se há outros itens no grupo, verificar se algum deles também corresponde
+    const sectionWinner = allSectionItems ? getActiveHref(allSectionItems) : null;
+    if (sectionWinner !== null) return href === sectionWinner;
     if (allItemsInGroup && allItemsInGroup.length > 1) {
-      // Verificar se há outros itens que começam com o mesmo prefixo
-      const conflictingItems = allItemsInGroup.filter(item => 
-        item.href !== href && 
-        (item.href.startsWith(href + '/') || href.startsWith(item.href + '/'))
+      const conflictingItems = allItemsInGroup.filter(
+        (item) => item.href !== href && (item.href.startsWith(href + '/') || href.startsWith(item.href + '/'))
       );
-      
-      // Se há conflitos, usar correspondência exata
-      if (conflictingItems.length > 0) {
-        return pathname === href;
-      }
+      if (conflictingItems.length > 0) return pathname === href;
     }
-    
-    // Correspondência exata ou se a rota começa com o href (para sub-rotas)
     return pathname === href || pathname.startsWith(href + '/');
   };
 
@@ -328,13 +348,7 @@ export function Sidebar() {
       return true;
     });
   } else if (activeSection === 'powerbi') {
-    // Filtrar itens do Power BI: apenas master pode ver "Importar"
-    sidebarItems = powerbiItems.filter(item => {
-      if (item.href === '/dashboard/importar') {
-        return user?.role === 'master';
-      }
-      return true;
-    });
+    sidebarItems = powerbiItems;
   } else if (activeSection === 'compras') {
     sidebarItems = comprasItems;
   } else if (activeSection === 'metas') {
@@ -441,7 +455,7 @@ export function Sidebar() {
                     {/* Itens do grupo */}
                     <ul className="space-y-1">
                       {group.items.map((groupItem) => {
-                        const active = isActive(groupItem.href, group.items);
+                        const active = isActive(groupItem.href, group.items, activeSection === 'metas' ? sidebarItems : undefined);
                         return (
                           <li key={groupItem.href}>
                             <Link href={groupItem.href}>
@@ -467,11 +481,11 @@ export function Sidebar() {
                 );
               }
               
-              // Item normal
+              // Item normal (key: href + tooltip para itens com mesmo href, ex: Sincronização e Importar)
               const normalItem = item as SidebarItem;
-              const active = isActive(normalItem.href);
+              const active = isActive(normalItem.href, undefined, activeSection === 'metas' ? sidebarItems : undefined);
               return (
-                <div key={normalItem.href}>
+                <div key={`${normalItem.href}-${normalItem.tooltip}`}>
                   <Link href={normalItem.href}>
                     <div
                       className={`w-full flex items-center ${isExpanded ? 'gap-3 px-3' : 'justify-center'} p-3 rounded-lg transition-colors ${

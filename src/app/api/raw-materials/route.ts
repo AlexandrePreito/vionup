@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const { gramatura: _gramatura, ...restBody } = body;
     const { 
       company_group_id, 
       company_id,
@@ -71,9 +72,8 @@ export async function POST(request: NextRequest) {
       current_stock,
       category,
       is_resale,
-      parent_id,
-      gramatura
-    } = body;
+      parent_id
+    } = restBody;
 
     if (!company_group_id || !name) {
       return NextResponse.json(
@@ -118,13 +118,12 @@ export async function POST(request: NextRequest) {
         name,
         unit: 'kg', // Sempre kg
         loss_factor: level === 2 ? (loss_factor || 0) : 0,
-        min_stock: 0, // Não usado nos níveis 1 e 2
+        min_stock: min_stock ?? 0,
         current_stock: 0,
         category: (category && category.trim() !== '') ? category : null,
         is_resale: is_resale || false,
         parent_id: (parent_id && parent_id.trim() !== '') ? parent_id : null,
-        level: level,
-        gramatura: level === 3 ? (gramatura || null) : null
+        level: level
       })
       .select()
       .single();

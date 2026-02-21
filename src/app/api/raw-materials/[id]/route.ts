@@ -42,6 +42,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
+    const { gramatura: _gramatura, ...restBody } = body;
     const { 
       name, 
       unit, 
@@ -52,9 +53,8 @@ export async function PUT(
       is_resale,
       is_active,
       company_id,
-      parent_id,
-      gramatura
-    } = body;
+      parent_id
+    } = restBody;
 
     // Buscar dados atuais
     const { data: current, error: currentError } = await supabaseAdmin
@@ -121,7 +121,7 @@ export async function PUT(
       // Se não é nível 2 e não está atualizando loss_factor, garantir que seja 0
       updateData.loss_factor = 0;
     }
-    updateData.min_stock = 0; // Não usado
+    if (min_stock !== undefined) updateData.min_stock = min_stock;
     if (current_stock !== undefined) updateData.current_stock = current_stock;
     if (category !== undefined) updateData.category = (category && category.trim() !== '') ? category : null;
     if (is_resale !== undefined) updateData.is_resale = is_resale;
@@ -129,12 +129,6 @@ export async function PUT(
     if (company_id !== undefined) updateData.company_id = (company_id && company_id.trim() !== '') ? company_id : null;
     if (parent_id !== undefined) {
       updateData.parent_id = (parent_id && parent_id.trim() !== '') ? parent_id : null;
-    }
-    if (gramatura !== undefined) {
-      updateData.gramatura = level === 3 ? (gramatura || null) : null;
-    } else if (level !== 3) {
-      // Se não é nível 3 e não está atualizando gramatura, garantir que seja null
-      updateData.gramatura = null;
     }
     updateData.level = level;
 

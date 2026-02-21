@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
-  Search, Loader2, Download, Package, TrendingUp, AlertTriangle, 
+  Search, Loader2, Package, TrendingUp, AlertTriangle, 
   CheckCircle, XCircle, Calendar, BarChart3, ChevronDown,
   Sun, Moon, Coffee, List, X, MoreVertical, Calculator,
-  Eye, ShoppingCart, Warehouse, Link2, Boxes
+  Eye, ShoppingCart, Warehouse, Link2, Boxes, ClipboardList, Save
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { CompanyGroup, Company } from '@/types';
@@ -30,6 +31,8 @@ interface MPProjectionItem {
   name: string;
   unit: string;
   category: string;
+  parentId?: string;
+  parentName?: string;
   lossFactor: number;
   totalHistorySales: number;
   avgDailySales: number;
@@ -68,11 +71,12 @@ interface ProjectionSummary {
 }
 
 export default function ProjecaoMPPage() {
+  const router = useRouter();
   const { groups, selectedGroupId, setSelectedGroupId, isGroupReadOnly, groupName } = useGroupFilter();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState('');
   const [projectionDays, setProjectionDays] = useState(10);
-  const [historyDays, setHistoryDays] = useState(7);
+  const [historyDays, setHistoryDays] = useState(14);
   const [projectionType, setProjectionType] = useState<'linear' | 'weekly'>('weekly');
   const [loading, setLoading] = useState(false);
   const [projection, setProjection] = useState<MPProjectionItem[]>([]);
@@ -94,12 +98,30 @@ export default function ProjecaoMPPage() {
   const [showLinkedModal, setShowLinkedModal] = useState(false);
   const [selectedMPLinked, setSelectedMPLinked] = useState<MPProjectionItem | null>(null);
 
+  // Modal salvar lista de compra
+  const [showSaveListModal, setShowSaveListModal] = useState(false);
+  const [saveListName, setSaveListName] = useState('');
+  const [saveListDate, setSaveListDate] = useState(new Date().toISOString().split('T')[0]);
+  const [saveListNotes, setSaveListNotes] = useState('');
+  const [savingList, setSavingList] = useState(false);
+
+  // Modal "Adicionar à lista" (botão lista azul): existente ou nova
+  const [showAddToListModal, setShowAddToListModal] = useState(false);
+  const [existingLists, setExistingLists] = useState<{ id: string; name: string }[]>([]);
+  const [addToListMode, setAddToListMode] = useState<'existing' | 'new'>('new');
+  const [selectedExistingListId, setSelectedExistingListId] = useState('');
+  const [newListNameForModal, setNewListNameForModal] = useState('');
+  const [selectedCompanyIdsForList, setSelectedCompanyIdsForList] = useState<string[]>([]); // [] = Todas
+  const [loadingExistingLists, setLoadingExistingLists] = useState(false);
+  const [addingToExistingList, setAddingToExistingList] = useState(false);
+  const [creatingNewListFromModal, setCreatingNewListFromModal] = useState(false);
+
   // Paginação
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 20;
 
-  // Obter categorias únicas
-  const categories = [...new Set(projection.map((p: any) => p.category).filter(Boolean))].sort();
+  // Obter categorias únicas (usando parentName como contexto N1)
+  const categories = [...new Set(projection.map((p: any) => p.parentName || p.category).filter(Boolean))].sort();
 
   // Buscar empresas do grupo
   const fetchCompanies = async () => {
@@ -166,6 +188,198 @@ export default function ProjecaoMPPage() {
     link.download = `lista_compras_mp_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Abrir modal "Adicionar à lista" e carregar listas existentes (botão lista azul)
+  const openAddToListModal = async () => {
+    const selectedItems = filteredProjection.filter((p: any) => selectedProducts.has(p.rawMaterialId));
+    if (selectedItems.length === 0) {
+      alert('Selecione pelo menos uma matéria-prima para adicionar à lista.');
+      return;
+    }
+    if (!selectedGroupId) {
+      alert('Selecione um grupo.');
+      return;
+    }
+    const todayFormatted = new Date().toLocaleDateString('pt-BR');
+    setNewListNameForModal(`Compra MP ${todayFormatted}`);
+    setAddToListMode('new');
+    setSelectedExistingListId('');
+    setSelectedCompanyIdsForList([]); // Todas
+    setShowAddToListModal(true);
+    setLoadingExistingLists(true);
+    try {
+      const res = await fetch(`/api/purchase-lists?group_id=${selectedGroupId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setExistingLists((data.lists || []).map((l: any) => ({ id: l.id, name: l.name || '' })));
+      }
+    } catch (e) {
+      console.error('Erro ao carregar listas:', e);
+    } finally {
+      setLoadingExistingLists(false);
+    }
+  };
+
+  // Adicionar itens a uma lista existente
+  const handleAddToExistingList = async () => {
+    if (!selectedExistingListId) {
+      alert('Selecione uma lista.');
+      return;
+    }
+    const selectedItems = filteredProjection.filter((p: any) => selectedProducts.has(p.rawMaterialId));
+    if (selectedItems.length === 0) return;
+    try {
+      setAddingToExistingList(true);
+      for (const item of selectedItems) {
+        const payload = {
+          raw_material_id: item.rawMaterialId,
+          raw_material_name: item.name,
+          parent_name: item.parentName || item.category || '',
+          unit: item.unit,
+          projected_quantity: item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption,
+          adjusted_quantity: item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption,
+          current_stock: item.currentStock,
+          min_stock: item.minStock,
+          loss_factor: item.lossFactor,
+        };
+        const res = await fetch(`/api/purchase-lists/${selectedExistingListId}/items`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Erro ao adicionar item');
+        }
+      }
+      setShowAddToListModal(false);
+      setSelectedProducts(new Set());
+      alert('Itens adicionados à lista com sucesso!');
+      router.push('/compras/listas-compra');
+    } catch (error: any) {
+      console.error('Erro:', error);
+      alert(error.message || 'Erro ao adicionar à lista');
+    } finally {
+      setAddingToExistingList(false);
+    }
+  };
+
+  // Criar nova lista com nome editável (valida nome não repetido)
+  const handleCreateNewListFromModal = async () => {
+    const nameTrimmed = newListNameForModal.trim();
+    if (!nameTrimmed) {
+      alert('Informe um nome para a lista.');
+      return;
+    }
+    const nomeRepetido = existingLists.some(
+      (l) => l.name.trim().toLowerCase() === nameTrimmed.toLowerCase()
+    );
+    if (nomeRepetido) {
+      alert('Já existe uma lista com este nome. Escolha outro nome.');
+      return;
+    }
+    const selectedItems = filteredProjection.filter((p: any) => selectedProducts.has(p.rawMaterialId));
+    if (selectedItems.length === 0) return;
+    if (!selectedGroupId) return;
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      setCreatingNewListFromModal(true);
+      const res = await fetch('/api/purchase-lists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_group_id: selectedGroupId,
+          company_ids: selectedCompanyIdsForList,
+          name: nameTrimmed,
+          target_date: today,
+          projection_days: projectionDays,
+          notes: null,
+          items: selectedItems.map((item: any) => ({
+            raw_material_id: item.rawMaterialId,
+            raw_material_name: item.name,
+            parent_name: item.parentName || item.category || '',
+            unit: item.unit,
+            projected_quantity: item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption,
+            adjusted_quantity: item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption,
+            current_stock: item.currentStock,
+            min_stock: item.minStock,
+            loss_factor: item.lossFactor,
+          }))
+        })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || 'Erro ao criar lista');
+        return;
+      }
+      setShowAddToListModal(false);
+      setSelectedProducts(new Set());
+      alert('Lista de compra criada com sucesso!');
+      router.push('/compras/listas-compra');
+    } catch (error) {
+      console.error('Erro ao criar lista:', error);
+      alert('Erro ao criar lista de compra');
+    } finally {
+      setCreatingNewListFromModal(false);
+    }
+  };
+
+  // Salvar lista de compra (modal)
+  const handleSavePurchaseList = async () => {
+    const selectedItems = filteredProjection.filter((p: any) => selectedProducts.has(p.rawMaterialId));
+    if (selectedItems.length === 0) {
+      alert('Selecione pelo menos uma matéria-prima');
+      return;
+    }
+    if (!saveListName.trim()) {
+      alert('Informe um nome para a lista');
+      return;
+    }
+
+    try {
+      setSavingList(true);
+      const res = await fetch('/api/purchase-lists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_group_id: selectedGroupId,
+          company_id: selectedCompany || null,
+          name: saveListName,
+          target_date: saveListDate,
+          projection_days: projectionDays,
+          notes: saveListNotes || null,
+          items: selectedItems.map((item: any) => ({
+            raw_material_id: item.rawMaterialId,
+            raw_material_name: item.name,
+            parent_name: item.parentName || item.category || '',
+            unit: item.unit,
+            projected_quantity: item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption,
+            adjusted_quantity: item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption,
+            current_stock: item.currentStock,
+            min_stock: item.minStock,
+            loss_factor: item.lossFactor,
+          }))
+        })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || 'Erro ao salvar lista');
+        return;
+      }
+
+      setShowSaveListModal(false);
+      setSaveListName('');
+      setSaveListNotes('');
+      setSelectedProducts(new Set());
+      alert('Lista de compra salva com sucesso!');
+    } catch (error) {
+      console.error('Erro ao salvar lista:', error);
+      alert('Erro ao salvar lista de compra');
+    } finally {
+      setSavingList(false);
+    }
   };
 
   // Abrir modal de detalhes
@@ -246,8 +460,8 @@ export default function ProjecaoMPPage() {
     
     if (!matchesSearch) return false;
 
-    // Filtro de categoria
-    if (filterCategory && item.category !== filterCategory) return false;
+    // Filtro de categoria (parentName ou category)
+    if (filterCategory && (item.parentName || item.category) !== filterCategory) return false;
 
     // Filtro de status
     if (filterStatus === 'need' && !item.needsPurchase) return false;
@@ -345,12 +559,12 @@ export default function ProjecaoMPPage() {
           </p>
         </div>
         <button
-          onClick={exportToCSV}
-          disabled={filteredProjection.length === 0}
-          className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-lg transition-colors"
-          title="Exportar CSV"
+          onClick={openAddToListModal}
+          disabled={selectedProducts.size === 0}
+          className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+          title={selectedProducts.size > 0 ? `Adicionar ${selectedProducts.size} item(ns) à lista` : 'Selecione produtos para adicionar à lista'}
         >
-          <Download size={20} />
+          <ClipboardList size={20} />
         </button>
       </div>
 
@@ -603,8 +817,11 @@ export default function ProjecaoMPPage() {
                         <div>
                           <p className="font-medium text-gray-900 truncate">{item.name}</p>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs text-gray-500">{item.category || 'Sem categoria'}</span>
-                            <span className="text-xs text-gray-400">•</span>
+                            {item.parentName && (
+                              <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-medium">
+                                {item.parentName}
+                              </span>
+                            )}
                             <span className="text-xs text-gray-500">{item.unit}</span>
                             {item.lossFactor > 0 && (
                               <>
@@ -1454,6 +1671,263 @@ export default function ProjecaoMPPage() {
               }}>
                 <Eye size={18} className="mr-2" />
                 Ver Projeção Detalhada
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Adicionar à lista (botão lista azul): existente ou nova */}
+      {showAddToListModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <ClipboardList size={20} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">Adicionar à lista</h2>
+                    <p className="text-sm text-gray-500">{selectedProducts.size} matéria(s)-prima(s) selecionada(s)</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowAddToListModal(false)} className="p-2 hover:bg-white/80 rounded-lg">
+                  <X size={20} className="text-gray-500" />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setAddToListMode('existing')}
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                    addToListMode === 'existing' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Lista existente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddToListMode('new')}
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors border-l border-gray-300 ${
+                    addToListMode === 'new' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Nova lista
+                </button>
+              </div>
+
+              {addToListMode === 'existing' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Selecione a lista</label>
+                  {loadingExistingLists ? (
+                    <div className="flex items-center gap-2 text-gray-500 text-sm py-2">
+                      <Loader2 size={18} className="animate-spin" />
+                      Carregando listas...
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedExistingListId}
+                      onChange={(e) => setSelectedExistingListId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Selecione...</option>
+                      {existingLists.map((l) => (
+                        <option key={l.id} value={l.id}>{l.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  {!loadingExistingLists && existingLists.length === 0 && (
+                    <p className="text-sm text-amber-600 mt-1">Nenhuma lista no grupo. Crie uma nova lista.</p>
+                  )}
+                </div>
+              )}
+
+              {addToListMode === 'new' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome da nova lista *</label>
+                    <input
+                      type="text"
+                      value={newListNameForModal}
+                      onChange={(e) => setNewListNameForModal(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Ex: Compra MP 21/02/2026"
+                    />
+                    {existingLists.some((l) => l.name.trim().toLowerCase() === newListNameForModal.trim().toLowerCase()) && newListNameForModal.trim() && (
+                      <p className="text-sm text-red-600 mt-1">Já existe uma lista com este nome.</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Filial</label>
+                    <label className="flex items-center gap-2 cursor-pointer mb-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedCompanyIdsForList.length === 0}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedCompanyIdsForList([]);
+                        }}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Todas as filiais</span>
+                    </label>
+                    {companies.length > 0 && (
+                      <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+                        {companies.map((company) => (
+                          <label key={company.id} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selectedCompanyIdsForList.includes(company.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedCompanyIdsForList((prev) => [...prev, company.id]);
+                                } else {
+                                  setSelectedCompanyIdsForList((prev) => prev.filter((id) => id !== company.id));
+                                }
+                              }}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">{company.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">Itens ({selectedProducts.size})</p>
+                <div className="max-h-40 overflow-y-auto space-y-1 border border-gray-200 rounded-lg p-2">
+                  {filteredProjection
+                    .filter((p: any) => selectedProducts.has(p.rawMaterialId))
+                    .map((item: any) => (
+                      <div key={item.rawMaterialId} className="flex items-center justify-between text-sm py-1">
+                        <span className="text-gray-700 truncate flex-1">{item.name}</span>
+                        <span className="text-blue-600 font-medium ml-2 whitespace-nowrap">
+                          {formatNumber(item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption)} {item.unit}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex gap-2 justify-end">
+              <button
+                onClick={() => setShowAddToListModal(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Cancelar
+              </button>
+              {addToListMode === 'existing' ? (
+                <Button
+                  onClick={handleAddToExistingList}
+                  isLoading={addingToExistingList}
+                  disabled={!selectedExistingListId || loadingExistingLists}
+                >
+                  Adicionar à lista
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleCreateNewListFromModal}
+                  isLoading={creatingNewListFromModal}
+                  disabled={!newListNameForModal.trim() || existingLists.some((l) => l.name.trim().toLowerCase() === newListNameForModal.trim().toLowerCase())}
+                >
+                  Criar lista
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Salvar Lista de Compra */}
+      {showSaveListModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <ClipboardList size={20} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">Salvar Lista de Compra</h2>
+                    <p className="text-sm text-gray-500">{selectedProducts.size} matéria(s)-prima(s) selecionada(s)</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowSaveListModal(false)} className="p-2 hover:bg-white/80 rounded-lg">
+                  <X size={20} className="text-gray-500" />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Lista *</label>
+                <input
+                  type="text"
+                  value={saveListName}
+                  onChange={(e) => setSaveListName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Ex: Compra Semanal"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Alvo da Compra *</label>
+                <input
+                  type="date"
+                  value={saveListDate}
+                  onChange={(e) => setSaveListDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Observações</label>
+                <textarea
+                  value={saveListNotes}
+                  onChange={(e) => setSaveListNotes(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  rows={2}
+                  placeholder="Observações opcionais..."
+                />
+              </div>
+
+              {/* Preview dos itens */}
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">Itens ({selectedProducts.size})</p>
+                <div className="max-h-40 overflow-y-auto space-y-1 border border-gray-200 rounded-lg p-2">
+                  {filteredProjection
+                    .filter((p: any) => selectedProducts.has(p.rawMaterialId))
+                    .map((item: any) => (
+                      <div key={item.rawMaterialId} className="flex items-center justify-between text-sm py-1">
+                        <span className="text-gray-700 truncate flex-1">{item.name}</span>
+                        <span className="text-blue-600 font-medium ml-2 whitespace-nowrap">
+                          {formatNumber(item.purchaseQuantity > 0 ? item.purchaseQuantity : item.projectedConsumption)} {item.unit}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex gap-2 justify-end">
+              <button
+                onClick={() => setShowSaveListModal(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Cancelar
+              </button>
+              <Button onClick={handleSavePurchaseList} isLoading={savingList}>
+                <Save size={18} className="mr-2" />
+                Salvar Lista
               </Button>
             </div>
           </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Package, UserCircle, Clock, ShoppingCart, Building2, Building, Users, Database, RefreshCw, Settings, ShoppingBag, Target, LayoutDashboard, Upload, Star } from 'lucide-react';
+import { Package, UserCircle, Clock, ShoppingCart, Building2, Building, Users, Database, RefreshCw, Settings, ShoppingBag, Target, LayoutDashboard, Upload, Star, ClipboardList } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSidebar } from '@/contexts/sidebar-context';
 import { useAuth } from '@/contexts/AuthContext';
@@ -48,7 +48,8 @@ export function Header() {
   ];
 
   const comprasItems = [
-    { label: 'Matérias-Primas', href: '/compras/materias-primas', icon: ShoppingBag }
+    { label: 'Matérias-Primas', href: '/compras/materias-primas', icon: ShoppingBag },
+    { label: 'Listas de Compra', href: '/compras/listas-compra', icon: ClipboardList }
   ];
 
   const metasItems = [
@@ -68,7 +69,7 @@ export function Header() {
   const isPowerBIActive = powerbiItems.some(item => isActive(item.href)) || pathname.startsWith('/dashboard/importar');
   const isComprasActive = comprasItems.some(item => isActive(item.href));
   const isMetasActive = metasItems.some(item => isActive(item.href));
-  const isDashboardActive = pathname.startsWith('/dashboard/') && !pathname.startsWith('/dashboard/importar');
+  const isDashboardActive = (pathname.startsWith('/dashboard/') && !pathname.startsWith('/dashboard/importar')) || pathname === '/dashboard-financeiro';
   const isNPSActive = npsItems.some(item => isActive(item.href)) || pathname.startsWith('/nps/');
 
   return (
@@ -174,12 +175,12 @@ export function Header() {
             <span className="text-sm font-medium">NPS</span>
           </button>
 
-          {/* Importar - Apenas para master */}
+          {/* Importar - Apenas para master (vai para Sincronização Power BI) */}
           {user?.role === 'master' && (
             <button
               onClick={() => {
                 setActiveSection('powerbi');
-                router.push('/dashboard/importar');
+                router.push('/powerbi/sincronizacao');
               }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
                 activeSection === 'powerbi' || isPowerBIActive

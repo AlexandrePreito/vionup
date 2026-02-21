@@ -84,7 +84,14 @@ export async function GET(request: NextRequest) {
           const baseUrl = getBaseUrl(request);
           const processResponse = await fetch(`${baseUrl}/api/powerbi/sync-queue/process`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+              'x-cron-caller': 'process-queue',
+              ...(process.env.VERCEL_AUTOMATION_BYPASS_SECRET ? {
+                'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
+              } : {}),
+            },
             body: JSON.stringify({ queue_id: item.id }),
           });
 

@@ -111,6 +111,25 @@ function projectConsumption(
   return { total: Math.round(total * 100) / 100, dailyProjection };
 }
 
+// Função para buscar todos os registros com paginação automática
+async function fetchAll(query: any) {
+  const PAGE_SIZE = 1000;
+  let allData: any[] = [];
+  let from = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allData = allData.concat(data);
+    hasMore = data.length === PAGE_SIZE;
+    from += PAGE_SIZE;
+  }
+
+  return allData;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -203,17 +222,30 @@ export async function GET(request: NextRequest) {
     ]);
     const allHolidays = [...holidaysCurrentYear, ...holidaysNextYear];
 
-    // Buscar produtos de revenda com limite para evitar timeout
-    // Limite máximo de 5.000 produtos
-    const productsQuery = supabaseAdmin
-      .from('external_products')
-      .select('id, external_id, name, category, product_group')
-      .eq('company_group_id', groupId)
-      .eq('type', 'Revenda')
-      .order('name')
-      .limit(5000); // Limite máximo para evitar timeout
-
-    const { data: productsData, error: productsError } = await productsQuery;
+    // Buscar TODOS os produtos de revenda com paginação
+    let productsData: any[] = [];
+    let productsError: any = null;
+    try {
+      const PAGE_SIZE = 1000;
+      let from = 0;
+      let hasMore = true;
+      while (hasMore) {
+        const { data, error } = await supabaseAdmin
+          .from('external_products')
+          .select('id, external_id, name, category, product_group')
+          .eq('company_group_id', groupId)
+          .eq('type', 'Revenda')
+          .order('name')
+          .range(from, from + PAGE_SIZE - 1);
+        if (error) { productsError = error; break; }
+        if (!data || data.length === 0) break;
+        productsData = productsData.concat(data);
+        hasMore = data.length === PAGE_SIZE;
+        from += PAGE_SIZE;
+      }
+    } catch (e: any) {
+      productsError = e;
+    }
 
     if (productsError) {
       console.error('Erro ao buscar produtos de revenda:', productsError);
@@ -223,8 +255,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const products = productsData || [];
-    console.log(`Produtos de revenda encontrados: ${products.length}`);
+    let products = productsData || [];
+
+    // Quando há filtro por empresa, mostrar apenas produtos dessa filial (código no external_id, ex: 1011-03 → 03)
+    if (externalCompanyCodes.length > 0) {
+      const codeSet = new Set(externalCompanyCodes);
+      products = products.filter((p: { external_id: string }) => {
+        const parts = String(p.external_id || '').split('-');
+        const filialCode = parts.length > 1 ? parts[parts.length - 1]?.trim() : '';
+        return filialCode ? codeSet.has(filialCode) : true; // sem código no id → mantém (evita esconder produtos atípicos)
+      });
+      console.log(`Produtos após filtro por empresa (${externalCompanyCodes.join(', ')}): ${products.length}`);
+    } else {
+      console.log(`Produtos de revenda encontrados: ${products.length}`);
+    }
 
     if (products.length === 0) {
       return NextResponse.json({ 
@@ -238,21 +282,33 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Buscar vendas do período histórico com limite para evitar timeout
-    // Limite máximo de 50.000 vendas
-    let salesQueryBuilder = supabaseAdmin
-      .from('external_sales')
-      .select('external_product_id, sale_date, quantity')
-      .eq('company_group_id', groupId)
-      .gte('sale_date', historyStartDate.toISOString().split('T')[0])
-      .lte('sale_date', referenceDate.toISOString().split('T')[0])
-      .limit(50000); // Limite máximo para evitar timeout
-
-    if (externalCompanyCodes.length > 0) {
-      salesQueryBuilder = salesQueryBuilder.in('external_company_id', externalCompanyCodes);
+    // Buscar TODAS as vendas do período histórico com paginação
+    let salesData: any[] = [];
+    let salesError: any = null;
+    try {
+      const PAGE_SIZE = 1000;
+      let from = 0;
+      let hasMore = true;
+      while (hasMore) {
+        let q = supabaseAdmin
+          .from('external_sales')
+          .select('external_product_id, sale_date, quantity')
+          .eq('company_group_id', groupId)
+          .gte('sale_date', historyStartDate.toISOString().split('T')[0])
+          .lte('sale_date', referenceDate.toISOString().split('T')[0]);
+        if (externalCompanyCodes.length > 0) {
+          q = q.in('external_company_id', externalCompanyCodes);
+        }
+        const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
+        if (error) { salesError = error; break; }
+        if (!data || data.length === 0) break;
+        salesData = salesData.concat(data);
+        hasMore = data.length === PAGE_SIZE;
+        from += PAGE_SIZE;
+      }
+    } catch (e: any) {
+      salesError = e;
     }
-
-    const { data: salesData, error: salesError } = await salesQueryBuilder;
 
     if (salesError) {
       console.error('Erro ao buscar vendas:', salesError);
@@ -265,19 +321,31 @@ export async function GET(request: NextRequest) {
     const sales = salesData || [];
     console.log(`Vendas encontradas no período: ${sales.length}`);
 
-    // Buscar estoque atual com limite para evitar timeout
-    // Limite máximo de 5.000 registros de estoque
-    let stockQueryBuilder = supabaseAdmin
-      .from('external_stock')
-      .select('external_product_id, quantity, min_quantity, max_quantity, unit, conversion_factor, purchase_unit')
-      .eq('company_group_id', groupId)
-      .limit(5000); // Limite máximo para evitar timeout
-
-    if (externalCompanyCodes.length > 0) {
-      stockQueryBuilder = stockQueryBuilder.in('external_company_id', externalCompanyCodes);
+    // Buscar TODO o estoque com paginação
+    let stockData: any[] = [];
+    let stockError: any = null;
+    try {
+      const PAGE_SIZE = 1000;
+      let from = 0;
+      let hasMore = true;
+      while (hasMore) {
+        let q = supabaseAdmin
+          .from('external_stock')
+          .select('external_product_id, quantity, min_quantity, max_quantity, unit, conversion_factor, purchase_unit')
+          .eq('company_group_id', groupId);
+        if (externalCompanyCodes.length > 0) {
+          q = q.in('external_company_id', externalCompanyCodes);
+        }
+        const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
+        if (error) { stockError = error; break; }
+        if (!data || data.length === 0) break;
+        stockData = stockData.concat(data);
+        hasMore = data.length === PAGE_SIZE;
+        from += PAGE_SIZE;
+      }
+    } catch (e: any) {
+      stockError = e;
     }
-
-    const { data: stockData, error: stockError } = await stockQueryBuilder;
 
     if (stockError) {
       console.error('Erro ao buscar estoque:', stockError);

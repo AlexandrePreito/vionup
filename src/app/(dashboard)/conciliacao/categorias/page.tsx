@@ -24,6 +24,7 @@ export default function ConciliacaoCategoriasPage() {
   const [filterInternal, setFilterInternal] = useState<'all' | 'mapped' | 'unmapped'>('all');
   const [filterExternal, setFilterExternal] = useState<'all' | 'mapped' | 'unmapped'>('all');
   const [filterType, setFilterType] = useState<'all' | 'entrada' | 'saida'>('all');
+  const [filterLayer02, setFilterLayer02] = useState<string>('all');
 
   const [currentPageInternal, setCurrentPageInternal] = useState(1);
   const [currentPageExternal, setCurrentPageExternal] = useState(1);
@@ -110,6 +111,10 @@ export default function ConciliacaoCategoriasPage() {
 
   useEffect(() => {
     if (selectedGroupId) loadData(selectedGroupId);
+  }, [selectedGroupId]);
+
+  useEffect(() => {
+    setFilterLayer02('all');
   }, [selectedGroupId]);
 
   const isExternalMapped = (externalId: string) =>
@@ -227,6 +232,14 @@ export default function ConciliacaoCategoriasPage() {
     return true;
   });
 
+  const layer02Options = Array.from(
+    new Set(
+      (externalCategories || [])
+        .map(ext => ext.layer_02)
+        .filter((x): x is string => Boolean(x))
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
   const filteredExternalCategories = (externalCategories || []).filter(ext => {
     const path = formatExternalPath(ext).toLowerCase();
     const pathTwo = formatExternalPathTwoLayers(ext).toLowerCase();
@@ -236,6 +249,7 @@ export default function ConciliacaoCategoriasPage() {
     const matchesSearch =
       path.includes(search) || pathTwo.includes(search) || id.includes(search) || companyName.includes(search);
     if (!matchesSearch) return false;
+    if (filterLayer02 !== 'all' && ext.layer_02 !== filterLayer02) return false;
     const isMapped = isExternalMapped(ext.id);
     if (filterExternal === 'mapped' && !isMapped) return false;
     if (filterExternal === 'unmapped' && isMapped) return false;
@@ -258,7 +272,7 @@ export default function ConciliacaoCategoriasPage() {
 
   useEffect(() => {
     setCurrentPageExternal(1);
-  }, [searchExternal, filterExternal]);
+  }, [searchExternal, filterExternal, filterLayer02]);
 
   const totalInternal = categories?.length || 0;
   const mappedInternal = categories?.filter(c => getCategoryMappings(c.id).length > 0).length || 0;
@@ -530,26 +544,41 @@ export default function ConciliacaoCategoriasPage() {
                 </div>
                 <span className="text-gray-600 text-sm">{filteredExternalCategories.length} categorias</span>
               </div>
-              <div className="flex gap-2">
-                <div className="flex-1 relative">
-                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Buscar categoria..."
-                    value={searchExternal}
-                    onChange={(e) => setSearchExternal(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 text-gray-900 placeholder-gray-400 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Buscar categoria..."
+                      value={searchExternal}
+                      onChange={(e) => setSearchExternal(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 text-gray-900 placeholder-gray-400 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <select
+                    value={filterExternal}
+                    onChange={(e) => setFilterExternal(e.target.value as any)}
+                    className="px-3 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="all">Todas</option>
+                    <option value="unmapped">Não mapeadas</option>
+                    <option value="mapped">Mapeadas</option>
+                  </select>
                 </div>
-                <select
-                  value={filterExternal}
-                  onChange={(e) => setFilterExternal(e.target.value as any)}
-                  className="px-3 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
-                >
-                  <option value="all">Todas</option>
-                  <option value="unmapped">Não mapeadas</option>
-                  <option value="mapped">Mapeadas</option>
-                </select>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium text-gray-700 shrink-0">Categoria Banco (Camada 02):</label>
+                  <select
+                    value={filterLayer02}
+                    onChange={(e) => setFilterLayer02(e.target.value)}
+                    className="flex-1 min-w-0 px-3 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="all">Todas</option>
+                    {layer02Options.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 

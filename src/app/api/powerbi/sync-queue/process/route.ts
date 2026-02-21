@@ -532,7 +532,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ProcessResult
     // Apenas vendas, caixa e fluxo de caixa têm campo de data
     const entitiesWithDate = ['sales', 'cash_flow', 'cash_flow_statement'];
     // Entidades "tabela full": sempre trazem a tabela completa, sem filtro de período
-    const entitiesFullTable = ['companies', 'products', 'employees', 'categories'];
+    const entitiesFullTable = ['companies', 'products', 'employees', 'categories', 'stock'];
     // hasDateField: verifica se a entidade tem campo de data configurado
     // NOTA: NÃO depende de is_incremental. Sync FULL também precisa processar dia-a-dia
     // para evitar timeout. A diferença entre full e incremental é apenas o RANGE de datas.
@@ -998,8 +998,37 @@ TOPN(
         console.log(`📤 Exemplo external_id:`, cleanedRecords[0].external_id);
       }
 
+      // Recovery: tentar recuperar campos obrigatórios do raw_data ANTES da validação
+      cleanedRecords.forEach((record: any) => {
+        const amountAliases = [
+          'valor', 'value', 'valortotal', 'valor_total', 'valorcxa', 'valorcaixa', 'valorliquido',
+          'montante', 'quantia', 'total', 'vlr', 'valormoviment', 'valormovimento'
+        ];
+        if (config.entity_type === 'cash_flow' && (record.amount == null || record.amount === 0)) {
+          const recovered = recoverNumericFromRawData(record.raw_data, 'amount', amountAliases);
+          if (recovered !== null) record.amount = recovered;
+        }
+        if (config.entity_type === 'cash_flow_statement' && (record.amount == null || record.amount === 0)) {
+          const recovered = recoverNumericFromRawData(record.raw_data, 'amount', amountAliases);
+          if (recovered !== null) record.amount = recovered;
+        }
+        if (config.entity_type === 'sales') {
+          if (record.quantity == null || record.quantity === 0) {
+            const recovered = recoverNumericFromRawData(record.raw_data, 'quantity', ['qtd', 'quantidade']);
+            if (recovered !== null) record.quantity = recovered;
+          }
+          if (record.total_value == null || record.total_value === 0) {
+            const recovered = recoverNumericFromRawData(record.raw_data, 'total_value', ['valor_total', 'totalvalue']);
+            if (recovered !== null) record.total_value = recovered;
+          }
+          if ((!record.sale_uuid || record.sale_uuid === '') && record.venda_id) {
+            record.sale_uuid = record.venda_id;
+          }
+        }
+      });
+
       // ============================================================
-      // VALIDAR registros transformados DEPOIS da limpeza
+      // VALIDAR registros transformados DEPOIS da limpeza e recovery
       // ============================================================
       const validationRules: Record<string, { required: string[], types: Record<string, 'string' | 'number' | 'date'> }> = {
         companies: {
@@ -1077,9 +1106,11 @@ TOPN(
 
         if (invalidRecords.length > 0) {
           console.warn(`⚠️ ${invalidRecords.length}/${cleanedRecords.length} registros inválidos removidos`);
-          // Log apenas dos primeiros 3
           invalidRecords.slice(0, 3).forEach(({ record, reason }, i) => {
             console.warn(`  ⚠️ [${i + 1}] ${reason} | external_id: ${record.external_id}`);
+            if (record.raw_data && i === 0) {
+              console.warn(`  📋 Chaves do raw_data (1º inválido): ${Object.keys(record.raw_data).join(', ')}`);
+            }
           });
         }
 
@@ -1090,29 +1121,6 @@ TOPN(
         // Substituir array com apenas os válidos
         cleanedRecords.splice(0, cleanedRecords.length, ...validRecords);
       }
-
-      // Recovery: tentar recuperar campos obrigatórios do raw_data se não foram mapeados
-      cleanedRecords.forEach((record: any) => {
-        if (config.entity_type === 'cash_flow' && (record.amount == null || record.amount === 0)) {
-          const recovered = recoverNumericFromRawData(record.raw_data, 'amount', ['valor', 'value']);
-          if (recovered !== null) record.amount = recovered;
-        }
-        
-        if (config.entity_type === 'sales') {
-          if (record.quantity == null || record.quantity === 0) {
-            const recovered = recoverNumericFromRawData(record.raw_data, 'quantity', ['qtd', 'quantidade']);
-            if (recovered !== null) record.quantity = recovered;
-          }
-          if (record.total_value == null || record.total_value === 0) {
-            const recovered = recoverNumericFromRawData(record.raw_data, 'total_value', ['valor_total', 'totalvalue']);
-            if (recovered !== null) record.total_value = recovered;
-          }
-          // API usa sale_uuid para dedup; sync popula venda_id — garantir sale_uuid = venda_id quando ausente
-          if ((!record.sale_uuid || record.sale_uuid === '') && record.venda_id) {
-            record.sale_uuid = record.venda_id;
-          }
-        }
-      });
 
       // Safety check: verificar se há campos inesperados (não deveria acontecer após allowedFields)
       if (process.env.NODE_ENV === 'development' && cleanedRecords.length > 0) {
@@ -1435,13 +1443,14 @@ function findInRawData(rawData: any, ...searchTerms: string[]): any {
 }
 
 /**
- * Tenta recuperar um valor numérico do raw_data usando fuzzy matching de chaves
+ * Tenta recuperar um valor numérico do raw_data usando fuzzy matching de chaves.
+ * Power BI retorna chaves como "CaixaItem[Valor]" ou "[Valor]" - o match parcial encontra.
  */
 function recoverNumericFromRawData(rawData: any, fieldName: string, aliases: string[]): number | null {
   if (!rawData) return null;
-  
+
   const keys = Object.keys(rawData);
-  
+
   // 1. Tentar match exato
   for (const alias of [fieldName, `[${fieldName}]`, ...aliases]) {
     if (rawData[alias] !== undefined && rawData[alias] !== null) {
@@ -1449,8 +1458,8 @@ function recoverNumericFromRawData(rawData: any, fieldName: string, aliases: str
       if (!isNaN(num)) return num;
     }
   }
-  
-  // 2. Tentar match parcial (case-insensitive)
+
+  // 2. Tentar match parcial (case-insensitive) - ex: "CaixaItem[Valor]" contém "valor"
   for (const alias of [fieldName, ...aliases]) {
     const match = keys.find(k => k.toLowerCase().includes(alias.toLowerCase()));
     if (match && rawData[match] !== undefined && rawData[match] !== null) {
@@ -1458,7 +1467,20 @@ function recoverNumericFromRawData(rawData: any, fieldName: string, aliases: str
       if (!isNaN(num)) return num;
     }
   }
-  
+
+  // 3. Fallback para amount: primeira coluna cujo nome sugere valor monetário
+  if (fieldName === 'amount') {
+    const amountLike = /valor|value|total|amount|montante|quantia|vlr|sum\(|\[valor\]/i;
+    for (const key of keys) {
+      if (!amountLike.test(key)) continue;
+      const val = rawData[key];
+      if (val !== undefined && val !== null) {
+        const num = parseFloat(val);
+        if (!isNaN(num)) return num;
+      }
+    }
+  }
+
   return null;
 }
 

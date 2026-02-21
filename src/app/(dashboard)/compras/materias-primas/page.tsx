@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Search, Package, Loader2, CheckCircle, XCircle, ChevronLeft, ChevronRight, Link2, Percent, Boxes, ChevronDown, ChevronUp, FolderTree, X, Folder, Layers, GitBranch, Circle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Package, Loader2, CheckCircle, XCircle, ChevronLeft, ChevronRight, Link2, Percent, Boxes, ChevronDown, ChevronUp, FolderTree, X, Folder, Layers, GitBranch, Circle, Weight, Check } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { RawMaterial, CompanyGroup, Company, ExternalProduct } from '@/types';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
@@ -17,6 +17,7 @@ export default function MateriasPrimasPage() {
   const [externalProducts, setExternalProducts] = useState<ExternalProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [filterN1Id, setFilterN1Id] = useState<string>('');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   
   // Modal de Cadastro/Edição
@@ -33,10 +34,12 @@ export default function MateriasPrimasPage() {
     current_stock: 0,
     category: '',
     is_resale: false,
-    parent_id: null as string | null,
-    gramatura: 0
+    parent_id: null as string | null
   });
   const [saving, setSaving] = useState(false);
+
+  // Abas do modal
+  const [modalTab, setModalTab] = useState<'dados' | 'vendas' | 'estoque'>('dados');
   
   // Vínculos no modal de edição
   const [modalLinkedVendas, setModalLinkedVendas] = useState<any[]>([]);
@@ -44,6 +47,8 @@ export default function MateriasPrimasPage() {
   const [searchVenda, setSearchVenda] = useState('');
   const [searchEstoque, setSearchEstoque] = useState('');
   const [externalStock, setExternalStock] = useState<any[]>([]);
+  const [editingVendaQtyId, setEditingVendaQtyId] = useState<string | null>(null);
+  const [editVendaQtyValue, setEditVendaQtyValue] = useState('');
 
   // Modal de Vincular Produtos (antigo - manter por compatibilidade)
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
@@ -181,10 +186,6 @@ export default function MateriasPrimasPage() {
         const parent = materialMap.get(mat.parent_id);
         if (parent) {
           parent.children.push(node);
-          // Se o nó é nível 3, adicionar o loss_factor do pai (nível 2)
-          if (node.level === 3 && parent.level === 2) {
-            (node as any).parent_loss_factor = parent.loss_factor;
-          }
         }
       } else {
         roots.push(node);
@@ -202,6 +203,10 @@ export default function MateriasPrimasPage() {
   };
 
   const tree = buildTree(rawMaterials);
+
+  // N1 (nível 1) para filtro
+  const n1List = rawMaterials.filter(m => (m.level || 1) === 1);
+  const treeByN1 = filterN1Id ? tree.filter(n => n.id === filterN1Id) : tree;
 
   // Filtrar árvore por termo de busca
   const filterTree = (nodes: RawMaterialNode[], term: string): RawMaterialNode[] => {
@@ -230,7 +235,7 @@ export default function MateriasPrimasPage() {
       .filter((node): node is RawMaterialNode => node !== null);
   };
 
-  const filteredTree = filterTree(tree, search);
+  const filteredTree = filterTree(treeByN1, search);
 
   // Toggle expandir/colapsar
   const toggleNode = (id: string) => {
@@ -282,9 +287,11 @@ export default function MateriasPrimasPage() {
       current_stock: 0,
       category: '',
       is_resale: false,
-      parent_id: null,
-      gramatura: 0
+      parent_id: null
     });
+    setModalTab('dados');
+    setModalLinkedVendas([]);
+    setModalLinkedEstoque([]);
     setIsModalOpen(true);
   };
 
@@ -303,9 +310,11 @@ export default function MateriasPrimasPage() {
       current_stock: 0,
       category: parent.category || '',
       is_resale: false,
-      parent_id: parent.id,
-      gramatura: nextLevel === 3 ? 0 : 0
+      parent_id: parent.id
     });
+    setModalTab('dados');
+    setModalLinkedVendas([]);
+    setModalLinkedEstoque([]);
     setIsModalOpen(true);
   };
 
@@ -323,9 +332,14 @@ export default function MateriasPrimasPage() {
       current_stock: item.current_stock,
       category: item.category || '',
       is_resale: item.is_resale,
-      parent_id: item.parent_id || null,
-      gramatura: item.gramatura || 0
+      parent_id: item.parent_id || null
     });
+    setModalTab('dados');
+    // Se for N2, carregar vínculos
+    if ((item.level || 1) === 2) {
+      fetchModalLinkedVendas(item.id);
+      fetchModalLinkedEstoque(item.id);
+    }
     setIsModalOpen(true);
   };
 
@@ -342,17 +356,17 @@ export default function MateriasPrimasPage() {
         ? `/api/raw-materials/${editingItem.id}`
         : '/api/raw-materials';
 
-      const payload = {
+      const { gramatura, ...cleanPayload } = {
         ...formData,
         parent_id: (formData.parent_id && formData.parent_id.trim() !== '') ? formData.parent_id : null,
         company_id: (formData.company_id && formData.company_id.trim() !== '') ? formData.company_id : null,
         category: (formData.category && formData.category.trim() !== '') ? formData.category : null
-      };
+      } as typeof formData & { gramatura?: number };
 
       const res = await fetch(url, {
         method: editingItem ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(cleanPayload)
       });
 
       const data = await res.json();
@@ -617,7 +631,7 @@ export default function MateriasPrimasPage() {
   const renderTreeNode = (node: RawMaterialNode, depth: number = 0, isLast: boolean = false) => {
     const hasChildren = node.children.length > 0;
     const isExpanded = expandedNodes.has(node.id);
-    const canAddChild = node.level < 3;
+    const canAddChild = node.level < 2;
     const linkedStock = getLinkedStockTotal(node);
     
     return (
@@ -669,15 +683,12 @@ export default function MateriasPrimasPage() {
             {/* Ícone - diferente por nível (hierarquia) */}
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
               node.level === 1 ? 'bg-purple-100' :
-              node.level === 2 ? 'bg-blue-100' :
-              'bg-amber-100'
+              'bg-blue-100'
             }`}>
               {node.level === 1 ? (
                 <FolderTree size={18} className="text-purple-600" />
-              ) : node.level === 2 ? (
-                <Layers size={18} className="text-blue-600" />
               ) : (
-                <Package size={18} className="text-amber-600" />
+                <Layers size={18} className="text-blue-600" />
               )}
             </div>
 
@@ -705,29 +716,13 @@ export default function MateriasPrimasPage() {
                   {node.loss_factor}%
                 </span>
               )}
-              {node.level === 3 && (node as any).parent_loss_factor !== undefined && (
-                <span className="inline-flex items-center gap-1 text-orange-600 bg-orange-50 px-2 py-1 rounded text-xs whitespace-nowrap">
-                  <Percent size={12} />
-                  {(node as any).parent_loss_factor}%
-                </span>
-              )}
-            </div>
-
-            {/* Gramatura - coluna separada */}
-            <div className="w-24 flex justify-center items-center">
-              {node.level === 3 && node.gramatura && (
-                <span className="text-xs text-gray-700 font-medium whitespace-nowrap">
-                  {node.gramatura}g
-                </span>
-              )}
             </div>
 
             {/* Badge nível - coluna separada */}
             <div className="w-16 flex justify-center items-center">
               <span className={`text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap ${
                 node.level === 1 ? 'bg-purple-100 text-purple-700' :
-                node.level === 2 ? 'bg-blue-100 text-blue-700' :
-                'bg-amber-100 text-amber-700'
+                'bg-blue-100 text-blue-700'
               }`}>
                 N{node.level}
               </span>
@@ -859,6 +854,19 @@ export default function MateriasPrimasPage() {
             </select>
           )}
 
+          {n1List.length > 0 && (
+            <select
+              value={filterN1Id}
+              onChange={(e) => setFilterN1Id(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">N1: Todos</option>
+              {n1List.map((n1) => (
+                <option key={n1.id} value={n1.id}>N1: {n1.name}</option>
+              ))}
+            </select>
+          )}
+
           {rawMaterials.length > 0 && (
             <div className="flex items-center gap-2">
               <button
@@ -920,7 +928,7 @@ export default function MateriasPrimasPage() {
       {/* Modal de Cadastro/Edição */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-2xl w-full max-w-md mx-4 overflow-hidden flex flex-col">
+          <div className="bg-white rounded-2xl w-full max-w-2xl mx-4 overflow-hidden flex flex-col max-h-[90vh]">
             {/* Header */}
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
@@ -941,145 +949,323 @@ export default function MateriasPrimasPage() {
               )}
             </div>
 
+            {/* Abas - só mostrar se editando N2 */}
+            {editingItem && (editingItem.level || 1) === 2 && (
+              <div className="flex border-b border-gray-200 px-6">
+                <button
+                  onClick={() => setModalTab('dados')}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    modalTab === 'dados'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Dados
+                </button>
+                <button
+                  onClick={() => setModalTab('vendas')}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+                    modalTab === 'vendas'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Vendas
+                  {modalLinkedVendas.length > 0 && (
+                    <span className="bg-green-100 text-green-700 text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                      {modalLinkedVendas.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setModalTab('estoque')}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+                    modalTab === 'estoque'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Estoque
+                  {modalLinkedEstoque.length > 0 && (
+                    <span className="bg-green-100 text-green-700 text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                      {modalLinkedEstoque.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
+
             {/* Conteúdo */}
-            <div className="px-6 py-4">
-              {(() => {
-                // Determinar o nível atual
-                let currentLevel = 1;
-                
-                if (parentMaterial) {
-                  // Criando filho de um pai específico
-                  currentLevel = (parentMaterial.level || 1) + 1;
-                } else if (editingItem) {
-                  // Editando item existente
-                  currentLevel = editingItem.level || 1;
-                } else {
-                  // Criando item raiz (nível 1) - sempre quando clicar em "Nova Matéria-Prima"
-                  currentLevel = 1;
-                }
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {/* === ABA DADOS === */}
+              {modalTab === 'dados' && (
+                (() => {
+                  let currentLevel = 1;
+                  if (parentMaterial) {
+                    currentLevel = (parentMaterial.level || 1) + 1;
+                  } else if (editingItem) {
+                    currentLevel = editingItem.level || 1;
+                  }
 
-                return (
-                  <form onSubmit={(e) => { e.preventDefault(); handleSave(); }} className="space-y-4">
-                    {/* Nome - todos os níveis */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Nome <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder={
-                          currentLevel === 1 ? "Ex: Bovino" :
-                          currentLevel === 2 ? "Ex: Cupim" :
-                          "Ex: CUPIM 300g"
-                        }
-                        required
-                        autoFocus
-                      />
-                    </div>
-
-                    {/* Pai - apenas ao editar nível 2 ou 3 */}
-                    {editingItem && (currentLevel === 2 || currentLevel === 3) && (
+                  return (
+                    <form onSubmit={(e) => { e.preventDefault(); handleSave(); }} className="space-y-4">
+                      {/* Nome */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Matéria-Prima Pai
+                          Nome <span className="text-red-500">*</span>
                         </label>
-                        <select
-                          value={formData.parent_id || ''}
-                          onChange={(e) => {
-                            const newParentId = e.target.value || null;
-                            setFormData({ 
-                              ...formData, 
-                              parent_id: newParentId
-                            });
-                          }}
+                        <input
+                          type="text"
+                          value={formData.name}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder={currentLevel === 1 ? "Ex: Aves" : "Ex: Coração de Frango"}
+                          required
+                          autoFocus
+                        />
+                      </div>
+
+                      {/* Pai - apenas ao editar nível 2 */}
+                      {editingItem && currentLevel === 2 && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Matéria-Prima Pai
+                          </label>
+                          <select
+                            value={formData.parent_id || ''}
+                            onChange={(e) => setFormData({ ...formData, parent_id: e.target.value || null })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value="">Nenhuma (raiz - Nível 1)</option>
+                            {rawMaterials
+                              .filter(m => m.id !== editingItem.id)
+                              .filter(m => m.parent_id !== editingItem.id)
+                              .filter(m => (m.level || 1) === 1)
+                              .map((mat) => (
+                                <option key={mat.id} value={mat.id}>
+                                  {mat.name} {mat.loss_factor > 0 ? `(${mat.loss_factor}%)` : ''}
+                                </option>
+                              ))}
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Selecione uma matéria-prima de nível 1 como pai
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Fator de Correção + Estoque Mínimo - apenas nível 2, lado a lado */}
+                      {currentLevel === 2 && (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              % Fator de Correção
+                            </label>
+                            <input
+                              type="number"
+                              value={formData.loss_factor}
+                              onChange={(e) => setFormData({ ...formData, loss_factor: parseFloat(e.target.value) || 0 })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="Ex: 20"
+                              min="0"
+                              max="100"
+                              step="0.1"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Perda/correção (%)</p>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Estoque Mínimo (kg)
+                            </label>
+                            <input
+                              type="number"
+                              value={formData.min_stock}
+                              onChange={(e) => setFormData({ ...formData, min_stock: parseFloat(e.target.value) || 0 })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="Ex: 50"
+                              min="0"
+                              step="0.1"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Alerta quando abaixo</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Botões */}
+                      <div className="flex gap-2 pt-4 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setIsModalOpen(false)}
+                          className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                         >
-                          <option value="">Nenhuma (raiz - Nível 1)</option>
-                          {rawMaterials
-                            .filter(m => m.id !== editingItem.id)
-                            .filter(m => m.parent_id !== editingItem.id)
-                            .filter(m => {
-                              // Para nível 2, só pode ter pai nível 1
-                              // Para nível 3, só pode ter pai nível 2
-                              if (currentLevel === 2) {
-                                return (m.level || 1) === 1;
-                              } else if (currentLevel === 3) {
-                                return (m.level || 1) === 2;
-                              }
-                              return false;
-                            })
-                            .map((mat) => (
-                              <option key={mat.id} value={mat.id}>
-                                {mat.name} {mat.level === 2 && mat.loss_factor > 0 ? `(${mat.loss_factor}%)` : ''} {mat.level === 3 && mat.gramatura ? `(${mat.gramatura}g)` : ''}
-                              </option>
-                            ))}
-                        </select>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {currentLevel === 2 
-                            ? "Selecione uma matéria-prima de nível 1 como pai" 
-                            : "Selecione uma matéria-prima de nível 2 como pai"}
-                        </p>
+                          Cancelar
+                        </button>
+                        <Button type="submit" isLoading={saving}>
+                          {editingItem ? 'Salvar' : 'Criar'}
+                        </Button>
                       </div>
-                    )}
+                    </form>
+                  );
+                })()
+              )}
 
-                    {/* Nível 2: Fator de Correção */}
-                    {currentLevel === 2 && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          % Fator de Correção
-                        </label>
-                        <input
-                          type="number"
-                          value={formData.loss_factor}
-                          onChange={(e) => setFormData({ ...formData, loss_factor: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="Ex: 20"
-                          min="0"
-                          max="100"
-                          step="0.1"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Percentual de perda/correção (apenas nível 2)</p>
-                      </div>
-                    )}
-
-                    {/* Nível 3: Gramatura */}
-                    {currentLevel === 3 && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Gramatura (g)
-                        </label>
-                        <input
-                          type="number"
-                          value={formData.gramatura}
-                          onChange={(e) => setFormData({ ...formData, gramatura: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="Ex: 300"
-                          min="0"
-                          step="1"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Peso em gramas (apenas nível 3). Tudo será convertido para kg automaticamente.</p>
-                      </div>
-                    )}
-
-                    {/* Botões */}
-                    <div className="flex gap-2 pt-4 justify-end">
-                      <button
-                        type="button"
-                        onClick={() => setIsModalOpen(false)}
-                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                      >
-                        Cancelar
-                      </button>
-                      <Button type="submit" isLoading={saving}>
-                        {editingItem ? 'Salvar' : 'Criar'}
-                      </Button>
+              {/* === ABA PRODUTOS VENDAS === */}
+              {modalTab === 'vendas' && editingItem && (
+                <div className="space-y-4">
+                  {/* Lista de produtos vinculados */}
+                  {modalLinkedVendas.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Package size={40} className="mx-auto text-gray-300 mb-3" />
+                      <p className="text-gray-500 font-medium">Nenhum produto de venda vinculado</p>
+                      <p className="text-gray-400 text-sm mt-1">Use a tela de Conciliação para vincular produtos</p>
                     </div>
-                  </form>
-                );
-              })()}
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                        {modalLinkedVendas.length} produto(s) vinculado(s)
+                      </p>
+                      {modalLinkedVendas.map((link: any) => {
+                        const product = externalProducts.find(
+                          (p: any) => p.id === link.external_product_id || p.external_id === link.external_product_id
+                        );
+                        const qtyInGrams = (link.quantity_per_unit || 0) * 1000;
+                        const isEditingQty = editingVendaQtyId === link.id;
+
+                        return (
+                          <div key={link.id} className="border border-blue-200 bg-blue-50 rounded-xl p-4 hover:border-blue-300 transition-colors">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-gray-900 truncate">
+                                  {product?.name || link.external_product_id}
+                                </p>
+                                {product?.external_id && (
+                                  <p className="text-xs text-gray-400 font-mono mt-0.5">{product.external_id}</p>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Desvincular "${product?.name || link.external_product_id}"?`)) {
+                                    handleModalUnlinkVenda(link.id);
+                                  }
+                                }}
+                                className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                                title="Desvincular"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+
+                            {/* Quantidade / Gramatura - edição inline */}
+                            <div className="mt-3 flex items-center gap-2">
+                              <Weight size={14} className="text-gray-400" />
+                              {isEditingQty ? (
+                                <div className="flex items-center gap-2 flex-1">
+                                  <input
+                                    type="number"
+                                    value={editVendaQtyValue}
+                                    onChange={(e) => setEditVendaQtyValue(e.target.value)}
+                                    step="0.001"
+                                    min="0.001"
+                                    className="w-24 px-2 py-1 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                    autoFocus
+                                  />
+                                  <span className="text-xs text-gray-500">{editingItem.unit}</span>
+                                  <button
+                                    onClick={() => {
+                                      const val = parseFloat(editVendaQtyValue);
+                                      if (val > 0) {
+                                        handleModalUpdateVendaQty(link.id, val);
+                                        setEditingVendaQtyId(null);
+                                      }
+                                    }}
+                                    className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                    title="Salvar"
+                                  >
+                                    <Check size={16} />
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingVendaQtyId(null)}
+                                    className="p-1 text-gray-400 hover:bg-gray-50 rounded"
+                                    title="Cancelar"
+                                  >
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div
+                                  className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded-lg px-2 py-1 -mx-2 transition-colors"
+                                  onClick={() => {
+                                    setEditingVendaQtyId(link.id);
+                                    setEditVendaQtyValue(String(link.quantity_per_unit || 0));
+                                  }}
+                                  title="Clique para editar"
+                                >
+                                  <span className="text-sm font-semibold text-gray-900">
+                                    {link.quantity_per_unit} {editingItem.unit}
+                                  </span>
+                                  <span className="text-xs text-gray-400">
+                                    ({qtyInGrams.toFixed(0)}g)
+                                  </span>
+                                  <Pencil size={12} className="text-gray-300" />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* === ABA ESTOQUE === */}
+              {modalTab === 'estoque' && editingItem && (
+                <div className="space-y-4">
+                  {/* Estoques vinculados */}
+                  {modalLinkedEstoque.length > 0 && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                        {modalLinkedEstoque.length} estoque(s) vinculado(s)
+                      </p>
+                      {modalLinkedEstoque.map((link: any) => {
+                        const stockItem = externalStock.find((s: any) => s.id === link.external_stock_id);
+                        return (
+                          <div key={link.id} className="flex items-center gap-3 border border-green-200 bg-green-50 rounded-xl p-3">
+                            <Boxes size={18} className="text-green-600 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-green-900 truncate">
+                                {stockItem?.product_name || link.external_stock_id}
+                              </p>
+                              {stockItem && (
+                                <p className="text-xs text-green-600">
+                                  {stockItem.quantity} {stockItem.unit || 'un'}
+                                </p>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => {
+                                if (confirm('Desvincular este estoque?')) {
+                                  handleModalUnlinkEstoque(link.id);
+                                }
+                              }}
+                              className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                              title="Desvincular"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Conciliação de estoque apenas na tela dedicada */}
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <p className="text-xs text-gray-500">
+                      A conciliação de estoque é feita na tela <strong>Conciliação Estoque</strong> (menu Compras).
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

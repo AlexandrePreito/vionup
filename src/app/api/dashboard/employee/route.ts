@@ -532,10 +532,12 @@ export async function GET(request: NextRequest) {
               const code = (byCode[pm.external_product_id] ?? '').trim();
               const qtyFromCode = code && salesByProduct[code] ? salesByProduct[code].quantity : 0;
               const qtyFromUuid = uuid && salesByProduct[uuid] ? salesByProduct[uuid].quantity : 0;
-              realized = Math.max(realized, qtyFromCode || qtyFromUuid);
+              realized += (qtyFromCode || qtyFromUuid);
             }
           }
         }
+
+        realized = Math.ceil(realized);
 
         const progress = goal.goal_value > 0 ? (realized / goal.goal_value) * 100 : 0;
         const progressRounded = Math.round(progress * 10) / 10;

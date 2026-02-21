@@ -19,7 +19,7 @@ O **Meta10** é um sistema de gestão de metas e conciliação de dados desenvol
 - Integração com Power BI para sincronização de dados externos
 - Conciliação de dados entre sistemas internos e externos
 - Projeção de compras e gestão de matérias-primas
-- Dashboard com métricas e previsões
+- Dashboard com métricas, previsão de vendas (cenários Otimista/Realista/Pessimista), meta da empresa, salvar e acompanhar projeções vs realizado
 
 ---
 
@@ -117,8 +117,9 @@ O sistema utiliza **Supabase** como banco de dados PostgreSQL. Todas as tabelas 
 
 | Tabela | Descrição | Localização |
 |--------|-----------|-------------|
-| `goals` | Metas | Supabase |
+| `sales_goals` | Metas de faturamento (empresa, turno, modo, produtos, pesquisas) | Supabase |
 | `goal_products` | Produtos vinculados às metas | Supabase |
+| `saved_projections` | Projeções de previsão salvas (cenários + gráfico dia a dia, para acompanhamento vs realizado) | `supabase/migrations/20260220_create_saved_projections.sql` |
 
 #### **Tabelas de Tags**
 
@@ -136,7 +137,11 @@ O sistema utiliza **Supabase** como banco de dados PostgreSQL. Todas as tabelas 
 2. **`supabase/migrations/add_period_fields_to_sync_configs.sql`**
    - Adiciona campo `period` nas tabelas `external_sales` e `external_cash_flow`
 
-3. **`sql/create_categories_tables.sql`**
+3. **`supabase/migrations/20260220_create_saved_projections.sql`**
+   - Cria a tabela `saved_projections` (projeções de previsão salvas para acompanhamento vs realizado)
+   - Campos: cenários (otimista/realista/pessimista), meta_empresa, realizado_no_save, projecao_diaria (JSONB), saved_by, description, is_active
+
+4. **`sql/create_categories_tables.sql`**
    - Cria as tabelas `categories` e `category_mappings`
    - Configura índices e triggers
 
@@ -248,22 +253,30 @@ Todas as rotas seguem o padrão: `/api/{recurso}/[id]/route.ts`
 
 | Rota | Método | Descrição | Arquivo |
 |------|--------|-----------|---------|
-| `/api/goals` | GET, POST | Listar e criar metas | `src/app/api/goals/route.ts` |
+| `/api/goals` | GET, POST | Listar e criar metas (faturamento, turno, modo, etc.) | `src/app/api/goals/route.ts` |
 | `/api/goals/[id]` | GET, PUT, DELETE | Gerenciar meta | `src/app/api/goals/[id]/route.ts` |
 | `/api/goals/import` | POST | Importar metas | `src/app/api/goals/import/route.ts` |
 | `/api/goals/duplicate` | POST | Duplicar meta | `src/app/api/goals/duplicate/route.ts` |
 | `/api/goals/template` | GET | Obter template de meta | `src/app/api/goals/template/route.ts` |
 | `/api/goals/products` | GET, POST | Gerenciar produtos da meta | `src/app/api/goals/products/route.ts` |
+| `/api/financial-goals` | GET, POST | Metas financeiras (entradas/saídas por categoria) | `src/app/api/financial-goals/route.ts` |
+| `/api/financial-goals/[id]` | GET, PUT, DELETE | Gerenciar meta financeira | `src/app/api/financial-goals/[id]/route.ts` |
+| `/api/financial-responsibles` | GET, POST | Responsáveis (metas financeiras) | `src/app/api/financial-responsibles/route.ts` |
+| `/api/financial-responsibles/[id]` | GET, PUT, DELETE | Gerenciar responsável | `src/app/api/financial-responsibles/[id]/route.ts` |
 
 ### 📈 Dashboard
 
 | Rota | Método | Descrição | Arquivo |
 |------|--------|-----------|---------|
 | `/api/dashboard/companies` | GET | Dados de empresas para dashboard | `src/app/api/dashboard/companies/route.ts` |
-| `/api/dashboard/company` | GET | Dados de uma empresa | `src/app/api/dashboard/company/route.ts` |
+| `/api/dashboard/company` | GET | Dados de uma empresa (meta faturamento, turnos, modos, tendência) | `src/app/api/dashboard/company/route.ts` |
 | `/api/dashboard/employee` | GET | Dados de funcionário | `src/app/api/dashboard/employee/route.ts` |
 | `/api/dashboard/team` | GET | Dados de equipe | `src/app/api/dashboard/team/route.ts` |
-| `/api/dashboard/previsao` | GET | Previsões | `src/app/api/dashboard/previsao/route.ts` |
+| `/api/dashboard/previsao` | GET | Previsão de vendas (cenários, gráficos, projeção dia a dia) | `src/app/api/dashboard/previsao/route.ts` |
+| `/api/dashboard/refresh-view` | POST | Atualizar view materializada (dados de caixa) | `src/app/api/dashboard/refresh-view/route.ts` |
+| `/api/dashboard-financeiro` | GET | Dashboard financeiro (metas por categoria) | `src/app/api/dashboard-financeiro/route.ts` |
+| `/api/saved-projections` | GET, POST | Listar e salvar projeções de previsão | `src/app/api/saved-projections/route.ts` |
+| `/api/saved-projections/[id]` | DELETE | Excluir (soft) projeção salva | `src/app/api/saved-projections/[id]/route.ts` |
 
 ### 🛒 Compras
 
@@ -354,6 +367,7 @@ O sistema utiliza as seguintes variáveis de ambiente (configuradas no Supabase)
 
 | Documento | Descrição |
 |-----------|-----------|
+| [docs/DOCUMENTACAO_SISTEMA.md](docs/DOCUMENTACAO_SISTEMA.md) | **Estrutura do sistema** — Telas, APIs, convenções e fluxo da Previsão/projeções salvas |
 | [docs/SINCRONIZACAO_SISTEMA.md](docs/SINCRONIZACAO_SISTEMA.md) | **Sincronização Power BI** — Telas, APIs e Cron (foco em agendamentos automáticos) |
 | [docs/SINCRONIZACAO_APIS_E_PAGINAS.md](docs/SINCRONIZACAO_APIS_E_PAGINAS.md) | Referência de APIs e páginas do módulo de sincronização |
 | [docs/SINCRONIZACAO_POWERBI_COMPLETA.md](docs/SINCRONIZACAO_POWERBI_COMPLETA.md) | Arquitetura completa, tabelas, DAX e troubleshooting |
@@ -371,4 +385,4 @@ O sistema utiliza as seguintes variáveis de ambiente (configuradas no Supabase)
 
 ---
 
-**Última atualização**: Janeiro 2025
+**Última atualização**: Fevereiro 2026
