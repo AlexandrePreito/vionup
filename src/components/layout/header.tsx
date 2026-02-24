@@ -5,6 +5,7 @@ import { Package, UserCircle, Clock, ShoppingCart, Building2, Building, Users, D
 import { usePathname, useRouter } from 'next/navigation';
 import { useSidebar } from '@/contexts/sidebar-context';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePagePermissions } from '@/hooks/usePagePermissions';
 import { UserMenu } from '@/components/UserMenu';
 import { MobileNav } from '@/components/layout/MobileNav';
 
@@ -15,7 +16,15 @@ export function Header() {
   const router = useRouter();
   const { setActiveSection, activeSection, isExpanded, isMobileMenuOpen, setIsMobileMenuOpen } = useSidebar();
   const { user } = useAuth();
+  const { canViewRoute } = usePagePermissions();
   const [isMobile, setIsMobile] = useState(false);
+
+  const hasDashboardAccess = canViewRoute('/dashboard/realizado') || canViewRoute('/dashboard-financeiro');
+  const hasMetasAccess = canViewRoute('/metas');
+  const hasComprasAccess = canViewRoute('/compras/materias-primas');
+  const hasCadastrosAccess = canViewRoute('/cadastros/produtos');
+  const hasNPSAccess = canViewRoute('/nps');
+  const hasConfigAccess = canViewRoute('/empresas') || canViewRoute('/usuarios') || canViewRoute('/grupos');
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
@@ -102,75 +111,75 @@ export function Header() {
           <nav className="flex items-center gap-1 absolute left-1/2 -translate-x-1/2">
           {/* Dashboard */}
           <button
-            onClick={() => {
-              setActiveSection('dashboard');
-              router.push('/dashboard/realizado');
-            }}
+            onClick={() => { if (hasDashboardAccess) { setActiveSection('dashboard'); router.push('/dashboard/realizado'); } }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeSection === 'dashboard' || isDashboardActive
-                ? 'bg-blue-50 text-blue-600'
-                : 'text-gray-700 hover:bg-gray-100'
+              !hasDashboardAccess
+                ? 'text-gray-400 bg-gray-50 cursor-not-allowed opacity-70'
+                : activeSection === 'dashboard' || isDashboardActive
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-100'
             }`}
+            title={!hasDashboardAccess ? 'Sem acesso' : undefined}
           >
             <span className="text-sm font-medium">Dashboard</span>
           </button>
 
           {/* Metas */}
           <button
-            onClick={() => {
-              setActiveSection('metas');
-              router.push('/metas');
-            }}
+            onClick={() => { if (hasMetasAccess) { setActiveSection('metas'); router.push('/metas'); } }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeSection === 'metas' || isMetasActive
-                ? 'bg-blue-50 text-blue-600'
-                : 'text-gray-700 hover:bg-gray-100'
+              !hasMetasAccess
+                ? 'text-gray-400 bg-gray-50 cursor-not-allowed opacity-70'
+                : activeSection === 'metas' || isMetasActive
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-100'
             }`}
+            title={!hasMetasAccess ? 'Sem acesso' : undefined}
           >
             <span className="text-sm font-medium">Metas</span>
           </button>
 
           {/* Compras */}
           <button
-            onClick={() => {
-              setActiveSection('compras');
-              router.push('/compras/materias-primas');
-            }}
+            onClick={() => { if (hasComprasAccess) { setActiveSection('compras'); router.push('/compras/materias-primas'); } }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeSection === 'compras' || isComprasActive
-                ? 'bg-blue-50 text-blue-600'
-                : 'text-gray-700 hover:bg-gray-100'
+              !hasComprasAccess
+                ? 'text-gray-400 bg-gray-50 cursor-not-allowed opacity-70'
+                : activeSection === 'compras' || isComprasActive
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-100'
             }`}
+            title={!hasComprasAccess ? 'Sem acesso' : undefined}
           >
             <span className="text-sm font-medium">Compras</span>
           </button>
 
           {/* Cadastros */}
           <button
-            onClick={() => {
-              setActiveSection('cadastros');
-              router.push('/cadastros/produtos');
-            }}
+            onClick={() => { if (hasCadastrosAccess) { setActiveSection('cadastros'); router.push('/cadastros/produtos'); } }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeSection === 'cadastros' || isCadastrosActive
-                ? 'bg-blue-50 text-blue-600'
-                : 'text-gray-700 hover:bg-gray-100'
+              !hasCadastrosAccess
+                ? 'text-gray-400 bg-gray-50 cursor-not-allowed opacity-70'
+                : activeSection === 'cadastros' || isCadastrosActive
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-100'
             }`}
+            title={!hasCadastrosAccess ? 'Sem acesso' : undefined}
           >
             <span className="text-sm font-medium">Cadastros</span>
           </button>
 
           {/* NPS */}
           <button
-            onClick={() => {
-              setActiveSection('nps');
-              router.push('/nps');
-            }}
+            onClick={() => { if (hasNPSAccess) { setActiveSection('nps'); router.push('/nps'); } }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeSection === 'nps' || isNPSActive
-                ? 'bg-blue-50 text-blue-600'
-                : 'text-gray-700 hover:bg-gray-100'
+              !hasNPSAccess
+                ? 'text-gray-400 bg-gray-50 cursor-not-allowed opacity-70'
+                : activeSection === 'nps' || isNPSActive
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-100'
             }`}
+            title={!hasNPSAccess ? 'Sem acesso' : undefined}
           >
             <span className="text-sm font-medium">NPS</span>
           </button>
@@ -195,8 +204,8 @@ export function Header() {
           {/* Configuração */}
           <button
             onClick={() => {
+              if (!hasConfigAccess) return;
               setActiveSection('config');
-              // Master vai para grupos, outros vão para empresas
               if (user?.role === 'master') {
                 router.push('/grupos');
               } else {
@@ -204,10 +213,13 @@ export function Header() {
               }
             }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              activeSection === 'config' || isConfigActive
-                ? 'bg-blue-50 text-blue-600'
-                : 'text-gray-700 hover:bg-gray-100'
+              !hasConfigAccess
+                ? 'text-gray-400 bg-gray-50 cursor-not-allowed opacity-70'
+                : activeSection === 'config' || isConfigActive
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-100'
             }`}
+            title={!hasConfigAccess ? 'Sem acesso' : undefined}
           >
             <span className="text-sm font-medium">Configuração</span>
           </button>

@@ -75,7 +75,12 @@ async function syncModulesAndPages() {
 
 export async function GET() {
   try {
-    await syncModulesAndPages();
+    try {
+      await syncModulesAndPages();
+    } catch (syncErr: any) {
+      console.error('Erro ao sincronizar módulos (continuando com dados do banco):', syncErr?.message);
+      // Continua e retorna o que existir no banco
+    }
 
     const { data, error } = await supabaseAdmin
       .from('system_modules')

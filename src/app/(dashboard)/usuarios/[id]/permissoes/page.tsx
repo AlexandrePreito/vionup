@@ -57,17 +57,17 @@ export default function PermissoesPage() {
     try {
       // Buscar usuário
       const userRes = await fetch(`/api/users/${userId}`);
-      const userData = await userRes.json();
+      const userData = await userRes.json().catch(() => ({}));
       setUser(userData.user);
 
       // Buscar módulos com páginas
       const modulesRes = await fetch('/api/modules');
-      const modulesData = await modulesRes.json();
+      const modulesData = await modulesRes.json().catch(() => ({ modules: [] }));
       setModules(modulesData.modules || []);
 
       // Buscar permissões do usuário
       const permRes = await fetch(`/api/users/${userId}/permissions`);
-      const permData = await permRes.json();
+      const permData = await permRes.json().catch(() => ({}));
       
       // Converter array para objeto de permissões de módulos
       const modulePermObj: Record<string, Permission> = {};

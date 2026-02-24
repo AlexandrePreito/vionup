@@ -189,12 +189,12 @@ export function MobileNav({
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 
-  const filterByPermission = (
+  const itemsWithAccess = (
     items: { href: string; label: string; icon: React.ReactNode }[]
   ) => {
     if (!user) return [];
-    if (user.role === 'master') return items;
-    return items.filter((item) => canViewRoute(item.href));
+    if (user.role === 'master') return items.map((i) => ({ ...i, hasAccess: true }));
+    return items.map((i) => ({ ...i, hasAccess: canViewRoute(i.href) }));
   };
 
   if (!isMobile) return null;
@@ -265,12 +265,12 @@ export function MobileNav({
           ) : (
             <div className="py-2">
               {Object.entries(sectionItems).map(([key, section]) => {
-                let items = filterByPermission(section.items);
-                if (items.length === 0) return null;
+                let items = itemsWithAccess(section.items);
                 if (key === 'powerbi' && user?.role !== 'master') return null;
                 if (key === 'config' && user?.role !== 'master') {
-                  items = items.filter((i) => i.href !== '/grupos');
-                  if (items.length === 0) return null;
+                  items = items.map((i) =>
+                    i.href === '/grupos' ? { ...i, hasAccess: false } : i
+                  );
                 }
 
                 const isExpanded = expandedGroups.has(key);
@@ -323,7 +323,21 @@ export function MobileNav({
                       <div className="pb-2 pt-0.5">
                         {items.map((item) => {
                           const active = isActive(item.href);
-                          return (
+                          const hasAccess = (item as { hasAccess?: boolean }).hasAccess !== false;
+                          const content = (
+                            <>
+                              <span className={cn('flex-shrink-0 ml-1', hasAccess && active ? 'text-white/90' : !hasAccess ? 'text-gray-300' : 'text-gray-400')}>
+                                {item.icon}
+                              </span>
+                              <span className={cn('flex-1 text-sm font-medium', hasAccess && active && 'text-white')}>
+                                {item.label}
+                              </span>
+                              {hasAccess && active && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-white flex-shrink-0" />
+                              )}
+                            </>
+                          );
+                          return hasAccess ? (
                             <Link
                               key={item.href}
                               href={item.href}
@@ -338,16 +352,16 @@ export function MobileNav({
                                   : 'text-gray-600 hover:bg-gray-50 active:bg-gray-100'
                               )}
                             >
-                              <span className={cn('flex-shrink-0 ml-1', active ? 'text-white/90' : 'text-gray-400')}>
-                                {item.icon}
-                              </span>
-                              <span className={cn('flex-1 text-sm font-medium', active && 'text-white')}>
-                                {item.label}
-                              </span>
-                              {active && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-white flex-shrink-0" />
-                              )}
+                              {content}
                             </Link>
+                          ) : (
+                            <div
+                              key={item.href}
+                              className="flex items-center gap-3 mx-3 px-3 py-2.5 rounded-lg text-gray-400 bg-gray-50 cursor-not-allowed opacity-70"
+                              title={`${item.label} (sem acesso)`}
+                            >
+                              {content}
+                            </div>
                           );
                         })}
                       </div>

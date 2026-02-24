@@ -37,11 +37,11 @@ export function usePagePermissions(): UsePagePermissionsReturn {
     const fetchPermissions = async () => {
       try {
         const res = await fetch(`/api/users/${user.id}/permissions`);
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         
         // Buscar páginas para mapear page_id -> route
         const pagesRes = await fetch('/api/modules');
-        const pagesData = await pagesRes.json();
+        const pagesData = await pagesRes.json().catch(() => ({ modules: [] }));
         
         const pageMap: Record<string, string> = {};
         pagesData.modules?.forEach((m: any) => {
@@ -69,19 +69,21 @@ export function usePagePermissions(): UsePagePermissionsReturn {
   const canViewRoute = (route: string): boolean => {
     if (!user) return false;
     if (user.role === 'master') return true;
-    // Todos os outros roles (group_admin, admin, user) seguem permissões do banco
+    // group_admin tem acesso total ao sistema (gerencia o grupo)
+    if (user.role === 'group_admin') return true;
     return permissions.some(p => {
-      // Verificar match exato ou se a rota começa com a permissão
-      return (p.route === route || route.startsWith(p.route + '/')) && p.can_view;
+      if (!p.route || !p.can_view) return false;
+      return p.route === route || route.startsWith(p.route + '/');
     });
   };
 
   const canEditRoute = (route: string): boolean => {
     if (!user) return false;
     if (user.role === 'master') return true;
-    // Todos os outros roles (group_admin, admin, user) seguem permissões do banco
+    if (user.role === 'group_admin') return true;
     return permissions.some(p => {
-      return (p.route === route || route.startsWith(p.route + '/')) && p.can_edit;
+      if (!p.route || !p.can_edit) return false;
+      return p.route === route || route.startsWith(p.route + '/');
     });
   };
 

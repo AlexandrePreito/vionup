@@ -317,21 +317,22 @@ export function Sidebar() {
     return pathname === href || pathname.startsWith(href + '/');
   };
 
-  // Função helper para filtrar itens por permissão
-  const filterByPermission = (items: (SidebarItem | SidebarGroup)[]): (SidebarItem | SidebarGroup)[] => {
+  // Mostra todos os itens; itens sem acesso ficam cinza e desabilitados (não escondidos)
+  const itemsWithAccessState = (items: (SidebarItem | SidebarGroup)[]): (SidebarItem | SidebarGroup)[] => {
     if (!user) return [];
     if (user.role === 'master') return items;
     
     return items.map(item => {
       if ('title' in item && 'items' in item) {
         const group = item as SidebarGroup;
-        const filteredItems = group.items.filter(gi => canViewRoute(gi.href));
-        if (filteredItems.length === 0) return null;
-        return { ...group, items: filteredItems };
+        return {
+          ...group,
+          items: group.items.map(gi => ({ ...gi, hasAccess: canViewRoute(gi.href) }))
+        };
       }
       const normalItem = item as SidebarItem;
-      return canViewRoute(normalItem.href) ? normalItem : null;
-    }).filter(Boolean) as (SidebarItem | SidebarGroup)[];
+      return { ...normalItem, hasAccess: canViewRoute(normalItem.href) };
+    });
   };
 
   // Determinar quais itens mostrar
@@ -359,9 +360,9 @@ export function Sidebar() {
     sidebarItems = npsItems;
   }
 
-  // Aplicar filtro de permissões
+  // Aplicar estado de acesso (mostrar todos; sem acesso = cinza)
   if (!permLoading) {
-    sidebarItems = filterByPermission(sidebarItems);
+    sidebarItems = itemsWithAccessState(sidebarItems);
   }
 
   return (
@@ -456,23 +457,31 @@ export function Sidebar() {
                     <ul className="space-y-1">
                       {group.items.map((groupItem) => {
                         const active = isActive(groupItem.href, group.items, activeSection === 'metas' ? sidebarItems : undefined);
+                        const hasAccess = (groupItem as SidebarItem & { hasAccess?: boolean }).hasAccess !== false;
+                        const content = (
+                          <div
+                            className={`w-full flex items-center ${isExpanded ? 'gap-3 px-3' : 'justify-center'} p-2.5 rounded-lg transition-colors ${
+                              hasAccess
+                                ? active
+                                  ? 'bg-blue-50 text-blue-600'
+                                  : 'text-gray-600 hover:bg-gray-100'
+                                : 'text-gray-400 bg-gray-50 cursor-not-allowed opacity-70'
+                            }`}
+                            title={hasAccess ? groupItem.tooltip : `${groupItem.tooltip} (sem acesso)`}
+                          >
+                            {groupItem.icon}
+                            {isExpanded && (
+                              <span className="text-sm font-medium">{groupItem.tooltip}</span>
+                            )}
+                          </div>
+                        );
                         return (
                           <li key={groupItem.href}>
-                            <Link href={groupItem.href}>
-                              <div
-                                className={`w-full flex items-center ${isExpanded ? 'gap-3 px-3' : 'justify-center'} p-2.5 rounded-lg transition-colors ${
-                                  active
-                                    ? 'bg-blue-50 text-blue-600'
-                                    : 'text-gray-600 hover:bg-gray-100'
-                                }`}
-                                title={groupItem.tooltip}
-                              >
-                                {groupItem.icon}
-                                {isExpanded && (
-                                  <span className="text-sm font-medium">{groupItem.tooltip}</span>
-                                )}
-                              </div>
-                            </Link>
+                            {hasAccess ? (
+                              <Link href={groupItem.href}>{content}</Link>
+                            ) : (
+                              <div className="cursor-not-allowed">{content}</div>
+                            )}
                           </li>
                         );
                       })}
@@ -482,25 +491,33 @@ export function Sidebar() {
               }
               
               // Item normal (key: href + tooltip para itens com mesmo href, ex: Sincronização e Importar)
-              const normalItem = item as SidebarItem;
+              const normalItem = item as SidebarItem & { hasAccess?: boolean };
               const active = isActive(normalItem.href, undefined, activeSection === 'metas' ? sidebarItems : undefined);
+              const hasAccess = normalItem.hasAccess !== false;
+              const content = (
+                <div
+                  className={`w-full flex items-center ${isExpanded ? 'gap-3 px-3' : 'justify-center'} p-3 rounded-lg transition-colors ${
+                    hasAccess
+                      ? active
+                        ? 'bg-blue-50 text-blue-600'
+                        : 'text-gray-600 hover:bg-gray-100'
+                      : 'text-gray-400 bg-gray-50 cursor-not-allowed opacity-70'
+                  }`}
+                  title={hasAccess ? normalItem.tooltip : `${normalItem.tooltip} (sem acesso)`}
+                >
+                  {normalItem.icon}
+                  {isExpanded && (
+                    <span className="text-sm font-medium">{normalItem.tooltip}</span>
+                  )}
+                </div>
+              );
               return (
                 <div key={`${normalItem.href}-${normalItem.tooltip}`}>
-                  <Link href={normalItem.href}>
-                    <div
-                      className={`w-full flex items-center ${isExpanded ? 'gap-3 px-3' : 'justify-center'} p-3 rounded-lg transition-colors ${
-                        active
-                          ? 'bg-blue-50 text-blue-600'
-                          : 'text-gray-600 hover:bg-gray-100'
-                      }`}
-                      title={normalItem.tooltip}
-                    >
-                      {normalItem.icon}
-                      {isExpanded && (
-                        <span className="text-sm font-medium">{normalItem.tooltip}</span>
-                      )}
-                    </div>
-                  </Link>
+                  {hasAccess ? (
+                    <Link href={normalItem.href}>{content}</Link>
+                  ) : (
+                    <div className="cursor-not-allowed">{content}</div>
+                  )}
                 </div>
               );
             })}
