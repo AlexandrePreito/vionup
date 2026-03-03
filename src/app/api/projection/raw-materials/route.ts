@@ -239,7 +239,8 @@ export async function GET(request: NextRequest) {
         ),
         raw_material_stock (
           id,
-          external_stock_id
+          external_stock_id,
+          peso_unitario
         )
       `)
       .eq('company_group_id', groupId)
@@ -427,7 +428,9 @@ export async function GET(request: NextRequest) {
           continue;
         }
         
-        currentStock += es.quantity || 0;
+        // Converter para kg: quantity * peso_unitario
+        const pesoUnit = rms.peso_unitario ?? 1;
+        currentStock += (es.quantity || 0) * pesoUnit;
         
         // Usar o fator de conversão e unidade de compra do primeiro estoque
         if (linkedStockProducts.length === 0) {

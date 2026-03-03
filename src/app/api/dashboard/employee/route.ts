@@ -109,10 +109,9 @@ export async function GET(request: NextRequest) {
       // Buscar diretamente da tabela external_sales (fonte de verdade)
       // Valor total = SUM(total_value)
       // Quantidade de vendas = COUNT(DISTINCT sale_uuid)
-      const startDate = new Date(yearNum, monthNum - 1, 1);
-      const endDate = new Date(yearNum, monthNum, 0);
-      const startDateStr = startDate.toISOString().split('T')[0];
-      const endDateStr = endDate.toISOString().split('T')[0];
+      // Mesma montagem de período usada no dashboard da equipe
+      const startDateStr = `${yearNum}-${String(monthNum).padStart(2, '0')}-01`;
+      const endDateStr = new Date(yearNum, monthNum, 0).toISOString().split('T')[0];
       
       // Validação: garantir que as datas estão corretas
       const expectedStartDay = 1;
@@ -129,10 +128,10 @@ export async function GET(request: NextRequest) {
       // Log detalhado do período
       console.log(`📅 Cálculo do período:`);
       console.log(`   yearNum: ${yearNum}, monthNum: ${monthNum}`);
-      console.log(`   startDate objeto: ${startDate.toISOString()}`);
-      console.log(`   endDate objeto: ${endDate.toISOString()}`);
-      console.log(`   startDateStr: ${startDateStr} (deve ser ${yearNum}-${String(monthNum).padStart(2, '0')}-01)`);
-      console.log(`   endDateStr: ${endDateStr} (deve ser ${yearNum}-${String(monthNum).padStart(2, '0')}-${expectedEndDay})`);
+      console.log(`   startDateStr: ${startDateStr}`);
+      console.log(`   endDateStr: ${endDateStr}`);
+      console.log(`   esperado início: ${yearNum}-${String(monthNum).padStart(2, '0')}-01`);
+      console.log(`   esperado fim: ${yearNum}-${String(monthNum).padStart(2, '0')}-${expectedEndDay}`);
       
       console.log('=================================================');
       console.log('🔍 BUSCANDO VENDAS DA TABELA external_sales');
@@ -179,8 +178,7 @@ export async function GET(request: NextRequest) {
           .gte('sale_date', startDateStr)
           .lte('sale_date', endDateStr)
           .or('sale_uuid.not.is.null,venda_id.not.is.null')
-          .order('sale_date', { ascending: true })
-          .order('sale_uuid', { ascending: true })
+          .order('id', { ascending: true })
           .range(from, to);
         
         if (directError) {
@@ -762,6 +760,67 @@ export async function GET(request: NextRequest) {
       };
     }).sort((a, b) => a.day - b.day);
 
+    // 11b. Montar faturamento mensal (últimos 12 meses, mesma base: external_sales SUM(total_value))
+    let monthlyRevenue: { month: number; year: number; monthLabel: string; revenue: number }[] = [];
+    if (externalEmployeeCodes.length > 0) {
+      const MONTH_LABELS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+      
+      // Calcular os últimos 12 meses a partir do mês/ano selecionado
+      const months: { m: number; y: number }[] = [];
+      for (let i = 11; i >= 0; i--) {
+        let m = monthNum - i;
+        let y = yearNum;
+        while (m <= 0) { m += 12; y--; }
+        months.push({ m, y });
+      }
+
+      const firstMonth = months[0];
+      const lastMonth = months[months.length - 1];
+      const rangeStart = `${firstMonth.y}-${String(firstMonth.m).padStart(2, '0')}-01`;
+      const lastDay = new Date(lastMonth.y, lastMonth.m, 0).getDate();
+      const rangeEnd = `${lastMonth.y}-${String(lastMonth.m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+      const allRangeSales: any[] = [];
+      const pgSize = 1000;
+      let pg = 0;
+      let more = true;
+      while (more && pg < 100) {
+        const { data: ySales, error: yErr } = await supabaseAdmin
+          .from('external_sales')
+          .select('sale_date, total_value')
+          .eq('company_group_id', companyGroupId)
+          .in('external_employee_id', externalEmployeeCodes)
+          .gte('sale_date', rangeStart)
+          .lte('sale_date', rangeEnd)
+          .range(pg * pgSize, (pg + 1) * pgSize - 1);
+        if (yErr || !ySales || ySales.length === 0) {
+          more = false;
+        } else {
+          allRangeSales.push(...ySales);
+          if (ySales.length < pgSize) more = false;
+          else pg++;
+        }
+      }
+
+      // Agrupar por ano-mês
+      const revenueByKey: Record<string, number> = {};
+      for (const s of allRangeSales) {
+        if (!s.sale_date) continue;
+        const d = new Date(s.sale_date + 'T12:00:00');
+        const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+        revenueByKey[key] = (revenueByKey[key] || 0) + (s.total_value || 0);
+      }
+
+      monthlyRevenue = months.map(({ m, y }) => ({
+        month: m,
+        year: y,
+        monthLabel: `${MONTH_LABELS[m - 1]}/${String(y).slice(2)}`,
+        revenue: Math.round((revenueByKey[`${y}-${m}`] || 0) * 100) / 100
+      }));
+
+      console.log(`📊 Faturamento mensal (últimos 12 meses):`, monthlyRevenue.map(m => `${m.monthLabel}: R$ ${m.revenue.toFixed(2)}`));
+    }
+
     // 12. Montar resposta
     const response = {
       employee: {
@@ -793,6 +852,7 @@ export async function GET(request: NextRequest) {
         totalQuantity: totalQuantity || 0
       },
       dailyRevenue,
+      monthlyRevenue,
       tendency,
       products: productGoalsWithRealized,
       summary: {

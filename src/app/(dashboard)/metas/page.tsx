@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { 
   Plus, Pencil, Trash2, Search, Target, Loader2, 
   ChevronLeft, ChevronRight, Building, UserCircle, 
-  Clock, ShoppingCart, Hash, Download, Copy, GitBranch, Upload, FileSpreadsheet, RefreshCw
+  Clock, ShoppingCart, Hash, Download, Copy, GitBranch, Upload, FileSpreadsheet, RefreshCw, Layers
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { CompanyGroup, Company } from '@/types';
@@ -75,9 +75,12 @@ export default function MetasPage() {
   const [importMonth, setImportMonth] = useState(new Date().getMonth() + 1);
   const [importing, setImporting] = useState(false);
 
-  // Modal de Cadastro/Edição
+  // Modal de Cadastro/Edição (meta simples)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<SalesGoal | null>(null);
+  
+  // Modo do modal: 'simple' (Nova Meta) ou 'composite' (Nova Meta Composta)
+  const [modalMode, setModalMode] = useState<'simple' | 'composite'>('simple');
   const [formData, setFormData] = useState({
     company_group_id: '',
     goal_type: 'company_revenue',
@@ -104,17 +107,25 @@ export default function MetasPage() {
   const [availableGoalsForDerive, setAvailableGoalsForDerive] = useState<SalesGoal[]>([]);
 
   // Múltiplos funcionários (para employee_revenue)
-  const [selectedEmployees, setSelectedEmployees] = useState<{ id: string; name: string; value: number }[]>([]);
+  const [selectedEmployees, setSelectedEmployees] = useState<{ id: string; name: string; value: number; percent?: number }[]>([]);
 
   // Múltiplos turnos (para shift)
-  const [selectedShifts, setSelectedShifts] = useState<{ id: string; name: string; value: number }[]>([]);
+  const [selectedShifts, setSelectedShifts] = useState<{ id: string; name: string; value: number; percent?: number }[]>([]);
 
   // Múltiplos modos de venda (para sale_mode)
-  const [selectedSaleModes, setSelectedSaleModes] = useState<{ id: string; name: string; value: number }[]>([]);
+  const [selectedSaleModes, setSelectedSaleModes] = useState<{ id: string; name: string; value: number; percent?: number }[]>([]);
   
   // Estados para valores formatados dos inputs (turnos e modos)
   const [shiftDisplayValues, setShiftDisplayValues] = useState<Record<string, string>>({});
   const [saleModeDisplayValues, setSaleModeDisplayValues] = useState<Record<string, string>>({});
+  
+  // Modo de rateio: R$ (valor absoluto) ou % (porcentagem)
+  const [rateioMode, setRateioMode] = useState<'value' | 'percent'>('value');
+  
+  // Valores de % para exibição nos inputs (quando rateioMode === 'percent')
+  const [employeePercentDisplayValues, setEmployeePercentDisplayValues] = useState<Record<string, string>>({});
+  const [shiftPercentDisplayValues, setShiftPercentDisplayValues] = useState<Record<string, string>>({});
+  const [saleModePercentDisplayValues, setSaleModePercentDisplayValues] = useState<Record<string, string>>({});
 
   // Funcionários filtrados pela filial selecionada no formulário (apenas ativos)
   const filteredEmployeesForForm = employees
@@ -288,6 +299,43 @@ export default function MetasPage() {
     setSelectedEmployees([]);
     setSelectedShifts([]);
     setSelectedSaleModes([]);
+    setRateioMode('value');
+    setEmployeePercentDisplayValues({});
+    setShiftPercentDisplayValues({});
+    setSaleModePercentDisplayValues({});
+    setModalMode('simple');
+    setIsModalOpen(true);
+  };
+
+  // Abrir modal de meta composta (rateio)
+  const handleNewComposite = () => {
+    setFormData({
+      company_group_id: selectedGroupId,
+      goal_type: 'employee_revenue',
+      year: filterYear,
+      month: filterMonth ?? new Date().getMonth() + 1,
+      company_id: '',
+      employee_id: '',
+      external_product_id: '',
+      shift_id: '',
+      sale_mode_id: '',
+      custom_name: '',
+      custom_description: '',
+      goal_value: 0,
+      goal_unit: 'currency'
+    });
+    setInputDisplayValue('');
+    setShowDeriveOption(false);
+    setDeriveFromGoalId('');
+    setDeriveReferenceType('company_revenue');
+    setSelectedEmployees([]);
+    setSelectedShifts([]);
+    setSelectedSaleModes([]);
+    setRateioMode('value');
+    setEmployeePercentDisplayValues({});
+    setShiftPercentDisplayValues({});
+    setSaleModePercentDisplayValues({});
+    setModalMode('composite');
     setIsModalOpen(true);
   };
 
@@ -311,18 +359,138 @@ export default function MetasPage() {
     });
     setInputDisplayValue(formatInputValue(item.goal_value, item.goal_unit));
     setShowDeriveOption(false);
+    setModalMode('simple');
     setIsModalOpen(true);
   };
 
   // Salvar meta
   const handleSave = async () => {
+    // Meta composta: sequência fixa Empresa → Modo → Turno
+    if (modalMode === 'composite') {
+      if (!formData.company_id) {
+        alert('Selecione uma filial');
+        return;
+      }
+      if (!formData.goal_value || formData.goal_value <= 0) {
+        alert('Informe o Faturamento Empresa');
+        return;
+      }
+      if (selectedSaleModes.length === 0 && selectedShifts.length === 0) {
+        alert('Adicione ao menos um Modo de Venda ou um Turno para ratear');
+        return;
+      }
+
+      setSaving(true);
+      try {
+        let totalSuccess = 0;
+        let totalErrors = 0;
+
+        // 1. Criar meta Faturamento Empresa
+        const companyPayload = {
+          company_group_id: formData.company_group_id,
+          goal_type: 'company_revenue',
+          year: formData.year,
+          month: formData.month,
+          company_id: formData.company_id,
+          goal_value: formData.goal_value,
+          goal_unit: 'currency'
+        };
+        const resCompany = await fetch('/api/goals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(companyPayload)
+        });
+        if (resCompany.ok) totalSuccess++;
+        else totalErrors++;
+
+        // 2. Criar metas Modo de Venda (rateio)
+        if (selectedSaleModes.length > 0) {
+          const saleModeTotalPercent = selectedSaleModes.reduce((s: number, m: any) => s + (m.percent ?? 0), 0);
+          if (rateioMode === 'percent' && saleModeTotalPercent > 100) {
+            alert(`Soma dos modos (${saleModeTotalPercent.toFixed(1)}%) não pode ultrapassar 100%`);
+            setSaving(false);
+            return;
+          }
+          for (const mode of selectedSaleModes) {
+            const valueToSave = rateioMode === 'percent'
+              ? formData.goal_value * ((mode.percent ?? 0) / 100)
+              : mode.value;
+            if (valueToSave <= 0) continue;
+            const payload = {
+              ...formData,
+              goal_type: 'sale_mode',
+              sale_mode_id: mode.id,
+              goal_value: valueToSave
+            };
+            const res = await fetch('/api/goals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (res.ok) totalSuccess++;
+            else totalErrors++;
+          }
+        }
+
+        // 3. Criar metas Turno (rateio)
+        if (selectedShifts.length > 0) {
+          const shiftTotalPercent = selectedShifts.reduce((s: number, x: any) => s + (x.percent ?? 0), 0);
+          if (rateioMode === 'percent' && shiftTotalPercent > 100) {
+            alert(`Soma dos turnos (${shiftTotalPercent.toFixed(1)}%) não pode ultrapassar 100%`);
+            setSaving(false);
+            return;
+          }
+          for (const shift of selectedShifts) {
+            const valueToSave = rateioMode === 'percent'
+              ? formData.goal_value * ((shift.percent ?? 0) / 100)
+              : shift.value;
+            if (valueToSave <= 0) continue;
+            const payload = {
+              ...formData,
+              goal_type: 'shift',
+              shift_id: shift.id,
+              goal_value: valueToSave
+            };
+            const res = await fetch('/api/goals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (res.ok) totalSuccess++;
+            else totalErrors++;
+          }
+        }
+
+        if (totalErrors > 0) {
+          alert(`${totalSuccess} meta(s) criada(s). ${totalErrors} erro(s).`);
+        }
+        setIsModalOpen(false);
+        fetchGoals();
+      } catch (error: any) {
+        alert(error.message);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     // Para employee_revenue com múltiplos funcionários
     if (formData.goal_type === 'employee_revenue' && !editingItem && selectedEmployees.length > 0) {
-      // Verificar se todos têm valor
-      const hasInvalidValue = selectedEmployees.some((emp: any) => !emp.value || emp.value <= 0);
-      if (hasInvalidValue) {
-        alert('Todos os funcionários devem ter um valor de meta válido');
-        return;
+      // Modo %: validar soma e valor total
+      if (rateioMode === 'percent') {
+        if (!formData.goal_value || formData.goal_value <= 0) {
+          alert('Informe o valor total da meta antes de usar o modo porcentagem');
+          return;
+        }
+        const totalPercent = selectedEmployees.reduce((sum: number, e: any) => sum + (e.percent ?? 0), 0);
+        if (totalPercent > 100) {
+          alert(`A soma das porcentagens (${totalPercent.toFixed(1)}%) não pode ultrapassar 100%`);
+          return;
+        }
+        const hasInvalidPercent = selectedEmployees.some((e: any) => (e.percent ?? 0) > 100 || (e.percent ?? 0) < 0);
+        if (hasInvalidPercent) {
+          alert('Cada porcentagem deve estar entre 0 e 100');
+          return;
+        }
+      } else {
+        // Modo R$: verificar se todos têm valor
+        const hasInvalidValue = selectedEmployees.some((emp: any) => !emp.value || emp.value <= 0);
+        if (hasInvalidValue) {
+          alert('Todos os funcionários devem ter um valor de meta válido');
+          return;
+        }
       }
 
       setSaving(true);
@@ -331,10 +499,13 @@ export default function MetasPage() {
         let errorCount = 0;
 
         for (const emp of selectedEmployees) {
+          const valueToSave = rateioMode === 'percent'
+            ? formData.goal_value * ((emp.percent ?? 0) / 100)
+            : emp.value;
           const payload = {
             ...formData,
             employee_id: emp.id,
-            goal_value: emp.value,
+            goal_value: valueToSave,
             parent_goal_id: deriveFromGoalId || undefined
           };
 
@@ -373,11 +544,27 @@ export default function MetasPage() {
         return;
       }
       
-      // Verificar se todos têm valor
-      const hasInvalidValue = selectedShifts.some((shift: any) => !shift.value || shift.value <= 0);
-      if (hasInvalidValue) {
-        alert('Todos os turnos devem ter um valor de meta válido');
-        return;
+      if (rateioMode === 'percent') {
+        if (!formData.goal_value || formData.goal_value <= 0) {
+          alert('Informe o valor total da meta antes de usar o modo porcentagem');
+          return;
+        }
+        const totalPercent = selectedShifts.reduce((sum: number, s: any) => sum + (s.percent ?? 0), 0);
+        if (totalPercent > 100) {
+          alert(`A soma das porcentagens (${totalPercent.toFixed(1)}%) não pode ultrapassar 100%`);
+          return;
+        }
+        const hasInvalidPercent = selectedShifts.some((s: any) => (s.percent ?? 0) > 100 || (s.percent ?? 0) < 0);
+        if (hasInvalidPercent) {
+          alert('Cada porcentagem deve estar entre 0 e 100');
+          return;
+        }
+      } else {
+        const hasInvalidValue = selectedShifts.some((shift: any) => !shift.value || shift.value <= 0);
+        if (hasInvalidValue) {
+          alert('Todos os turnos devem ter um valor de meta válido');
+          return;
+        }
       }
 
       setSaving(true);
@@ -386,10 +573,13 @@ export default function MetasPage() {
         let errorCount = 0;
 
         for (const shift of selectedShifts) {
+          const valueToSave = rateioMode === 'percent'
+            ? formData.goal_value * ((shift.percent ?? 0) / 100)
+            : shift.value;
           const payload = {
             ...formData,
             shift_id: shift.id,
-            goal_value: shift.value,
+            goal_value: valueToSave,
             parent_goal_id: deriveFromGoalId || undefined
           };
 
@@ -428,11 +618,27 @@ export default function MetasPage() {
         return;
       }
       
-      // Verificar se todos têm valor
-      const hasInvalidValue = selectedSaleModes.some((mode: any) => !mode.value || mode.value <= 0);
-      if (hasInvalidValue) {
-        alert('Todos os modos de venda devem ter um valor de meta válido');
-        return;
+      if (rateioMode === 'percent') {
+        if (!formData.goal_value || formData.goal_value <= 0) {
+          alert('Informe o valor total da meta antes de usar o modo porcentagem');
+          return;
+        }
+        const totalPercent = selectedSaleModes.reduce((sum: number, m: any) => sum + (m.percent ?? 0), 0);
+        if (totalPercent > 100) {
+          alert(`A soma das porcentagens (${totalPercent.toFixed(1)}%) não pode ultrapassar 100%`);
+          return;
+        }
+        const hasInvalidPercent = selectedSaleModes.some((m: any) => (m.percent ?? 0) > 100 || (m.percent ?? 0) < 0);
+        if (hasInvalidPercent) {
+          alert('Cada porcentagem deve estar entre 0 e 100');
+          return;
+        }
+      } else {
+        const hasInvalidValue = selectedSaleModes.some((mode: any) => !mode.value || mode.value <= 0);
+        if (hasInvalidValue) {
+          alert('Todos os modos de venda devem ter um valor de meta válido');
+          return;
+        }
       }
 
       setSaving(true);
@@ -441,10 +647,13 @@ export default function MetasPage() {
         let errorCount = 0;
 
         for (const mode of selectedSaleModes) {
+          const valueToSave = rateioMode === 'percent'
+            ? formData.goal_value * ((mode.percent ?? 0) / 100)
+            : mode.value;
           const payload = {
             ...formData,
             sale_mode_id: mode.id,
-            goal_value: mode.value,
+            goal_value: valueToSave,
             parent_goal_id: deriveFromGoalId || undefined
           };
 
@@ -604,6 +813,23 @@ export default function MetasPage() {
     setSelectedIds([]);
   }, [selectedGroupId, filterYear, filterMonth, filterType, filterCompany, search]);
 
+  // Recalcular valores em R$ quando goal_value muda no modo %
+  useEffect(() => {
+    if (rateioMode !== 'percent' || !formData.goal_value || formData.goal_value <= 0) return;
+    setSelectedEmployees(prev => prev.map((e: any) => ({
+      ...e,
+      value: formData.goal_value * ((e.percent ?? 0) / 100)
+    })));
+    setSelectedShifts(prev => prev.map((s: any) => ({
+      ...s,
+      value: formData.goal_value * ((s.percent ?? 0) / 100)
+    })));
+    setSelectedSaleModes(prev => prev.map((m: any) => ({
+      ...m,
+      value: formData.goal_value * ((m.percent ?? 0) / 100)
+    })));
+  }, [formData.goal_value, rateioMode]);
+
 
   // Buscar metas disponíveis para derivar (filtrado pela filial quando selecionada)
   useEffect(() => {
@@ -706,6 +932,17 @@ export default function MetasPage() {
     const cleanValue = value.replace(/\./g, '').replace(',', '.');
     const parsed = parseFloat(cleanValue);
     return isNaN(parsed) ? 0 : parsed;
+  };
+
+  // Parse e format para porcentagem (0-100)
+  const parsePercent = (value: string): number => {
+    const clean = value.replace(/\./g, '').replace(',', '.');
+    const parsed = parseFloat(clean);
+    return isNaN(parsed) ? 0 : Math.min(100, Math.max(0, parsed));
+  };
+  const formatPercent = (value: number): string => {
+    if (value === 0) return '';
+    return value % 1 === 0 ? String(Math.round(value)) : value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
   };
 
   // Formatar valor enquanto digita (formato brasileiro - sempre moeda)
@@ -901,9 +1138,13 @@ export default function MetasPage() {
             >
               <Download size={18} />
             </button>
-            <Button onClick={handleNew}>
+            <Button variant="secondary" onClick={handleNew}>
               <Plus size={18} className="mr-2" />
               Nova Meta
+            </Button>
+            <Button onClick={handleNewComposite}>
+              <Layers size={18} className="mr-2" />
+              Nova Meta Composta
             </Button>
           </div>
         </div>
@@ -1175,35 +1416,37 @@ export default function MetasPage() {
         )}
       </div>
 
-      {/* Modal Nova/Editar Meta */}
+      {/* Modal Nova/Editar Meta ou Nova Meta Composta */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-xl font-bold text-gray-900">
-                {editingItem ? 'Editar Meta' : 'Nova Meta'}
+                {modalMode === 'composite' ? 'Nova Meta Composta' : (editingItem ? 'Editar Meta' : 'Nova Meta')}
               </h2>
             </div>
 
             <div className="p-6 space-y-5">
-              {/* Linha 1: Tipo + Filial */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Meta *</label>
-                  <select
-                    value={formData.goal_type}
-                    onChange={(e) => setFormData({ ...formData, goal_type: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    disabled={!!editingItem}
-                  >
-                    {GOAL_TYPES.map((type) => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
-                </div>
+              {/* Linha 1: Tipo (apenas modal simples) + Filial */}
+              <div className={`grid gap-4 ${modalMode === 'composite' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                {modalMode === 'simple' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Meta *</label>
+                    <select
+                      value={formData.goal_type}
+                      onChange={(e) => setFormData({ ...formData, goal_type: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      disabled={!!editingItem}
+                    >
+                      {GOAL_TYPES.map((type) => (
+                        <option key={type.value} value={type.value}>{type.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Filial {(formData.goal_type === 'company_revenue' || formData.goal_type === 'shift' || formData.goal_type === 'sale_mode') ? '*' : '(opcional)'}
+                    Filial {modalMode === 'composite' || formData.goal_type === 'company_revenue' || formData.goal_type === 'shift' || formData.goal_type === 'sale_mode' ? '*' : '(opcional)'}
                   </label>
                   <select
                     value={formData.company_id}
@@ -1263,8 +1506,8 @@ export default function MetasPage() {
               </div>
 
 
-              {/* FATURAMENTO EMPRESA - Valor da Meta */}
-              {formData.goal_type === 'company_revenue' && (
+              {/* FATURAMENTO EMPRESA - Valor da Meta (apenas modal simples) */}
+              {modalMode === 'simple' && formData.goal_type === 'company_revenue' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Valor da Meta *</label>
                   <div className="relative">
@@ -1281,87 +1524,24 @@ export default function MetasPage() {
                 </div>
               )}
 
-              {/* FATURAMENTO MODO - Seção com valor de referência */}
-              {formData.goal_type === 'sale_mode' && (
-                <div className="border-t border-gray-200 pt-4 space-y-4">
-                  {/* Opção de usar referência - Radio buttons */}
+              {/* FATURAMENTO MODO - Formulário simples (apenas modal simples) */}
+              {modalMode === 'simple' && formData.goal_type === 'sale_mode' && (
+                <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Usar valor de referência</label>
-                    <div className="flex flex-wrap gap-4">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="saleModeReference"
-                          checked={!showDeriveOption}
-                          onChange={() => {
-                            setShowDeriveOption(false);
-                            setDeriveFromGoalId('');
-                          }}
-                          className="w-4 h-4 text-blue-600 border-gray-300"
-                        />
-                        <span className="text-sm text-gray-700">Nenhum</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="saleModeReference"
-                          checked={showDeriveOption && deriveReferenceType === 'company_revenue'}
-                          onChange={() => {
-                            setShowDeriveOption(true);
-                            setDeriveReferenceType('company_revenue');
-                            setDeriveFromGoalId('');
-                          }}
-                          className="w-4 h-4 text-blue-600 border-gray-300"
-                        />
-                        <span className="text-sm text-gray-700">Faturamento Empresa</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="saleModeReference"
-                          checked={showDeriveOption && deriveReferenceType === 'shift'}
-                          onChange={() => {
-                            setShowDeriveOption(true);
-                            setDeriveReferenceType('shift');
-                            setDeriveFromGoalId('');
-                          }}
-                          className="w-4 h-4 text-blue-600 border-gray-300"
-                        />
-                        <span className="text-sm text-gray-700">Faturamento Turno</span>
-                      </label>
-                    </div>
-
-                    {showDeriveOption && (
-                      <div className="mt-3 p-3 bg-blue-50 rounded-lg space-y-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Meta de referência</label>
-                          <select
-                            value={deriveFromGoalId}
-                            onChange={(e) => setDeriveFromGoalId(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                          >
-                            <option value="">Selecione...</option>
-                            {availableGoalsForDerive
-                              .filter((goal) => goal.goal_type === deriveReferenceType)
-                              .map((goal) => (
-                                <option key={goal.id} value={goal.id}>
-                                  {getGoalDescription(goal)} - {formatValue(goal.goal_value, goal.goal_unit)}
-                                </option>
-                              ))}
-                          </select>
-                        </div>
-                        {deriveFromGoalId && (
-                          <Button variant="secondary" onClick={handleApplyDerivedValue} className="w-full">
-                            Aplicar Valor
-                          </Button>
-                        )}
-                      </div>
-                    )}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Modo de Venda *</label>
+                    <select
+                      value={formData.sale_mode_id}
+                      onChange={(e) => setFormData({ ...formData, sale_mode_id: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Selecione...</option>
+                      {filteredSaleModesForForm.map((mode) => (
+                        <option key={mode.id} value={mode.id}>{mode.name}</option>
+                      ))}
+                    </select>
                   </div>
-
-                  {/* Valor base para distribuir */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Valor Base da Meta *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Valor da Meta *</label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">R$</span>
                       <input
@@ -1373,253 +1553,16 @@ export default function MetasPage() {
                         placeholder="0,00"
                       />
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">Este valor será dividido igualmente entre os modos de venda selecionados</p>
                   </div>
-
-                  {/* Botões de seleção de modos de venda */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Modos de Venda</label>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          // Adicionar todos os modos de venda ativos
-                          const availableModes = filteredSaleModesForForm
-                            .filter((mode: any) => !selectedSaleModes.find((sm: any) => sm.id === mode.id));
-                          
-                          if (availableModes.length === 0) return;
-                          
-                          // Calcular valor dividido para todos (incluindo os já selecionados)
-                          const totalModes = selectedSaleModes.length + availableModes.length;
-                          const valuePerMode = formData.goal_value > 0 ? formData.goal_value / totalModes : 0;
-                          
-                          // Atualizar os já selecionados com o novo valor
-                          const updatedExisting = selectedSaleModes.map((mode: any) => ({
-                            ...mode,
-                            value: valuePerMode
-                          }));
-                          
-                          // Adicionar os novos com o valor dividido
-                          const newModes = availableModes.map((mode: any) => ({
-                            id: mode.id,
-                            name: mode.name,
-                            value: valuePerMode
-                          }));
-                          
-                          setSelectedSaleModes([...updatedExisting, ...newModes]);
-                          
-                          // Atualizar valores de display
-                          const newDisplayValues: Record<string, string> = {};
-                          [...updatedExisting, ...newModes].forEach((mode: any) => {
-                            newDisplayValues[mode.id] = formatInputValue(valuePerMode, formData.goal_unit);
-                          });
-                          setSaleModeDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
-                        }}
-                        className="text-sm"
-                      >
-                        <Plus size={16} className="mr-1" />
-                        Adicionar Todos
-                      </Button>
-                      {selectedSaleModes.length > 0 && (
-                        <>
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              // Recalcular - redistribuir o valor base entre os modos de venda
-                              if (formData.goal_value > 0 && selectedSaleModes.length > 0) {
-                                const valuePerMode = formData.goal_value / selectedSaleModes.length;
-                                setSelectedSaleModes(selectedSaleModes.map((mode: any) => ({
-                                  ...mode,
-                                  value: valuePerMode
-                                })));
-                                // Atualizar valores de display
-                                const newDisplayValues: Record<string, string> = {};
-                                selectedSaleModes.forEach((mode: any) => {
-                                  newDisplayValues[mode.id] = formatInputValue(valuePerMode, formData.goal_unit);
-                                });
-                                setSaleModeDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
-                              }
-                            }}
-                            className="text-sm"
-                          >
-                            <Hash size={16} className="mr-1" />
-                            Recalcular
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            onClick={() => setSelectedSaleModes([])}
-                            className="text-sm text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 size={16} className="mr-1" />
-                            Limpar
-                          </Button>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Select para adicionar modo de venda individual */}
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        const modeId = e.target.value;
-                        if (!modeId) return;
-                        const mode = filteredSaleModesForForm.find((m: any) => m.id === modeId);
-                        if (mode && !selectedSaleModes.find((sm: any) => sm.id === modeId)) {
-                          // Recalcular valor dividido para todos (incluindo o novo)
-                          const totalModes = selectedSaleModes.length + 1;
-                          const valuePerMode = formData.goal_value > 0 ? formData.goal_value / totalModes : 0;
-                          
-                          // Atualizar os já selecionados
-                          const updatedExisting = selectedSaleModes.map((existing: any) => ({
-                            ...existing,
-                            value: valuePerMode
-                          }));
-                          
-                          const newMode = {
-                            id: mode.id,
-                            name: mode.name,
-                            value: valuePerMode
-                          };
-                          
-                          setSelectedSaleModes([...updatedExisting, newMode]);
-                          
-                          // Atualizar valores de display
-                          const newDisplayValues: Record<string, string> = {};
-                          [...updatedExisting, newMode].forEach((m: any) => {
-                            newDisplayValues[m.id] = formatInputValue(valuePerMode, formData.goal_unit);
-                          });
-                          setSaleModeDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
-                        }
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-3"
-                    >
-                      <option value="">+ Adicionar modo de venda...</option>
-                      {filteredSaleModesForForm
-                        .filter((mode: any) => !selectedSaleModes.find((sm: any) => sm.id === mode.id))
-                        .map((mode) => (
-                          <option key={mode.id} value={mode.id}>{mode.name}</option>
-                        ))}
-                    </select>
-
-                    {/* Lista de modos de venda selecionados com valores editáveis */}
-                    {selectedSaleModes.length > 0 && (
-                      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-60 overflow-y-auto">
-                        {selectedSaleModes.map((mode, index) => {
-                          const displayValue = saleModeDisplayValues[mode.id] ?? formatInputValue(mode.value, formData.goal_unit);
-                          
-                          return (
-                          <div key={mode.id} className="flex items-center gap-2 p-3">
-                            <span className="flex-1 text-sm text-gray-700 truncate">{mode.name}</span>
-                            <input
-                              type="text"
-                              value={displayValue}
-                              onChange={(e) => {
-                                const rawValue = e.target.value;
-                                // Permite apenas números, vírgula e ponto
-                                const cleanInput = rawValue.replace(/[^\d.,]/g, '');
-                                
-                                // Formata enquanto digita
-                                const formatted = formatValueWhileTyping(cleanInput);
-                                setSaleModeDisplayValues(prev => ({ ...prev, [mode.id]: formatted }));
-                                
-                                // Atualiza o valor numérico
-                                const numericValue = parseFormattedValue(formatted, formData.goal_unit);
-                                const updated = [...selectedSaleModes];
-                                updated[index] = { ...mode, value: numericValue };
-                                setSelectedSaleModes(updated);
-                              }}
-                              onBlur={(e) => {
-                                const value = parseFormattedValue(e.target.value, formData.goal_unit);
-                                const updated = [...selectedSaleModes];
-                                updated[index] = { ...mode, value };
-                                setSelectedSaleModes(updated);
-                                setSaleModeDisplayValues(prev => ({ ...prev, [mode.id]: formatInputValue(value, formData.goal_unit) }));
-                              }}
-                              onFocus={(e) => {
-                                // Ao focar, mostra o valor formatado
-                                setSaleModeDisplayValues(prev => ({ ...prev, [mode.id]: formatInputValue(mode.value, formData.goal_unit) }));
-                              }}
-                              className="w-32 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-right bg-white"
-                            />
-                            <button
-                              onClick={() => {
-                                setSelectedSaleModes(selectedSaleModes.filter((sm: any) => sm.id !== mode.id));
-                                setSaleModeDisplayValues(prev => {
-                                  const newValues = { ...prev };
-                                  delete newValues[mode.id];
-                                  return newValues;
-                                });
-                              }}
-                              className="p-1 text-gray-400 hover:text-red-500"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {selectedSaleModes.length > 0 && (
-                      <div className="mt-3 p-3 bg-gray-50 rounded-lg flex items-center justify-between">
-                        <div className="text-sm text-gray-600">
-                          <span className="font-medium">{selectedSaleModes.length}</span> modo(s) selecionado(s)
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          Total: <span className="font-bold text-gray-900">{formatValue(selectedSaleModes.reduce((sum: number, m: any) => sum + m.value, 0), formData.goal_unit)}</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                </>
               )}
 
-              {/* FATURAMENTO VENDEDOR - Seção especial com múltiplos funcionários */}
-              {formData.goal_type === 'employee_revenue' && !editingItem && (
-                <div className="border-t border-gray-200 pt-4 space-y-4">
-                  {/* Opção de usar referência - ACIMA do valor */}
-                  <div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={showDeriveOption}
-                        onChange={(e) => setShowDeriveOption(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700">Usar valor de referência (Faturamento Empresa)</span>
-                    </label>
-
-                    {showDeriveOption && (
-                      <div className="mt-3 p-3 bg-blue-50 rounded-lg space-y-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Meta de referência</label>
-                          <select
-                            value={deriveFromGoalId}
-                            onChange={(e) => setDeriveFromGoalId(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                          >
-                            <option value="">Selecione...</option>
-                            {availableGoalsForDerive
-                              .filter((goal) => goal.goal_type === 'company_revenue' && (!formData.company_id || goal.company_id === formData.company_id))
-                              .map((goal) => (
-                                <option key={goal.id} value={goal.id}>
-                                  {goal.company?.name || 'Empresa'} - {formatValue(goal.goal_value, goal.goal_unit)}
-                                </option>
-                              ))}
-                          </select>
-                        </div>
-                        {deriveFromGoalId && (
-                          <Button variant="secondary" onClick={handleApplyDerivedValue} className="w-full">
-                            Aplicar Valor
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Valor base para distribuir */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Valor Base da Meta *</label>
+              {/* RATEIO COMPOSTA - Sequência fixa: 1. Faturamento Empresa, 2. Modo, 3. Turno */}
+              {modalMode === 'composite' && (
+                <>
+                  {/* 1. Faturamento Empresa */}
+                  <div className="border-t border-gray-200 pt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">1. Faturamento Empresa *</label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">R$</span>
                       <input
@@ -1631,175 +1574,13 @@ export default function MetasPage() {
                         placeholder="0,00"
                       />
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">Este valor será dividido igualmente entre os funcionários selecionados</p>
+                    <p className="text-xs text-gray-500 mt-1">Valor total que será rateado entre Modo e Turno</p>
                   </div>
-
-                  {/* Botões de seleção de funcionários */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-sm font-medium text-gray-700">Funcionários</label>
-                      <button
-                        type="button"
-                        onClick={handleRefreshEmployees}
-                        disabled={refreshingEmployees}
-                        className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Atualizar lista de funcionários"
-                      >
-                        <RefreshCw size={16} className={refreshingEmployees ? 'animate-spin' : ''} />
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          // Adicionar todos os funcionários (filtrados pela filial)
-                          const availableEmployees = filteredEmployeesForForm
-                            .filter((emp: any) => !selectedEmployees.find((se: any) => se.id === emp.id));
-                          
-                          if (availableEmployees.length === 0) return;
-                          
-                          // Calcular valor dividido para todos (incluindo os já selecionados)
-                          const totalEmployees = selectedEmployees.length + availableEmployees.length;
-                          const valuePerEmployee = formData.goal_value > 0 ? formData.goal_value / totalEmployees : 0;
-                          
-                          // Atualizar os já selecionados com o novo valor
-                          const updatedExisting = selectedEmployees.map((emp: any) => ({
-                            ...emp,
-                            value: valuePerEmployee
-                          }));
-                          
-                          // Adicionar os novos com o valor dividido
-                          const newEmployees = availableEmployees.map((emp: any) => ({
-                            id: emp.id,
-                            name: emp.name,
-                            value: valuePerEmployee
-                          }));
-                          
-                          setSelectedEmployees([...updatedExisting, ...newEmployees]);
-                        }}
-                        className="text-sm"
-                      >
-                        <Plus size={16} className="mr-1" />
-                        Adicionar Todos {formData.company_id ? 'da Filial' : ''}
-                      </Button>
-                      {selectedEmployees.length > 0 && (
-                        <>
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              // Recalcular - redistribuir o valor base entre os funcionários
-                              if (formData.goal_value > 0 && selectedEmployees.length > 0) {
-                                const valuePerEmployee = formData.goal_value / selectedEmployees.length;
-                                setSelectedEmployees(selectedEmployees.map((emp: any) => ({
-                                  ...emp,
-                                  value: valuePerEmployee
-                                })));
-                              }
-                            }}
-                            className="text-sm"
-                          >
-                            <Hash size={16} className="mr-1" />
-                            Recalcular
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            onClick={() => setSelectedEmployees([])}
-                            className="text-sm text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 size={16} className="mr-1" />
-                            Limpar
-                          </Button>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Select para adicionar funcionário individual */}
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        const empId = e.target.value;
-                        if (!empId) return;
-                        const emp = filteredEmployeesForForm.find((em: any) => em.id === empId);
-                        if (emp && !selectedEmployees.find((se: any) => se.id === empId)) {
-                          // Recalcular valor dividido para todos (incluindo o novo)
-                          const totalEmployees = selectedEmployees.length + 1;
-                          const valuePerEmployee = formData.goal_value > 0 ? formData.goal_value / totalEmployees : 0;
-                          
-                          // Atualizar os já selecionados
-                          const updatedExisting = selectedEmployees.map((existing: any) => ({
-                            ...existing,
-                            value: valuePerEmployee
-                          }));
-                          
-                          setSelectedEmployees([...updatedExisting, {
-                            id: emp.id,
-                            name: emp.name,
-                            value: valuePerEmployee
-                          }]);
-                        }
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-3"
-                    >
-                      <option value="">+ Adicionar funcionário...</option>
-                      {filteredEmployeesForForm
-                        .filter((emp: any) => !selectedEmployees.find((se: any) => se.id === emp.id))
-                        .map((employee) => (
-                          <option key={employee.id} value={employee.id}>{employee.name}</option>
-                        ))}
-                    </select>
-
-                    {/* Lista de funcionários selecionados com valores editáveis */}
-                    {selectedEmployees.length > 0 && (
-                      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-60 overflow-y-auto">
-                        {selectedEmployees.map((emp, index) => (
-                          <div key={emp.id} className="flex items-center gap-2 p-3">
-                            <span className="flex-1 text-sm text-gray-700 truncate">{emp.name}</span>
-                            <input
-                              type="text"
-                              value={formatInputValue(emp.value, formData.goal_unit)}
-                              onChange={(e) => {
-                                const newValue = parseFormattedValue(e.target.value, formData.goal_unit);
-                                const updated = [...selectedEmployees];
-                                updated[index] = { ...emp, value: newValue };
-                                setSelectedEmployees(updated);
-                              }}
-                              onBlur={(e) => {
-                                const value = parseFormattedValue(e.target.value, formData.goal_unit);
-                                const updated = [...selectedEmployees];
-                                updated[index] = { ...emp, value };
-                                setSelectedEmployees(updated);
-                              }}
-                              className="w-32 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-right"
-                            />
-                            <button
-                              onClick={() => {
-                                setSelectedEmployees(selectedEmployees.filter((se: any) => se.id !== emp.id));
-                              }}
-                              className="p-1 text-gray-400 hover:text-red-500"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {selectedEmployees.length > 0 && (
-                      <div className="mt-3 p-3 bg-gray-50 rounded-lg flex items-center justify-between">
-                        <div className="text-sm text-gray-600">
-                          <span className="font-medium">{selectedEmployees.length}</span> funcionário(s) selecionado(s)
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          Total: <span className="font-bold text-gray-900">{formatValue(selectedEmployees.reduce((sum: number, e: any) => sum + e.value, 0), formData.goal_unit)}</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                </>
               )}
 
-              {/* Funcionário único - para edição ou employee_product */}
-              {(formData.goal_type === 'employee_revenue' && editingItem) && (
+              {/* Funcionário único (modal simples) */}
+              {modalMode === 'simple' && formData.goal_type === 'employee_revenue' && (
                 <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Funcionário *</label>
@@ -1831,257 +1612,114 @@ export default function MetasPage() {
                 </>
               )}
 
-              {/* FATURAMENTO TURNO - Seção especial com múltiplos turnos */}
-              {formData.goal_type === 'shift' && !editingItem && (
+              {/* 2. Modo de Venda - rateio (sequência fixa: Empresa → Modo → Turno) */}
+              {modalMode === 'composite' && (
                 <div className="border-t border-gray-200 pt-4 space-y-4">
-                  {/* Opção de usar referência - ACIMA do valor */}
+                  <label className="block text-sm font-medium text-gray-700">2. Modo de Venda (rateio)</label>
+                  <p className="text-xs text-gray-500">Usa o Faturamento Empresa informado acima</p>
                   <div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={showDeriveOption}
-                        onChange={(e) => setShowDeriveOption(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700">Usar valor de referência (Faturamento Empresa)</span>
-                    </label>
-
-                    {showDeriveOption && (
-                      <div className="mt-3 p-3 bg-blue-50 rounded-lg space-y-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Meta de referência</label>
-                          <select
-                            value={deriveFromGoalId}
-                            onChange={(e) => setDeriveFromGoalId(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                          >
-                            <option value="">Selecione...</option>
-                            {availableGoalsForDerive
-                              .filter((goal) => goal.goal_type === 'company_revenue')
-                              .map((goal) => (
-                                <option key={goal.id} value={goal.id}>
-                                  {goal.company?.name || 'Empresa'} - {formatValue(goal.goal_value, goal.goal_unit)}
-                                </option>
-                              ))}
-                          </select>
-                        </div>
-                        {deriveFromGoalId && (
-                          <Button variant="secondary" onClick={handleApplyDerivedValue} className="w-full">
-                            Aplicar Valor
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Valor base para distribuir */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Valor Base da Meta *</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">R$</span>
-                      <input
-                        type="text"
-                        value={inputDisplayValue}
-                        onChange={handleValueInputChange}
-                        onBlur={handleValueBlur}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="0,00"
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">Este valor será dividido igualmente entre os turnos selecionados</p>
-                  </div>
-
-                  {/* Botões de seleção de turnos */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Turnos</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Modos de Venda</label>
                     <div className="flex flex-wrap gap-2 mb-3">
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          // Adicionar todos os turnos ativos
-                          const availableShifts = filteredShiftsForForm
-                            .filter((shift: any) => !selectedShifts.find((ss: any) => ss.id === shift.id));
-                          
-                          if (availableShifts.length === 0) return;
-                          
-                          // Calcular valor dividido para todos (incluindo os já selecionados)
-                          const totalShifts = selectedShifts.length + availableShifts.length;
-                          const valuePerShift = formData.goal_value > 0 ? formData.goal_value / totalShifts : 0;
-                          
-                          // Atualizar os já selecionados com o novo valor
-                          const updatedExisting = selectedShifts.map((shift: any) => ({
-                            ...shift,
-                            value: valuePerShift
-                          }));
-                          
-                          // Adicionar os novos com o valor dividido
-                          const newShifts = availableShifts.map((shift: any) => ({
-                            id: shift.id,
-                            name: shift.name,
-                            value: valuePerShift
-                          }));
-                          
-                          setSelectedShifts([...updatedExisting, ...newShifts]);
-                          
-                          // Atualizar valores de display
-                          const newDisplayValues: Record<string, string> = {};
-                          [...updatedExisting, ...newShifts].forEach((shift: any) => {
-                            newDisplayValues[shift.id] = formatInputValue(valuePerShift, formData.goal_unit);
-                          });
-                          setShiftDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
-                        }}
-                        className="text-sm"
-                      >
-                        <Plus size={16} className="mr-1" />
-                        Adicionar Todos
-                      </Button>
-                      {selectedShifts.length > 0 && (
+                      <Button variant="secondary" onClick={() => {
+                        const availableModes = filteredSaleModesForForm.filter((m: any) => !selectedSaleModes.find((sm: any) => sm.id === m.id));
+                        if (availableModes.length === 0) return;
+                        const totalModes = selectedSaleModes.length + availableModes.length;
+                        if (rateioMode === 'percent') {
+                          const pct = 100 / totalModes;
+                          setSelectedSaleModes([...selectedSaleModes.map((m: any) => ({ ...m, percent: pct, value: formData.goal_value > 0 ? formData.goal_value * pct / 100 : 0 })), ...availableModes.map((m: any) => ({ id: m.id, name: m.name, value: formData.goal_value > 0 ? formData.goal_value * pct / 100 : 0, percent: pct }))]);
+                          setSaleModePercentDisplayValues(prev => ({ ...prev, ...Object.fromEntries([...selectedSaleModes.map((m: any) => m.id), ...availableModes.map((m: any) => m.id)].map((id) => [id, formatPercent(100 / totalModes)])) }));
+                        } else {
+                          const val = formData.goal_value > 0 ? formData.goal_value / totalModes : 0;
+                          setSelectedSaleModes([...selectedSaleModes.map((m: any) => ({ ...m, value: val })), ...availableModes.map((m: any) => ({ id: m.id, name: m.name, value: val }))]);
+                          setSaleModeDisplayValues(prev => ({ ...prev, ...Object.fromEntries([...selectedSaleModes, ...availableModes].map((m: any) => [m.id, formatInputValue(val, formData.goal_unit)])) }));
+                        }
+                      }} className="text-sm"><Plus size={16} className="mr-1" />Adicionar Todos</Button>
+                      {selectedSaleModes.length > 0 && (
                         <>
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              // Recalcular - redistribuir o valor base entre os turnos
-                              if (formData.goal_value > 0 && selectedShifts.length > 0) {
-                                const valuePerShift = formData.goal_value / selectedShifts.length;
-                                setSelectedShifts(selectedShifts.map((shift: any) => ({
-                                  ...shift,
-                                  value: valuePerShift
-                                })));
-                                // Atualizar valores de display
-                                const newDisplayValues: Record<string, string> = {};
-                                selectedShifts.forEach((shift: any) => {
-                                  newDisplayValues[shift.id] = formatInputValue(valuePerShift, formData.goal_unit);
-                                });
-                                setShiftDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
-                              }
-                            }}
-                            className="text-sm"
-                          >
-                            <Hash size={16} className="mr-1" />
-                            Recalcular
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            onClick={() => setSelectedShifts([])}
-                            className="text-sm text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 size={16} className="mr-1" />
-                            Limpar
-                          </Button>
+                          <Button variant="secondary" onClick={() => {
+                            if (rateioMode === 'percent') {
+                              const pct = 100 / selectedSaleModes.length;
+                              setSelectedSaleModes(selectedSaleModes.map((m: any) => ({ ...m, percent: pct, value: formData.goal_value > 0 ? formData.goal_value * pct / 100 : 0 })));
+                              setSaleModePercentDisplayValues(Object.fromEntries(selectedSaleModes.map((m: any) => [m.id, formatPercent(pct)])));
+                            } else if (formData.goal_value > 0) {
+                              const val = formData.goal_value / selectedSaleModes.length;
+                              setSelectedSaleModes(selectedSaleModes.map((m: any) => ({ ...m, value: val })));
+                              setSaleModeDisplayValues(prev => ({ ...prev, ...Object.fromEntries(selectedSaleModes.map((m: any) => [m.id, formatInputValue(val, formData.goal_unit)])) }));
+                            }
+                          }} className="text-sm"><Hash size={16} className="mr-1" />Recalcular</Button>
+                          <Button variant="secondary" onClick={() => setSelectedSaleModes([])} className="text-sm text-red-600 hover:text-red-700"><Trash2 size={16} className="mr-1" />Limpar</Button>
                         </>
                       )}
                     </div>
-
-                    {/* Select para adicionar turno individual */}
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        const shiftId = e.target.value;
-                        if (!shiftId) return;
-                        const shift = filteredShiftsForForm.find((s: any) => s.id === shiftId);
-                        if (shift && !selectedShifts.find((ss: any) => ss.id === shiftId)) {
-                          // Recalcular valor dividido para todos (incluindo o novo)
-                          const totalShifts = selectedShifts.length + 1;
-                          const valuePerShift = formData.goal_value > 0 ? formData.goal_value / totalShifts : 0;
-                          
-                          // Atualizar os já selecionados
-                          const updatedExisting = selectedShifts.map((existing: any) => ({
-                            ...existing,
-                            value: valuePerShift
-                          }));
-                          
-                          const newShift = {
-                            id: shift.id,
-                            name: shift.name,
-                            value: valuePerShift
-                          };
-                          
-                          setSelectedShifts([...updatedExisting, newShift]);
-                          
-                          // Atualizar valores de display
-                          const newDisplayValues: Record<string, string> = {};
-                          [...updatedExisting, newShift].forEach((s: any) => {
-                            newDisplayValues[s.id] = formatInputValue(valuePerShift, formData.goal_unit);
-                          });
-                          setShiftDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
+                    <select value="" onChange={(e) => {
+                      const modeId = e.target.value;
+                      if (!modeId) return;
+                      const mode = filteredSaleModesForForm.find((m: any) => m.id === modeId);
+                      if (mode && !selectedSaleModes.find((sm: any) => sm.id === modeId)) {
+                        const total = selectedSaleModes.length + 1;
+                        if (rateioMode === 'percent') {
+                          const pct = 100 / total;
+                          setSelectedSaleModes([...selectedSaleModes.map((m: any) => ({ ...m, percent: pct, value: formData.goal_value > 0 ? formData.goal_value * pct / 100 : 0 })), { id: mode.id, name: mode.name, value: formData.goal_value > 0 ? formData.goal_value * pct / 100 : 0, percent: pct }]);
+                          setSaleModePercentDisplayValues(prev => ({ ...prev, [mode.id]: formatPercent(pct) }));
+                        } else {
+                          const val = formData.goal_value > 0 ? formData.goal_value / total : 0;
+                          setSelectedSaleModes([...selectedSaleModes.map((m: any) => ({ ...m, value: val })), { id: mode.id, name: mode.name, value: val }]);
+                          setSaleModeDisplayValues(prev => ({ ...prev, [mode.id]: formatInputValue(val, formData.goal_unit) }));
                         }
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-3"
-                    >
-                      <option value="">+ Adicionar turno...</option>
-                      {filteredShiftsForForm
-                        .filter((shift: any) => !selectedShifts.find((ss: any) => ss.id === shift.id))
-                        .map((shift) => (
-                          <option key={shift.id} value={shift.id}>{shift.name}</option>
-                        ))}
+                      }
+                      e.target.value = '';
+                    }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-3">
+                      <option value="">+ Adicionar modo de venda...</option>
+                      {filteredSaleModesForForm.filter((m: any) => !selectedSaleModes.find((sm: any) => sm.id === m.id)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                     </select>
-
-                    {/* Lista de turnos selecionados com valores editáveis */}
-                    {selectedShifts.length > 0 && (
-                      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-60 overflow-y-auto">
-                        {selectedShifts.map((shift, index) => {
-                          const displayValue = shiftDisplayValues[shift.id] ?? formatInputValue(shift.value, formData.goal_unit);
-                          
-                          return (
-                          <div key={shift.id} className="flex items-center gap-2 p-3">
-                            <span className="flex-1 text-sm text-gray-700 truncate">{shift.name}</span>
-                            <input
-                              type="text"
-                              value={displayValue}
-                              onChange={(e) => {
-                                const rawValue = e.target.value;
-                                // Permite apenas números, vírgula e ponto
-                                const cleanInput = rawValue.replace(/[^\d.,]/g, '');
-                                
-                                // Formata enquanto digita
-                                const formatted = formatValueWhileTyping(cleanInput);
-                                setShiftDisplayValues(prev => ({ ...prev, [shift.id]: formatted }));
-                                
-                                // Atualiza o valor numérico
-                                const numericValue = parseFormattedValue(formatted, formData.goal_unit);
-                                const updated = [...selectedShifts];
-                                updated[index] = { ...shift, value: numericValue };
-                                setSelectedShifts(updated);
-                              }}
-                              onBlur={(e) => {
-                                const value = parseFormattedValue(e.target.value, formData.goal_unit);
-                                const updated = [...selectedShifts];
-                                updated[index] = { ...shift, value };
-                                setSelectedShifts(updated);
-                                setShiftDisplayValues(prev => ({ ...prev, [shift.id]: formatInputValue(value, formData.goal_unit) }));
-                              }}
-                              onFocus={(e) => {
-                                // Ao focar, mostra o valor formatado
-                                setShiftDisplayValues(prev => ({ ...prev, [shift.id]: formatInputValue(shift.value, formData.goal_unit) }));
-                              }}
-                              className="w-32 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-right bg-white"
-                            />
-                            <button
-                              onClick={() => {
-                                setSelectedShifts(selectedShifts.filter((ss: any) => ss.id !== shift.id));
-                                setShiftDisplayValues(prev => {
-                                  const newValues = { ...prev };
-                                  delete newValues[shift.id];
-                                  return newValues;
-                                });
-                              }}
-                              className="p-1 text-gray-400 hover:text-red-500"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                          );
-                        })}
+                    {selectedSaleModes.length > 1 && (
+                      <div className="space-y-2 mb-3">
+                        <label className="block text-sm font-medium text-gray-700">Tipo de rateio</label>
+                        <div className="flex rounded-lg border border-gray-300 overflow-hidden w-fit">
+                          <button type="button" onClick={() => { setRateioMode('value'); if (formData.goal_value > 0) setSelectedSaleModes(selectedSaleModes.map((m: any) => ({ ...m, value: formData.goal_value * ((m.percent ?? 0) / 100), percent: undefined }))); }} className={`px-4 py-2 text-sm font-medium ${rateioMode === 'value' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>R$</button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRateioMode('percent');
+                              if (formData.goal_value > 0) {
+                                setSelectedSaleModes(selectedSaleModes.map((m: any) => ({ ...m, percent: m.value > 0 ? (m.value / formData.goal_value) * 100 : 0 })));
+                                setSaleModePercentDisplayValues(Object.fromEntries(selectedSaleModes.map((m: any) => [m.id, formatPercent(m.value > 0 ? (m.value / formData.goal_value) * 100 : 0)])));
+                              } else {
+                                alert('Informe o valor total da meta');
+                              }
+                            }}
+                            className={`px-4 py-2 text-sm font-medium ${rateioMode === 'percent' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                          >
+                            %
+                          </button>
+                        </div>
                       </div>
                     )}
-
-                    {selectedShifts.length > 0 && (
-                      <div className="mt-3 p-3 bg-gray-50 rounded-lg flex items-center justify-between">
-                        <div className="text-sm text-gray-600">
-                          <span className="font-medium">{selectedShifts.length}</span> turno(s) selecionado(s)
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          Total: <span className="font-bold text-gray-900">{formatValue(selectedShifts.reduce((sum: number, s: any) => sum + s.value, 0), formData.goal_unit)}</span>
+                    {selectedSaleModes.length > 0 && (
+                      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-60 overflow-y-auto">
+                        {selectedSaleModes.map((mode, index) => (
+                          <div key={mode.id} className="flex items-center gap-2 p-3">
+                            <span className="flex-1 text-sm text-gray-700 truncate">{mode.name}</span>
+                            {rateioMode === 'percent' ? (
+                              <>
+                                <input type="text" value={saleModePercentDisplayValues[mode.id] ?? formatPercent(mode.percent ?? 0)} onChange={(e) => { const raw = e.target.value.replace(/[^\d,.]/g, ''); setSaleModePercentDisplayValues(prev => ({ ...prev, [mode.id]: raw })); const pct = parsePercent(raw); const up = [...selectedSaleModes]; up[index] = { ...mode, percent: pct, value: formData.goal_value > 0 ? formData.goal_value * pct / 100 : 0 }; setSelectedSaleModes(up); }} onBlur={() => setSaleModePercentDisplayValues(prev => ({ ...prev, [mode.id]: formatPercent(mode.percent ?? 0) }))} placeholder="0" className="w-20 px-2 py-1 text-sm border border-gray-300 rounded text-right" />
+                                <span className="text-sm text-gray-500">%</span>
+                                {formData.goal_value > 0 && <span className="text-xs text-gray-500">= {formatValue(formData.goal_value * ((mode.percent ?? 0) / 100), formData.goal_unit)}</span>}
+                              </>
+                            ) : (
+                              <input type="text" value={saleModeDisplayValues[mode.id] ?? formatInputValue(mode.value, formData.goal_unit)} onChange={(e) => { const raw = e.target.value.replace(/[^\d.,]/g, ''); const fmt = formatValueWhileTyping(raw); setSaleModeDisplayValues(prev => ({ ...prev, [mode.id]: fmt })); const up = [...selectedSaleModes]; up[index] = { ...mode, value: parseFormattedValue(fmt, formData.goal_unit) }; setSelectedSaleModes(up); }} onBlur={(e) => { const v = parseFormattedValue(e.target.value, formData.goal_unit); const up = [...selectedSaleModes]; up[index] = { ...mode, value: v }; setSelectedSaleModes(up); setSaleModeDisplayValues(prev => ({ ...prev, [mode.id]: formatInputValue(v, formData.goal_unit) })); }} className="w-32 px-2 py-1 text-sm border border-gray-300 rounded text-right" />
+                            )}
+                            <button onClick={() => { setSelectedSaleModes(selectedSaleModes.filter((sm: any) => sm.id !== mode.id)); setSaleModeDisplayValues(prev => { const n = { ...prev }; delete n[mode.id]; return n; }); setSaleModePercentDisplayValues(prev => { const n = { ...prev }; delete n[mode.id]; return n; }); }} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {selectedSaleModes.length > 0 && (
+                      <div className="mt-3 p-3 bg-gray-50 rounded-lg flex items-center justify-between flex-wrap gap-2">
+                        <div className="text-sm text-gray-600"><span className="font-medium">{selectedSaleModes.length}</span> modo(s)</div>
+                        <div className="flex gap-4 text-sm text-gray-600">
+                          {rateioMode === 'percent' && <span>Soma: <span className={selectedSaleModes.reduce((s, m) => s + (m.percent ?? 0), 0) > 100 ? 'text-red-600 font-bold' : 'font-bold text-gray-900'}>{selectedSaleModes.reduce((s, m) => s + (m.percent ?? 0), 0).toFixed(1)}%</span></span>}
+                          <span>Total: <span className="font-bold text-gray-900">{formatValue(selectedSaleModes.reduce((sum: number, m: any) => sum + (rateioMode === 'percent' && formData.goal_value > 0 ? formData.goal_value * ((m.percent ?? 0) / 100) : m.value), 0), formData.goal_unit)}</span></span>
                         </div>
                       </div>
                     )}
@@ -2089,8 +1727,141 @@ export default function MetasPage() {
                 </div>
               )}
 
-              {/* Turno único - para edição */}
-              {formData.goal_type === 'shift' && editingItem && (
+              {/* 3. Turno - rateio (sequência fixa: Empresa → Modo → Turno) */}
+              {modalMode === 'composite' && (
+                <div className="border-t border-gray-200 pt-4 space-y-4">
+                  <label className="block text-sm font-medium text-gray-700">3. Turno (rateio)</label>
+                  <p className="text-xs text-gray-500">Usa o Faturamento Empresa informado acima</p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Turnos</label>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          const availableShifts = filteredShiftsForForm.filter((shift: any) => !selectedShifts.find((ss: any) => ss.id === shift.id));
+                          if (availableShifts.length === 0) return;
+                          const totalShifts = selectedShifts.length + availableShifts.length;
+                          if (rateioMode === 'percent') {
+                            const percentPerShift = 100 / totalShifts;
+                            const updatedExisting = selectedShifts.map((shift: any) => ({ ...shift, percent: percentPerShift, value: formData.goal_value > 0 ? formData.goal_value * percentPerShift / 100 : 0 }));
+                            const newShifts = availableShifts.map((shift: any) => ({ id: shift.id, name: shift.name, value: formData.goal_value > 0 ? formData.goal_value * percentPerShift / 100 : 0, percent: percentPerShift }));
+                            setSelectedShifts([...updatedExisting, ...newShifts]);
+                            const newDisplay: Record<string, string> = {};
+                            [...updatedExisting, ...newShifts].forEach((s: any) => { newDisplay[s.id] = formatPercent(percentPerShift); });
+                            setShiftPercentDisplayValues(prev => ({ ...prev, ...newDisplay }));
+                          } else {
+                            const valuePerShift = formData.goal_value > 0 ? formData.goal_value / totalShifts : 0;
+                            const updatedExisting = selectedShifts.map((shift: any) => ({ ...shift, value: valuePerShift }));
+                            const newShifts = availableShifts.map((shift: any) => ({ id: shift.id, name: shift.name, value: valuePerShift }));
+                            setSelectedShifts([...updatedExisting, ...newShifts]);
+                            const newDisplayValues: Record<string, string> = {};
+                            [...updatedExisting, ...newShifts].forEach((s: any) => { newDisplayValues[s.id] = formatInputValue(valuePerShift, formData.goal_unit); });
+                            setShiftDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
+                          }
+                        }}
+                        className="text-sm"
+                      >
+                        <Plus size={16} className="mr-1" />Adicionar Todos
+                      </Button>
+                      {selectedShifts.length > 0 && (
+                        <>
+                          <Button variant="secondary" onClick={() => {
+                            if (selectedShifts.length > 0) {
+                              if (rateioMode === 'percent') {
+                                const percentPerShift = 100 / selectedShifts.length;
+                                setSelectedShifts(selectedShifts.map((shift: any) => ({ ...shift, percent: percentPerShift, value: formData.goal_value > 0 ? formData.goal_value * percentPerShift / 100 : 0 })));
+                                const newDisplay: Record<string, string> = {};
+                                selectedShifts.forEach((s: any) => { newDisplay[s.id] = formatPercent(percentPerShift); });
+                                setShiftPercentDisplayValues(newDisplay);
+                              } else if (formData.goal_value > 0) {
+                                const valuePerShift = formData.goal_value / selectedShifts.length;
+                                setSelectedShifts(selectedShifts.map((shift: any) => ({ ...shift, value: valuePerShift })));
+                                const newDisplayValues: Record<string, string> = {};
+                                selectedShifts.forEach((s: any) => { newDisplayValues[s.id] = formatInputValue(valuePerShift, formData.goal_unit); });
+                                setShiftDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
+                              }
+                            }
+                          }} className="text-sm"><Hash size={16} className="mr-1" />Recalcular</Button>
+                          <Button variant="secondary" onClick={() => setSelectedShifts([])} className="text-sm text-red-600 hover:text-red-700"><Trash2 size={16} className="mr-1" />Limpar</Button>
+                        </>
+                      )}
+                    </div>
+                    <select value="" onChange={(e) => {
+                      const shiftId = e.target.value;
+                      if (!shiftId) return;
+                      const shift = filteredShiftsForForm.find((s: any) => s.id === shiftId);
+                      if (shift && !selectedShifts.find((ss: any) => ss.id === shiftId)) {
+                        const totalShifts = selectedShifts.length + 1;
+                        if (rateioMode === 'percent') {
+                          const percentPerShift = 100 / totalShifts;
+                          const updatedExisting = selectedShifts.map((existing: any) => ({ ...existing, percent: percentPerShift, value: formData.goal_value > 0 ? formData.goal_value * percentPerShift / 100 : 0 }));
+                          const newShift = { id: shift.id, name: shift.name, value: formData.goal_value > 0 ? formData.goal_value * percentPerShift / 100 : 0, percent: percentPerShift };
+                          setSelectedShifts([...updatedExisting, newShift]);
+                          setShiftPercentDisplayValues(prev => ({ ...prev, [shift.id]: formatPercent(percentPerShift) }));
+                        } else {
+                          const valuePerShift = formData.goal_value > 0 ? formData.goal_value / totalShifts : 0;
+                          const updatedExisting = selectedShifts.map((existing: any) => ({ ...existing, value: valuePerShift }));
+                          const newShift = { id: shift.id, name: shift.name, value: valuePerShift };
+                          setSelectedShifts([...updatedExisting, newShift]);
+                          const newDisplayValues: Record<string, string> = {};
+                          [...updatedExisting, newShift].forEach((s: any) => { newDisplayValues[s.id] = formatInputValue(valuePerShift, formData.goal_unit); });
+                          setShiftDisplayValues(prev => ({ ...prev, ...newDisplayValues }));
+                        }
+                      }
+                    }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-3">
+                      <option value="">+ Adicionar turno...</option>
+                      {filteredShiftsForForm.filter((shift: any) => !selectedShifts.find((ss: any) => ss.id === shift.id)).map((shift) => <option key={shift.id} value={shift.id}>{shift.name}</option>)}
+                    </select>
+                    {selectedShifts.length > 1 && (
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700">Tipo de rateio</label>
+                        <div className="flex rounded-lg border border-gray-300 overflow-hidden w-fit">
+                          <button type="button" onClick={() => { setRateioMode('value'); if (formData.goal_value > 0) { setSelectedShifts(selectedShifts.map((s: any) => ({ ...s, value: formData.goal_value * ((s.percent ?? 0) / 100), percent: undefined }))); const newDisplay: Record<string, string> = {}; selectedShifts.forEach((s: any) => { newDisplay[s.id] = formatInputValue(formData.goal_value * ((s.percent ?? 0) / 100), formData.goal_unit); }); setShiftDisplayValues(newDisplay); } }} className={`px-4 py-2 text-sm font-medium ${rateioMode === 'value' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>R$</button>
+                          <button type="button" onClick={() => { setRateioMode('percent'); if (formData.goal_value > 0) { setSelectedShifts(selectedShifts.map((s: any) => ({ ...s, percent: s.value > 0 ? (s.value / formData.goal_value) * 100 : 0 }))); const newDisplay: Record<string, string> = {}; selectedShifts.forEach((s: any) => { const pct = s.value > 0 ? (s.value / formData.goal_value) * 100 : 0; newDisplay[s.id] = formatPercent(pct); }); setShiftPercentDisplayValues(newDisplay); } else { alert('Informe o valor total da meta antes de usar o modo porcentagem'); } }} className={`px-4 py-2 text-sm font-medium ${rateioMode === 'percent' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>%</button>
+                        </div>
+                        {rateioMode === 'percent' && (!formData.goal_value || formData.goal_value <= 0) && <p className="text-amber-600 text-sm">Preencha o valor total da meta para usar porcentagem</p>}
+                      </div>
+                    )}
+                    {selectedShifts.length > 0 && (
+                      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-60 overflow-y-auto">
+                        {selectedShifts.map((shift, index) => {
+                          const calculatedValue = rateioMode === 'percent' && formData.goal_value > 0 ? formData.goal_value * ((shift.percent ?? 0) / 100) : shift.value;
+                          const displayValue = rateioMode === 'percent' ? (shiftPercentDisplayValues[shift.id] ?? formatPercent(shift.percent ?? 0)) : (shiftDisplayValues[shift.id] ?? formatInputValue(shift.value, formData.goal_unit));
+                          return (
+                            <div key={shift.id} className="flex items-center gap-2 p-3">
+                              <span className="flex-1 text-sm text-gray-700 truncate">{shift.name}</span>
+                              {rateioMode === 'percent' ? (
+                                <>
+                                  <div className="flex items-center gap-1">
+                                    <input type="text" value={displayValue} onChange={(e) => { const raw = e.target.value.replace(/[^\d,.]/g, ''); setShiftPercentDisplayValues(prev => ({ ...prev, [shift.id]: raw })); const pct = parsePercent(raw); const updated = [...selectedShifts]; updated[index] = { ...shift, percent: pct, value: formData.goal_value > 0 ? formData.goal_value * pct / 100 : 0 }; setSelectedShifts(updated); }} onBlur={() => setShiftPercentDisplayValues(prev => ({ ...prev, [shift.id]: formatPercent(shift.percent ?? 0) }))} placeholder="0" className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-right bg-white" />
+                                    <span className="text-sm text-gray-500">%</span>
+                                  </div>
+                                  {formData.goal_value > 0 && <span className="text-xs text-gray-500 whitespace-nowrap">= {formatValue(calculatedValue, formData.goal_unit)}</span>}
+                                </>
+                              ) : (
+                                <input type="text" value={displayValue} onChange={(e) => { const rawValue = e.target.value.replace(/[^\d.,]/g, ''); const formatted = formatValueWhileTyping(rawValue); setShiftDisplayValues(prev => ({ ...prev, [shift.id]: formatted })); const numericValue = parseFormattedValue(formatted, formData.goal_unit); const updated = [...selectedShifts]; updated[index] = { ...shift, value: numericValue }; setSelectedShifts(updated); }} onBlur={(e) => { const value = parseFormattedValue(e.target.value, formData.goal_unit); const updated = [...selectedShifts]; updated[index] = { ...shift, value }; setSelectedShifts(updated); setShiftDisplayValues(prev => ({ ...prev, [shift.id]: formatInputValue(value, formData.goal_unit) })); }} onFocus={() => setShiftDisplayValues(prev => ({ ...prev, [shift.id]: formatInputValue(shift.value, formData.goal_unit) }))} className="w-32 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-right bg-white" />
+                              )}
+                              <button onClick={() => { setSelectedShifts(selectedShifts.filter((ss: any) => ss.id !== shift.id)); setShiftDisplayValues(prev => { const n = { ...prev }; delete n[shift.id]; return n; }); setShiftPercentDisplayValues(prev => { const n = { ...prev }; delete n[shift.id]; return n; }); }} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {selectedShifts.length > 0 && (
+                      <div className="mt-3 p-3 bg-gray-50 rounded-lg flex items-center justify-between flex-wrap gap-2">
+                        <div className="text-sm text-gray-600"><span className="font-medium">{selectedShifts.length}</span> turno(s) selecionado(s)</div>
+                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                          {rateioMode === 'percent' && <span>Soma: <span className={`font-bold ${selectedShifts.reduce((s, x) => s + (x.percent ?? 0), 0) > 100 ? 'text-red-600' : 'text-gray-900'}`}>{selectedShifts.reduce((s, x) => s + (x.percent ?? 0), 0).toFixed(1)}%</span></span>}
+                          <span>Total: <span className="font-bold text-gray-900">{formatValue(selectedShifts.reduce((sum: number, s: any) => sum + (rateioMode === 'percent' && formData.goal_value > 0 ? formData.goal_value * ((s.percent ?? 0) / 100) : s.value), 0), formData.goal_unit)}</span></span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Turno único (modal simples) */}
+              {modalMode === 'simple' && formData.goal_type === 'shift' && (
                 <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Turno *</label>
@@ -2129,7 +1900,7 @@ export default function MetasPage() {
                 Cancelar
               </Button>
               <Button onClick={handleSave} isLoading={saving}>
-                {editingItem ? 'Salvar' : 'Criar Meta'}
+                {modalMode === 'composite' ? 'Criar Meta Composta' : (editingItem ? 'Salvar' : 'Criar Meta')}
               </Button>
             </div>
           </div>

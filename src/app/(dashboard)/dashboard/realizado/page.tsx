@@ -247,11 +247,33 @@ export default function DashboardRealizadoMensalPage() {
     const company = realizadoData.companies.find(c => c.id === selectedCompanyId);
     if (!company) return;
 
-    // Calcular proporção para filtrar os dados
+    // Usar dados REAIS da tabela dailyRevenueByCompany em vez de proporção
+    const companyDailyRevenue = realizadoData.dailyRevenueByCompany
+      ? realizadoData.dailyRevenue.map(d => {
+          const dayData = realizadoData.dailyRevenueByCompany?.find(dbc => dbc.date === d.date);
+          const companyData = dayData?.companies.find(c => c.companyId === selectedCompanyId);
+          return {
+            ...d,
+            revenue: companyData?.revenue || 0,
+            transactions: companyData ? 1 : 0
+          };
+        })
+      : realizadoData.dailyRevenue.map(d => ({ ...d, revenue: 0, transactions: 0 }));
+
+    // Calcular best/worst day da empresa
+    const daysWithRevenue = companyDailyRevenue.filter(d => d.revenue > 0);
+    const bestDay = daysWithRevenue.length > 0
+      ? daysWithRevenue.reduce((best, d) => d.revenue > best.revenue ? d : best)
+      : { date: '', revenue: 0 };
+    const worstDay = daysWithRevenue.length > 0
+      ? daysWithRevenue.reduce((worst, d) => d.revenue < worst.revenue ? d : worst)
+      : { date: '', revenue: 0 };
+
+    // Calcular proporção para saleMode e shift (que não temos por empresa)
     const ratio = realizadoData.summary.totalRevenue > 0 
       ? company.revenue / realizadoData.summary.totalRevenue 
       : 0;
-    
+
     setFilteredData({
       ...realizadoData,
       summary: {
@@ -259,13 +281,11 @@ export default function DashboardRealizadoMensalPage() {
         totalRevenue: company.revenue,
         totalTransactions: company.transactions,
         averageTicket: company.averageTicket,
-        comparisonLastMonth: company.trend
+        comparisonLastMonth: company.trend,
+        bestDay: { date: bestDay.date, revenue: Math.round(bestDay.revenue * 100) / 100 },
+        worstDay: { date: worstDay.date, revenue: Math.round(worstDay.revenue * 100) / 100 }
       },
-      dailyRevenue: realizadoData.dailyRevenue.map(d => ({
-        ...d,
-        revenue: Math.round(d.revenue * ratio * 100) / 100,
-        transactions: Math.floor(d.transactions * ratio)
-      })),
+      dailyRevenue: companyDailyRevenue,
       saleModeRevenue: realizadoData.saleModeRevenue.map(s => ({
         ...s,
         revenue: Math.round(s.revenue * ratio * 100) / 100,

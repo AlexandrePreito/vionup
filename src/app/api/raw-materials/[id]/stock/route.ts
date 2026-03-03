@@ -38,7 +38,7 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { external_stock_id } = body;
+    const { external_stock_id, peso_unitario } = body;
 
     if (!external_stock_id) {
       return NextResponse.json({ error: 'external_stock_id é obrigatório' }, { status: 400 });
@@ -66,12 +66,15 @@ export async function POST(
       return NextResponse.json({ error: 'Estoque não encontrado' }, { status: 404 });
     }
 
-    // Inserir vínculo
+    // Inserir vínculo com peso unitário
+    const pesoUnit = peso_unitario ?? 1;
+
     const { data, error } = await supabaseAdmin
       .from('raw_material_stock')
       .insert({
         raw_material_id: id,
-        external_stock_id
+        external_stock_id,
+        peso_unitario: pesoUnit
       })
       .select(`
         *,
@@ -85,6 +88,40 @@ export async function POST(
         return NextResponse.json({ error: 'Este estoque já está vinculado a esta matéria-prima' }, { status: 409 });
       }
       console.error('Erro ao vincular estoque:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ stockLink: data });
+  } catch (error) {
+    console.error('Erro na API:', error);
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
+  }
+}
+
+// PUT - Atualizar peso unitário do vínculo
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+    const { link_id, peso_unitario } = body;
+
+    if (!link_id) {
+      return NextResponse.json({ error: 'link_id é obrigatório' }, { status: 400 });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('raw_material_stock')
+      .update({ peso_unitario: peso_unitario ?? 1 })
+      .eq('id', link_id)
+      .eq('raw_material_id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao atualizar peso unitário:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 

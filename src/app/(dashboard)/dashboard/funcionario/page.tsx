@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { 
   User, 
   Loader2, 
+  RefreshCw,
   Target,
   TrendingUp,
   Award,
@@ -109,6 +110,7 @@ interface DashboardData {
   };
   products: ProductGoal[];
   dailyRevenue?: { date: string; day: number; dayOfWeek: string; revenue: number; transactions: number }[];
+  monthlyRevenue?: { month: number; year: number; monthLabel: string; revenue: number }[];
   summary: {
     totalProductGoals: number;
     productsAchieved: number;
@@ -435,12 +437,20 @@ export default function DashboardFuncionarioPage() {
           setResearchData(null);
         }
       } else {
-        console.error('❌ Erro nas requisições:', {
-          goalResStatus: goalRes.status,
-          goalResOk: goalRes.ok,
-          responseResStatus: responseRes.status,
-          responseResOk: responseRes.ok
-        });
+        // Capturar corpo das respostas de erro para debug (só ler body das que falharam)
+        const errDetails: Record<string, unknown> = {
+          goalRes: { status: goalRes.status, ok: goalRes.ok },
+          responseRes: { status: responseRes.status, ok: responseRes.ok }
+        };
+        try {
+          if (!goalRes.ok) {
+            errDetails.goalErrorBody = await goalRes.json().catch(() => goalRes.statusText);
+          }
+          if (!responseRes.ok) {
+            errDetails.responseErrorBody = await responseRes.json().catch(() => responseRes.statusText);
+          }
+        } catch (_) { /* ignorar */ }
+        console.error('❌ Erro nas requisições:', JSON.stringify(errDetails, null, 2));
         // Erro na requisição - não mostrar o card
         setResearchData(null);
       }
@@ -452,16 +462,15 @@ export default function DashboardFuncionarioPage() {
     }
   };
 
-  // Buscar automaticamente quando funcionário ou período mudar
+  const handleRefresh = async () => {
+    if (!selectedEmployee || !selectedGroupId) return;
+    await Promise.all([fetchDashboard(), fetchResearchData()]);
+  };
+
+  // Ao trocar filtros, limpa os cards e aguarda clique em "atualizar"
   useEffect(() => {
-    if (selectedEmployee && selectedGroupId) {
-      fetchDashboard();
-      fetchResearchData();
-    } else {
-      setDashboardData(null);
-      setResearchData(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setDashboardData(null);
+    setResearchData(null);
   }, [selectedEmployee, selectedYear, selectedMonth, selectedGroupId]);
 
   // Referência para controlar se confetti já foi mostrado para este funcionário/período
@@ -740,6 +749,20 @@ export default function DashboardFuncionarioPage() {
               <option key={y} value={y}>{y}</option>
             ))}
           </select>
+        </div>
+
+        {/* Atualizar */}
+        <div className="w-full sm:w-auto">
+          <label className="block text-sm font-medium text-gray-700 mb-1 opacity-0">Atualizar</label>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={!selectedEmployee || !selectedGroupId || loading || loadingResearch}
+            title="Atualizar"
+            className="w-full sm:w-10 h-10 inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-4 h-4 ${(loading || loadingResearch) ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
 
@@ -1243,56 +1266,130 @@ export default function DashboardFuncionarioPage() {
             </MobileExpandableCard>
           )}
 
-          {/* Faturamento Dia a Dia - gráfico vendas diárias */}
-          {dashboardData.dailyRevenue && dashboardData.dailyRevenue.length > 0 && (
-            <MobileExpandableCard
-              title="Vendas Diárias"
-              subtitle={`${MONTHS[dashboardData.period.month - 1]?.label} ${dashboardData.period.year} • ${dashboardData.employee.name}`}
-            >
-              <div className="h-80 w-full min-h-[240px]">
-                <ResponsiveContainer width="100%" height="100%" minHeight={240} minWidth={0}>
-                  <BarChart data={dashboardData.dailyRevenue}>
-                    <defs>
-                      <linearGradient id="colorRevenueGradientFunc" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/>
-                        <stop offset="100%" stopColor="#93c5fd" stopOpacity={1}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                    <XAxis
-                      dataKey="day"
-                      stroke="#9ca3af"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      stroke="#9ca3af"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(value) => formatCompact(value)}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Bar
-                      dataKey="revenue"
-                      name="Faturamento"
-                      fill="url(#colorRevenueGradientFunc)"
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={40}
-                    >
-                      <LabelList
-                        dataKey="revenue"
-                        position="top"
-                        formatter={(value: number) => formatCompact(value)}
-                        style={{ fontSize: '10px', fill: '#6b7280' }}
-                      />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </MobileExpandableCard>
-          )}
+          {/* Gráficos lado a lado: Vendas Diárias + Faturamento Mensal */}
+          {(dashboardData.dailyRevenue?.length || dashboardData.monthlyRevenue?.length) ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Faturamento Dia a Dia - gráfico vendas diárias */}
+              {dashboardData.dailyRevenue && dashboardData.dailyRevenue.length > 0 && (
+                <MobileExpandableCard
+                  title="Vendas Diárias"
+                  subtitle={`${MONTHS[dashboardData.period.month - 1]?.label} ${dashboardData.period.year} • ${dashboardData.employee.name}`}
+                >
+                  <div className="h-80 w-full min-h-[240px]">
+                    <ResponsiveContainer width="100%" height="100%" minHeight={240} minWidth={0}>
+                      <BarChart data={dashboardData.dailyRevenue}>
+                        <defs>
+                          <linearGradient id="colorRevenueGradientFunc" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/>
+                            <stop offset="100%" stopColor="#93c5fd" stopOpacity={1}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                        <XAxis
+                          dataKey="day"
+                          stroke="#9ca3af"
+                          fontSize={12}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          stroke="#9ca3af"
+                          fontSize={12}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(value) => formatCompact(value)}
+                        />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Bar
+                          dataKey="revenue"
+                          name="Faturamento"
+                          fill="url(#colorRevenueGradientFunc)"
+                          radius={[4, 4, 0, 0]}
+                          maxBarSize={40}
+                        >
+                          <LabelList
+                            dataKey="revenue"
+                            position="top"
+                            formatter={(value: number) => formatCompact(value)}
+                            style={{ fontSize: '10px', fill: '#6b7280' }}
+                          />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </MobileExpandableCard>
+              )}
+
+              {/* Faturamento Mensal - gráfico evolução mensal */}
+              {dashboardData.monthlyRevenue && dashboardData.monthlyRevenue.length > 0 && (
+                <MobileExpandableCard
+                  title="Faturamento Mensal"
+                  subtitle={`Últimos 12 meses • ${dashboardData.employee.name}`}
+                >
+                  <div className="h-80 w-full min-h-[240px]">
+                    <ResponsiveContainer width="100%" height="100%" minHeight={240} minWidth={0}>
+                      <BarChart data={dashboardData.monthlyRevenue}>
+                        <defs>
+                          <linearGradient id="colorMonthlyGradientFunc" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#8b5cf6" stopOpacity={1}/>
+                            <stop offset="100%" stopColor="#c4b5fd" stopOpacity={1}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                        <XAxis
+                          dataKey="monthLabel"
+                          stroke="#9ca3af"
+                          fontSize={12}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          stroke="#9ca3af"
+                          fontSize={12}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(value) => formatCompact(value)}
+                        />
+                        <Tooltip
+                          content={({ active, payload, label }: any) => {
+                            if (active && payload && payload.length) {
+                              return (
+                                <div className="bg-white/95 backdrop-blur-sm p-4 border border-gray-200 rounded-xl shadow-xl">
+                                  <p className="font-semibold text-gray-900 mb-2">{label}</p>
+                                  {payload.map((entry: any, index: number) => (
+                                    <p key={index} className="text-sm flex items-center gap-2">
+                                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }}></span>
+                                      <span className="text-gray-600">{entry.name}:</span>
+                                      <span className="font-medium text-gray-900">{formatCurrency(entry.value)}</span>
+                                    </p>
+                                  ))}
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Bar
+                          dataKey="revenue"
+                          name="Faturamento"
+                          fill="url(#colorMonthlyGradientFunc)"
+                          radius={[4, 4, 0, 0]}
+                          maxBarSize={50}
+                        >
+                          <LabelList
+                            dataKey="revenue"
+                            position="top"
+                            formatter={(value: number) => formatCompact(value)}
+                            style={{ fontSize: '10px', fill: '#6b7280' }}
+                          />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </MobileExpandableCard>
+              )}
+            </div>
+          ) : null}
 
           {/* Sem metas de produtos, mas tem meta de faturamento */}
           {dashboardData.products.length === 0 && dashboardData.revenue.goal > 0 && (

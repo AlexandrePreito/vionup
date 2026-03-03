@@ -582,6 +582,7 @@ export interface RawMaterialStock {
   id: string;
   raw_material_id: string;
   external_stock_id: string;
+  peso_unitario?: number; // Peso em kg de cada unidade/porção. Ex: 0.6 para 600g
   created_at: string;
   updated_at: string;
   external_stock?: ExternalStock;

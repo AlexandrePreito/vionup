@@ -486,6 +486,19 @@ export default function PowerBISincronizacaoPage() {
 
       if (!response.ok) {
         const error = await response.json();
+        // 409 = já existe sync em andamento — oferecer cancelar e iniciar nova
+        if (response.status === 409 && error.existing_queue_id) {
+          const cancelar = window.confirm(
+            'Já existe uma sincronização em andamento para esta configuração.\n\nDeseja cancelá-la e iniciar uma nova?'
+          );
+          if (cancelar) {
+            await handleCancelSync(error.existing_queue_id);
+            await new Promise(r => setTimeout(r, 500));
+            return handleSync(config, forceFullSync, optionalEndDate, optionalStartDate);
+          }
+          setSyncingEntity(null);
+          return;
+        }
         throw new Error(error.error || 'Erro ao adicionar à fila');
       }
 
@@ -628,6 +641,25 @@ export default function PowerBISincronizacaoPage() {
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => `HTTP ${response.status}`);
+          // Se a API retornou day_error (ex: fetch failed no Power BI), tratar como dia com erro e continuar
+          try {
+            const errBody = JSON.parse(errorText);
+            if (errBody.status === 'day_error') {
+              const result = { ...errBody, has_more: true };
+              dayErrorsRef.current++;
+              console.warn(`⚠️ Erro no dia: ${result.error}`);
+              if (result.has_more && !abortRef.current) {
+                processTimeoutRef.current = setTimeout(processLoop, 300);
+              } else {
+                isProcessingRef.current = false;
+                setSyncingEntity(null);
+                setSyncProgress(null);
+                await fetchQueue();
+                await fetchConfigs(selectedConnection);
+              }
+              return;
+            }
+          } catch (_) { /* não é JSON válido */ }
           throw new Error(errorText);
         }
 

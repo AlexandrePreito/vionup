@@ -1,337 +1,284 @@
-# Documentação do Sistema Meta10
+# Documentação do Sistema Vion Up!
 
-Visão geral da estrutura do projeto **meta10** (Next.js 16, App Router), com a localização das telas e das APIs.
-
----
-
-## 1. Visão geral
-
-- **Stack:** Next.js 16, React 19, Supabase (auth + banco), Tailwind CSS
-- **Roteamento:** App Router (`src/app`)
-- **Telas autenticadas:** Grupo de rotas `(dashboard)` com layout compartilhado
-- **APIs:** Route Handlers em `src/app/api/**/route.ts`
+Sistema de gestão empresarial com foco em metas, previsões, compras e análise de dados. Esta documentação aborda a **sincronização de dados** e os **dashboards**.
 
 ---
 
-## 2. Estrutura principal de pastas
+## Índice
+
+1. [Visão Geral](#1-visão-geral)
+2. [Sincronização Power BI](#2-sincronização-power-bi)
+3. [Dashboards](#3-dashboards)
+4. [Fluxo de Dados](#4-fluxo-de-dados)
+5. [Tabelas e Mapeamentos](#5-tabelas-e-mapeamentos)
+
+---
+
+## 1. Visão Geral
+
+O sistema consome dados do **Power BI** via sincronização e os utiliza em diversos **dashboards** para análise de faturamento, metas e projeções.
+
+### Arquitetura de Dados
 
 ```
-meta10/
-├── src/
-│   ├── app/                    # Rotas (telas + APIs)
-│   │   ├── (dashboard)/        # Telas do dashboard (layout com menu)
-│   │   ├── api/                # Todas as APIs (Route Handlers)
-│   │   ├── login/              # Tela de login
-│   │   ├── nps/[hash]/         # Página pública NPS (por link)
-│   │   ├── layout.tsx          # Layout raiz
-│   │   └── page.tsx            # Página inicial
-│   ├── components/             # Componentes reutilizáveis
-│   ├── hooks/                  # Hooks (ex: useGroupFilter)
-│   ├── lib/                    # Utilitários, Supabase, etc.
-│   └── types/                  # Tipos TypeScript
-├── docs/                       # Documentação (este arquivo)
-├── scripts/                    # Scripts SQL e utilitários
-└── package.json
+┌─────────────────┐     Sincronização      ┌──────────────────┐     APIs      ┌─────────────────┐
+│   Power BI      │ ──────────────────────► │  Supabase        │ ─────────────► │  Dashboards     │
+│   (Datasets)    │   external_sales        │  external_*      │  /api/        │  (Frontend)     │
+│                 │   external_cash_flow    │  company_        │  dashboard/*  │                 │
+│                 │   external_products    │  mappings        │               │                 │
+└─────────────────┘                         └──────────────────┘               └─────────────────┘
 ```
 
 ---
 
-## 3. Onde ficam as telas (páginas)
+## 2. Sincronização Power BI
 
-Todas as telas são arquivos **`page.tsx`** dentro de `src/app`. A URL segue o caminho da pasta.
+### 2.1 Visão Geral
 
-### 3.1 Layout e entrada
+A sincronização importa dados de datasets do Power BI para o Supabase. Os dados são armazenados em tabelas `external_*` e vinculados às entidades internas via mapeamentos (`company_mappings`, `employee_mappings`, etc.).
 
-| Caminho no projeto | URL | Descrição |
-|--------------------|-----|-----------|
-| `src/app/page.tsx` | `/` | Página inicial |
-| `src/app/login/page.tsx` | `/login` | Login |
-| `src/app/(dashboard)/layout.tsx` | — | Layout do dashboard (sidebar/menu) |
+### 2.2 Entidades Sincronizadas
 
-### 3.2 Dashboard e realização
+| Entidade | Tabela Destino | Incremental | Descrição |
+|----------|----------------|-------------|-----------|
+| Empresas | `external_companies` | Não | Filiais/empresas do Power BI |
+| Funcionários | `external_employees` | Não | Vendedores/atendentes |
+| Produtos | `external_products` | Não | Produtos de venda |
+| Vendas | `external_sales` | Sim | Itens de venda (linha a linha) |
+| Caixa | `external_cash_flow` | Sim | Movimentações de caixa |
+| Estoque | `external_stock` | Não | Estoque por produto/empresa |
+| Categorias | `external_categories` | Não | Categorias de produtos |
 
-| Pasta | URL | Descrição |
-|-------|-----|-----------|
-| `(dashboard)/dashboard/funcionario/page.tsx` | `/dashboard/funcionario` | Dashboard por funcionário |
-| `(dashboard)/dashboard/equipe/page.tsx` | `/dashboard/equipe` | Dashboard equipe |
-| `(dashboard)/dashboard/empresa/page.tsx` | `/dashboard/empresa` | Dashboard por empresa (metas faturamento, turnos, qualidade, tendência) |
-| `(dashboard)/dashboard/empresas/page.tsx` | `/dashboard/empresas` | Lista empresas |
-| `(dashboard)/dashboard/realizado/page.tsx` | `/dashboard/realizado` | Realizado |
-| `(dashboard)/dashboard/realizado-mes/page.tsx` | `/dashboard/realizado-mes` | Realizado do mês |
-| `(dashboard)/dashboard/previsao/page.tsx` | `/dashboard/previsao` | Previsão de vendas (cenários Otimista/Realista/Pessimista, meta da empresa, salvar projeção, acompanhamento vs realizado) |
-| `(dashboard)/dashboard-financeiro/page.tsx` | `/dashboard-financeiro` | Dashboard financeiro (metas por categoria) |
-| `(dashboard)/dashboard/importar/page.tsx` | `/dashboard/importar` | Importar |
-| `(dashboard)/dashboard/nps/page.tsx` | `/dashboard/nps` | NPS (dashboard) |
-| `(dashboard)/dashboard/nps_interno/page.tsx` | `/dashboard/nps_interno` | NPS interno |
+### 2.3 Modos de Sincronização
 
-### 3.3 Metas
+- **Incremental (🟢):** Atualiza apenas os últimos N dias. Usa UPSERT. Não deleta histórico.
+- **Completa (🔵):** Recarrega período inteiro. DELETE + INSERT. Garante alinhamento 100% com Power BI.
+- **Inicial (🟡):** Primeira sincronização da entidade.
 
-| Pasta | URL | Descrição |
-|-------|-----|-----------|
-| `(dashboard)/metas/page.tsx` | `/metas` | Metas (geral, faturamento empresa/turno/modo) |
-| `(dashboard)/metas/produtos/page.tsx` | `/metas/produtos` | Metas de produtos |
-| `(dashboard)/metas/pesquisas/page.tsx` | `/metas/pesquisas` | Metas de pesquisas |
-| `(dashboard)/metas/financeiro/page.tsx` | `/metas/financeiro` | Metas financeiras (entradas/saídas por categoria) |
-| `(dashboard)/metas/qualidade/page.tsx` | `/metas/qualidade` | Metas de qualidade |
-| `(dashboard)/metas/qualidade/realizado/page.tsx` | `/metas/qualidade/realizado` | Realizado qualidade |
-| `(dashboard)/metas/qualidade/categorias/page.tsx` | `/metas/qualidade/categorias` | Categorias qualidade |
+### 2.4 Fluxo de Sincronização
 
-### 3.4 Cadastros
+1. **Usuário inicia sync** → Frontend chama `POST /api/powerbi/sync-queue`
+2. **Item na fila** → Registro em `sync_queue` (status: `pending`)
+3. **Processamento** → `POST /api/powerbi/sync-queue/process` processa 1 dia por vez
+4. **Token Power BI** → Cache em memória (50 min)
+5. **Query DAX** → Executada no Power BI com filtro de data
+6. **Transformação** → Mapeamento de campos conforme `field_mapping`
+7. **Deduplicação** → Por `external_id` (único por grupo)
+8. **Upsert** → Salva em lotes de ~200 registros
 
-| Pasta | URL | Descrição |
-|-------|-----|-----------|
-| `(dashboard)/cadastros/produtos/page.tsx` | `/cadastros/produtos` | Produtos |
-| `(dashboard)/cadastros/categorias/page.tsx` | `/cadastros/categorias` | Categorias |
-| `(dashboard)/cadastros/funcionarios/page.tsx` | `/cadastros/funcionarios` | Funcionários |
-| `(dashboard)/cadastros/responsaveis/page.tsx` | `/cadastros/responsaveis` | Responsáveis (metas financeiras) |
-| `(dashboard)/cadastros/turnos/page.tsx` | `/cadastros/turnos` | Turnos |
-| `(dashboard)/cadastros/modo-venda/page.tsx` | `/cadastros/modo-venda` | Modo de venda |
+### 2.5 Identificadores Únicos (external_id)
 
-### 3.5 Conciliação
+O `external_id` deve ser único por `company_group_id`. Para evitar colisões entre filiais:
 
-| Pasta | URL | Descrição |
-|-------|-----|-----------|
-| `(dashboard)/conciliacao/produtos/page.tsx` | `/conciliacao/produtos` | Conciliação produtos |
-| `(dashboard)/conciliacao/categorias/page.tsx` | `/conciliacao/categorias` | Conciliação categorias |
-| `(dashboard)/conciliacao/empresas/page.tsx` | `/conciliacao/empresas` | Conciliação empresas |
-| `(dashboard)/conciliacao/funcionarios/page.tsx` | `/conciliacao/funcionarios` | Conciliação funcionários |
+- **Cash Flow:** `idCaixa-empresa` (ex: `276366-03`, `276366-04`)
+- **Sales:** Geralmente `venda_id` ou combinação de campos
 
-### 3.6 Compras / Matérias-primas
+### 2.6 Configuração
 
-| Pasta | URL | Descrição |
-|-------|-----|-----------|
-| `(dashboard)/compras/materias-primas/page.tsx` | `/compras/materias-primas` | Matérias-primas |
-| `(dashboard)/compras/materias-primas/conciliacao/page.tsx` | `/compras/materias-primas/conciliacao` | Conciliação MP |
-| `(dashboard)/compras/materias-primas/conciliacao-estoque/page.tsx` | `/compras/materias-primas/conciliacao-estoque` | Conciliação estoque |
-| `(dashboard)/compras/projecao-mp/page.tsx` | `/compras/projecao-mp` | Projeção MP |
-| `(dashboard)/compras/projecao-revenda/page.tsx` | `/compras/projecao-revenda` | Projeção revenda |
+- **Conexões:** `/powerbi/conexoes` — tenant_id, client_id, client_secret, workspace_id
+- **Configs:** `/powerbi/sincronizacao` — dataset, tabela, query DAX, mapeamento de campos
+- **Campo de data:** Para entidades incrementais (ex: `dt_contabil`)
+- **Dias incremental:** Quantos dias sincronizar no modo incremental
 
-### 3.7 NPS
+### 2.7 APIs de Sincronização
 
-| Pasta | URL | Descrição |
-|-------|-----|-----------|
-| `(dashboard)/nps/page.tsx` | `/nps` | NPS (geral) |
-| `(dashboard)/nps/respostas/page.tsx` | `/nps/respostas` | Respostas NPS |
-| `(dashboard)/nps/links/page.tsx` | `/nps/links` | Links NPS |
-| `(dashboard)/nps/perguntas/page.tsx` | `/nps/perguntas` | Perguntas |
-| `(dashboard)/nps/pesquisas/page.tsx` | `/nps/pesquisas` | Pesquisas |
-| `(dashboard)/nps/configuracoes/page.tsx` | `/nps/configuracoes` | Configurações NPS |
-| `app/nps/[hash]/page.tsx` | `/nps/[hash]` | Página pública da pesquisa (por link) |
-
-### 3.8 Power BI e integrações
-
-| Pasta | URL | Descrição |
-|-------|-----|-----------|
-| `(dashboard)/powerbi/sincronizacao/page.tsx` | `/powerbi/sincronizacao` | Sincronização Power BI |
-| `(dashboard)/powerbi/conexoes/page.tsx` | `/powerbi/conexoes` | Conexões Power BI |
-
-### 3.9 Configuração e administração
-
-| Pasta | URL | Descrição |
-|-------|-----|-----------|
-| `(dashboard)/grupos/page.tsx` | `/grupos` | Grupos |
-| `(dashboard)/empresas/page.tsx` | `/empresas` | Empresas |
-| `(dashboard)/usuarios/page.tsx` | `/usuarios` | Usuários |
-| `(dashboard)/usuarios/[id]/permissoes/page.tsx` | `/usuarios/[id]/permissoes` | Permissões do usuário |
-| `(dashboard)/debug/tereza/page.tsx` | `/debug/tereza` | Debug (Tereza) |
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/api/powerbi/sync-queue` | POST | Adiciona item à fila |
+| `/api/powerbi/sync-queue` | GET | Lista itens da fila |
+| `/api/powerbi/sync-queue/process` | POST | Processa item da fila |
+| `/api/powerbi/cron/process-queue` | GET | Processa fila (cron/Vercel) |
 
 ---
 
-## 4. Onde ficam as APIs
+## 3. Dashboards
 
-Todas as APIs são **Route Handlers** em arquivos **`route.ts`** dentro de `src/app/api`. O método HTTP (GET, POST, PUT, PATCH, DELETE) é o que define o handler (export `GET`, `POST`, etc.).
+### 3.1 Dashboard Realizado (Mensal)
 
-### 4.1 Dashboard
+**Rota:** `/dashboard/realizado`  
+**API:** `GET /api/dashboard/realizado`
 
-| Arquivo | Rota da API | Uso principal |
-|---------|-------------|----------------|
-| `api/dashboard/employee/route.ts` | `GET /api/dashboard/employee` | Dados do dashboard funcionário |
-| `api/dashboard/team/route.ts` | `GET /api/dashboard/team` | Dados do dashboard equipe |
-| `api/dashboard/company/route.ts` | `GET /api/dashboard/company` | Dashboard empresa (meta faturamento, turnos, modos, tendência) |
-| `api/dashboard/companies/route.ts` | `GET /api/dashboard/companies` | Lista empresas (dashboard) |
-| `api/dashboard/realizado/route.ts` | `GET /api/dashboard/realizado` | Realizado |
-| `api/dashboard/realizado-mes/route.ts` | `GET /api/dashboard/realizado-mes` | Realizado do mês |
-| `api/dashboard/previsao/route.ts` | `GET /api/dashboard/previsao` | Previsão (cenários, gráficos, projeção dia a dia) |
-| `api/dashboard/nps/route.ts` | (se existir) | NPS dashboard |
-| `api/dashboard/refresh-view/route.ts` | `POST /api/dashboard/refresh-view` | Atualizar view materializada |
-| `api/dashboard-financeiro/route.ts` | `GET /api/dashboard-financeiro` | Dashboard financeiro (metas por categoria) |
-| `api/saved-projections/route.ts` | `GET/POST /api/saved-projections` | Listar e salvar projeções de previsão |
-| `api/saved-projections/[id]/route.ts` | `DELETE /api/saved-projections/[id]` | Excluir (soft) projeção salva |
+**Fonte de dados:** `external_cash_flow` (fluxo de caixa)
 
-### 4.2 Metas e metas de pesquisa
+**Filtros:** `group_id`, `year`, `month`, `company_id` (opcional)
 
-| Arquivo | Rota da API | Uso principal |
-|---------|-------------|----------------|
-| `api/goals/route.ts` | `GET/POST /api/goals` | Metas (listar/criar) |
-| `api/goals/[id]/route.ts` | `GET/PUT/DELETE /api/goals/[id]` | Meta por ID |
-| `api/goals/template/route.ts` | `GET /api/goals/template` | Template de metas |
-| `api/goals/products/route.ts` | `GET /api/goals/products` | Metas de produtos |
-| `api/goals/import/route.ts` | `POST /api/goals/import` | Importar metas |
-| `api/goals/duplicate/route.ts` | `POST /api/goals/duplicate` | Duplicar metas |
-| `api/research-goals/route.ts` | `GET /api/research-goals` | Metas de pesquisa |
-| `api/financial-goals/route.ts` | `GET/POST /api/financial-goals` | Metas financeiras (entradas/saídas) |
-| `api/financial-goals/[id]/route.ts` | `GET/PUT/DELETE /api/financial-goals/[id]` | Meta financeira por ID |
-| `api/financial-responsibles/route.ts` | `GET/POST /api/financial-responsibles` | Responsáveis (metas financeiras) |
-| `api/financial-responsibles/[id]/route.ts` | `GET/PUT/DELETE /api/financial-responsibles/[id]` | Responsável por ID |
+**Funcionalidades:**
+- Faturamento total e por empresa
+- Comparação MoM (mês anterior) e YoY (ano anterior)
+- Gráfico de faturamento diário
+- Melhor e pior dia do mês
+- Faturamento por modo de venda e turno (Almoço/Jantar)
+- Tabela dia a dia por empresa (`dailyRevenueByCompany`)
 
-### 4.3 Metas de qualidade
+**Mapeamento empresa:** `company_mappings` → `external_companies` (external_id como "01", "02", etc.)
 
-| Arquivo | Rota da API | Uso principal |
-|---------|-------------|----------------|
-| `api/quality-goals/route.ts` | `GET/POST /api/quality-goals` | Metas qualidade |
-| `api/quality-goals/[id]/route.ts` | `GET/PUT/DELETE /api/quality-goals/[id]` | Meta qualidade por ID |
-| `api/quality-categories/route.ts` | `GET/POST /api/quality-categories` | Categorias qualidade |
-| `api/quality-categories/[id]/route.ts` | `GET/PUT/DELETE /api/quality-categories/[id]` | Categoria por ID |
-| `api/quality-results/route.ts` | `GET/POST /api/quality-results` | Resultados qualidade |
-| `api/quality-results/[id]/route.ts` | `GET/PUT/DELETE /api/quality-results/[id]` | Resultado por ID |
-
-### 4.4 Cadastros (CRUD)
-
-| Arquivo | Rota da API | Uso principal |
-|---------|-------------|----------------|
-| `api/companies/route.ts` | `GET/POST /api/companies` | Empresas |
-| `api/companies/[id]/route.ts` | `GET/PUT/DELETE /api/companies/[id]` | Empresa por ID |
-| `api/employees/route.ts` | `GET/POST /api/employees` | Funcionários |
-| `api/employees/[id]/route.ts` | `GET/PUT/DELETE /api/employees/[id]` | Funcionário por ID |
-| `api/products/route.ts` | `GET/POST /api/products` | Produtos |
-| `api/products/[id]/route.ts` | `GET/PUT/DELETE /api/products/[id]` | Produto por ID |
-| `api/categories/route.ts` | `GET/POST /api/categories` | Categorias |
-| `api/categories/[id]/route.ts` | `GET/PUT/DELETE /api/categories/[id]` | Categoria por ID |
-| `api/groups/route.ts` | `GET/POST /api/groups` | Grupos |
-| `api/groups/[id]/route.ts` | `GET/PUT/DELETE /api/groups/[id]` | Grupo por ID |
-| `api/shifts/route.ts` | `GET/POST /api/shifts` | Turnos |
-| `api/shifts/[id]/route.ts` | `GET/PUT/DELETE /api/shifts/[id]` | Turno por ID |
-| `api/sale-modes/route.ts` | `GET/POST /api/sale-modes` | Modos de venda |
-| `api/sale-modes/[id]/route.ts` | `GET/PUT/DELETE /api/sale-modes/[id]` | Modo de venda por ID |
-| `api/product-tags/route.ts` | `GET/POST /api/product-tags` | Tags de produto |
-| `api/product-tags/assignments/route.ts` | `GET/POST /api/product-tags/assignments` | Atribuições de tags |
-
-### 4.5 Conciliação e mapeamentos
-
-| Arquivo | Rota da API | Uso principal |
-|---------|-------------|----------------|
-| `api/external-products/route.ts` | `GET /api/external-products` | Produtos externos |
-| `api/external-products/[id]/route.ts` | `GET /api/external-products/[id]` | Produto externo por ID |
-| `api/external-categories/route.ts` | `GET /api/external-categories` | Categorias externas |
-| `api/external-companies/route.ts` | `GET /api/external-companies` | Empresas externas |
-| `api/external-companies/[id]/route.ts` | `GET /api/external-companies/[id]` | Empresa externa por ID |
-| `api/external-employees/route.ts` | `GET /api/external-employees` | Funcionários externos |
-| `api/external-employees/[id]/route.ts` | `GET /api/external-employees/[id]` | Funcionário externo por ID |
-| `api/mappings/products/route.ts` | `GET/POST/DELETE /api/mappings/products` | Mapeamentos produto |
-| `api/mappings/categories/route.ts` | `GET/POST/DELETE /api/mappings/categories` | Mapeamentos categoria |
-| `api/mappings/companies/route.ts` | `GET/POST/DELETE /api/mappings/companies` | Mapeamentos empresa |
-| `api/mappings/employees/route.ts` | `GET/POST/DELETE /api/mappings/employees` | Mapeamentos funcionário |
-
-### 4.6 Compras / Matérias-primas e projeção
-
-| Arquivo | Rota da API | Uso principal |
-|---------|-------------|----------------|
-| `api/raw-materials/route.ts` | `GET/POST /api/raw-materials` | Matérias-primas |
-| `api/raw-materials/[id]/route.ts` | `GET/PUT/DELETE /api/raw-materials/[id]` | MP por ID |
-| `api/raw-materials/[id]/products/route.ts` | `GET /api/raw-materials/[id]/products` | Produtos da MP |
-| `api/raw-materials/[id]/stock/route.ts` | `GET /api/raw-materials/[id]/stock` | Estoque da MP |
-| `api/external-stock/route.ts` | `GET /api/external-stock` | Estoque externo |
-| `api/projection/raw-materials/route.ts` | `GET /api/projection/raw-materials` | Projeção MP |
-| `api/projection/resale/route.ts` | `GET /api/projection/resale` | Projeção revenda |
-
-### 4.7 NPS
-
-| Arquivo | Rota da API | Uso principal |
-|---------|-------------|----------------|
-| `api/nps/respostas/route.ts` | `GET /api/nps/respostas` | Respostas NPS |
-| `api/nps/pesquisas/route.ts` | `GET/POST /api/nps/pesquisas` | Pesquisas |
-| `api/nps/perguntas/route.ts` | `GET/POST /api/nps/perguntas` | Perguntas |
-| `api/nps/links/route.ts` | `GET/POST /api/nps/links` | Links |
-| `api/nps/links/qrcode/route.ts` | `GET /api/nps/links/qrcode` | QR Code do link |
-| `api/nps/opcoes-origem/route.ts` | `GET /api/nps/opcoes-origem` | Opções de origem |
-| `api/nps/dashboard/route.ts` | `GET /api/nps/dashboard` | Dashboard NPS |
-
-### 4.8 Power BI
-
-| Arquivo | Rota da API | Uso principal |
-|---------|-------------|----------------|
-| `api/powerbi/connections/route.ts` | `GET/POST /api/powerbi/connections` | Conexões |
-| `api/powerbi/connections/[id]/route.ts` | `GET/PUT/DELETE /api/powerbi/connections/[id]` | Conexão por ID |
-| `api/powerbi/connections/[id]/test/route.ts` | `POST /api/powerbi/connections/[id]/test` | Testar conexão |
-| `api/powerbi/sync/route.ts` | `POST /api/powerbi/sync` | Sincronizar |
-| `api/powerbi/sync-queue/route.ts` | `GET/POST /api/powerbi/sync-queue` | Fila de sincronização |
-| `api/powerbi/sync-queue/process/route.ts` | `POST /api/powerbi/sync-queue/process` | Processar fila |
-| `api/powerbi/sync-queue/test-query/route.ts` | `POST /api/powerbi/sync-queue/test-query` | Testar query |
-| `api/powerbi/sync-stats/route.ts` | `GET /api/powerbi/sync-stats` | Estatísticas de sync |
-| `api/powerbi/sync-configs/route.ts` | `GET/POST /api/powerbi/sync-configs` | Configs de sync |
-| `api/powerbi/sync-configs/[id]/route.ts` | `GET/PUT/DELETE /api/powerbi/sync-configs/[id]` | Config por ID |
-| `api/powerbi/sync-configs/[id]/clear-data/route.ts` | `POST .../clear-data` | Limpar dados da config |
-| `api/powerbi/schedules/route.ts` | `GET/POST /api/powerbi/schedules` | Agendamentos |
-| `api/powerbi/schedules/[id]/route.ts` | `GET/PUT/DELETE /api/powerbi/schedules/[id]` | Agendamento por ID |
-| `api/powerbi/cron/run-schedules/route.ts` | `POST /api/powerbi/cron/run-schedules` | Cron: executar agendamentos |
-| `api/powerbi/import-spreadsheet/route.ts` | `POST /api/powerbi/import-spreadsheet` | Importar planilha |
-
-### 4.9 Goomer
-
-| Arquivo | Rota da API | Uso principal |
-|---------|-------------|----------------|
-| `api/goomer/unidades/route.ts` | `GET /api/goomer/unidades` | Unidades Goomer |
-| `api/goomer/dashboard/route.ts` | `GET /api/goomer/dashboard` | Dashboard Goomer |
-| `api/goomer/import/route.ts` | `POST /api/goomer/import` | Importar Goomer |
-
-### 4.10 Usuários e autenticação
-
-| Arquivo | Rota da API | Uso principal |
-|---------|-------------|----------------|
-| `api/auth/login/route.ts` | `POST /api/auth/login` | Login |
-| `api/auth/change-password/route.ts` | `POST /api/auth/change-password` | Trocar senha |
-| `api/users/route.ts` | `GET/POST /api/users` | Usuários |
-| `api/users/[id]/route.ts` | `GET/PUT/DELETE /api/users/[id]` | Usuário por ID |
-| `api/users/[id]/permissions/route.ts` | `GET/PUT /api/users/[id]/permissions` | Permissões |
-| `api/users/[id]/change-password/route.ts` | `POST .../change-password` | Trocar senha do usuário |
-| `api/users/[id]/companies/route.ts` | `GET /api/users/[id]/companies` | Empresas do usuário |
-| `api/modules/route.ts` | `GET /api/modules` | Módulos (permissões) |
-
-### 4.11 Debug
-
-| Arquivo | Rota da API | Uso principal |
-|---------|-------------|----------------|
-| `api/debug/tereza/route.ts` | `GET/POST /api/debug/tereza` | Debug Tereza |
+**Filtro por empresa:** Ao selecionar empresa, o gráfico usa dados reais de `dailyRevenueByCompany`, não proporção.
 
 ---
 
-## 5. Previsão de vendas e projeções salvas
+### 3.2 Dashboard Empresa
 
-A tela **Previsão** (`/dashboard/previsao`) oferece:
+**Rota:** `/dashboard/empresa`  
+**API:** `GET /api/dashboard/company`
 
-- **Cenários:** Otimista, Realista e Pessimista (projeção de faturamento do mês com base em histórico).
-- **Meta da empresa:** Card com a meta de faturamento (fonte: `sales_goals`, `goal_type = company_revenue`) e barra de progresso realizado vs meta.
-- **Indicador por cenário:** Badge em cada card indicando se o valor do cenário bate ou não a meta (e quanto falta ou sobra).
-- **Linha da meta no gráfico:** No gráfico de Projeção Acumulada, uma linha tracejada indica a meta.
-- **Salvar projeção:** Botão para salvar a projeção atual (cenários + gráfico dia a dia + meta e realizado no momento). Dados gravados na tabela `saved_projections`.
-- **Acompanhamento:** Seção que lista as projeções salvas do período; ao selecionar uma, exibe comparação (realizado atual vs esperado pela projeção), gráfico Projeção Salva vs Realizado e tabela dia a dia com status por dia.
+**Fonte de dados:** `external_cash_flow`, metas em `sales_goals`
 
-**APIs:** `GET/POST /api/saved-projections` (listar/salvar), `DELETE /api/saved-projections/[id]` (soft delete). **Banco:** tabela `saved_projections` (migration `supabase/migrations/20260220_create_saved_projections.sql`).
+**Filtros:** `company_id`, `group_id`, `year`, `month`, `shift_filter`
 
----
-
-## 6. Outras pastas importantes
-
-| Pasta | Conteúdo |
-|-------|----------|
-| `src/components/` | Componentes React reutilizáveis (UI, formulários, etc.) |
-| `src/components/ui/` | Componentes de interface (Button, Input, Modal, etc.) |
-| `src/hooks/` | Hooks (ex: `useGroupFilter` para filtro de grupo no dashboard) |
-| `src/lib/` | Cliente Supabase, interceptors, utilitários |
-| `src/types/` | Interfaces e tipos TypeScript (index.ts) |
-| `scripts/` | Scripts SQL e de apoio (ex: check_goomer_banco.sql) |
+**Funcionalidades:**
+- Meta vs realizado de faturamento
+- Metas por turno (Almoço, Jantar)
+- Metas por modo de venda
+- Projeção de tendência (dias restantes)
+- Ticket médio e quantidade de vendas
 
 ---
 
-## 7. Convenções
+### 3.3 Dashboard Funcionário
 
-- **Telas:** uma pasta por rota, com `page.tsx` (e opcionalmente `layout.tsx`). Rotas dinâmicas usam `[param]`.
-- **APIs:** uma pasta por recurso, com `route.ts` exportando `GET`, `POST`, `PUT`, `PATCH` ou `DELETE`.
-- **Layout dashboard:** todas as rotas dentro de `(dashboard)` usam o mesmo layout (sidebar, filtro de grupo, etc.).
-- **Grupo de rotas:** pastas entre parênteses, como `(dashboard)`, não entram na URL (são apenas organização).
+**Rota:** `/dashboard/funcionario`  
+**API:** `GET /api/dashboard/employee`
+
+**Fonte de dados:** `external_sales` (vendas linha a linha)
+
+**Filtros:** `employee_id`, `group_id`, `year`, `month`
+
+**Funcionalidades:**
+- Meta vs realizado de faturamento
+- Ranking do funcionário na empresa
+- Metas de produtos (quantidade por produto)
+- Vendas diárias (gráfico de barras)
+- Faturamento mensal (últimos 12 meses)
+- Projeção de tendência (média dia útil vs fim de semana)
+
+**Mapeamento funcionário:** `employee_mappings` → `external_employees` (código externo)
+
+**Cálculos:**
+- Valor realizado = `SUM(total_value)` de `external_sales`
+- Vendas distintas = `COUNT(DISTINCT sale_uuid)` ou `venda_id`
+- Ticket médio = `SUM(total_value) / COUNT(DISTINCT sale_uuid)`
 
 ---
 
-*Documento gerado para o projeto meta10. Atualize este arquivo quando adicionar novas telas ou APIs.*
+### 3.4 Dashboard Equipe (Team)
 
-*Última atualização: Fevereiro 2026*
+**Rota:** `/dashboard/equipe` (ou similar)  
+**API:** `GET /api/dashboard/team`
+
+**Fonte de dados:** `external_sales`, metas
+
+**Funcionalidades:**
+- Ranking de funcionários por faturamento
+- Comparação entre funcionários da mesma empresa
+
+---
+
+### 3.5 Dashboard Previsão
+
+**Rota:** `/dashboard/previsao`  
+**API:** `GET /api/dashboard/previsao`
+
+**Fonte de dados:** Histórico de vendas, metas
+
+**Funcionalidades:**
+- Projeções otimista, realista e pessimista
+- Cenários "bate/não bate" meta
+- Salvar projeção e acompanhar vs realizado
+
+---
+
+### 3.6 Dashboard Financeiro
+
+**Rota:** `/dashboard-financeiro`  
+**API:** APIs de metas financeiras
+
+**Funcionalidades:**
+- Metas por categoria (entradas/saídas)
+- Responsáveis por meta
+
+---
+
+### 3.7 Resumo das APIs de Dashboard
+
+| API | Fonte Principal | Agregação |
+|-----|-----------------|-----------|
+| `/api/dashboard/realizado` | `external_cash_flow` | Por empresa, dia, modo, turno |
+| `/api/dashboard/company` | `external_cash_flow` | Por empresa, turno, modo |
+| `/api/dashboard/employee` | `external_sales` | Por funcionário, dia, produto |
+| `/api/dashboard/team` | `external_sales` | Por funcionário (ranking) |
+| `/api/dashboard/companies` | `companies` + mapeamentos | Lista empresas do grupo |
+
+---
+
+## 4. Fluxo de Dados
+
+### 4.1 Do Power BI ao Dashboard Realizado
+
+```
+Power BI (CaixaItem) 
+  → Sincronização (cash_flow)
+  → external_cash_flow (external_company_id, amount, transaction_date)
+  → company_mappings (company_id ↔ external_company_id)
+  → API realizado: agrupa por empresa, soma amount
+  → Gráfico + tabela
+```
+
+### 4.2 Do Power BI ao Dashboard Funcionário
+
+```
+Power BI (VendaItemGeral)
+  → Sincronização (sales)
+  → external_sales (external_employee_id, total_value, sale_date, sale_uuid)
+  → employee_mappings (employee_id ↔ external_employee_id)
+  → API employee: filtra por external_employee_id, SUM(total_value), COUNT(DISTINCT sale_uuid)
+  → Gráficos vendas diárias + faturamento mensal
+```
+
+### 4.3 Mapeamentos
+
+- **Empresa:** `companies` ↔ `external_companies` via `company_mappings`
+- **Funcionário:** `employees` ↔ `external_employees` via `employee_mappings` (código = external_id)
+- **Produto:** `products` ↔ `external_products` via `product_mappings` ou `external_product_id` (código)
+
+---
+
+## 5. Tabelas e Mapeamentos
+
+### 5.1 Tabelas External (Sincronizadas)
+
+| Tabela | Campos Principais |
+|--------|-------------------|
+| `external_sales` | company_group_id, external_id, external_company_id, external_employee_id, sale_date, total_value, sale_uuid, venda_id |
+| `external_cash_flow` | company_group_id, external_id, external_company_id, external_employee_id, transaction_date, amount, period |
+| `external_companies` | company_group_id, external_id, name |
+| `external_employees` | company_group_id, external_id, name |
+| `external_products` | company_group_id, external_id, name |
+| `external_stock` | company_group_id, external_product_id, external_company_id, quantity |
+
+### 5.2 Tabelas de Mapeamento
+
+| Tabela | Relaciona |
+|--------|-----------|
+| `company_mappings` | company_id ↔ external_company_id (UUID) |
+| `employee_mappings` | employee_id ↔ external_employee_id (UUID do external_employees) |
+| `external_employees` | external_id = código (ex: "001") usado em external_sales |
+| `external_companies` | external_id = código (ex: "01", "03") usado em external_cash_flow |
+
+### 5.3 Diferença: external_sales vs external_cash_flow
+
+- **external_sales:** Dados de **vendas** (itens de venda). Usado no dashboard de **funcionário** e **equipe**. Granularidade: linha de venda.
+- **external_cash_flow:** Dados de **caixa** (entradas/saídas). Usado no dashboard **realizado** e **empresa**. Granularidade: transação de caixa.
+
+Ambos podem coexistir. O dashboard realizado usa `external_cash_flow` por ser a fonte de faturamento consolidado por empresa/filial.
+
+---
+
+## Referências
+
+- **Sincronização detalhada:** `docs/SINCRONIZACAO_POWERBI_COMPLETA.md`
+- **Sincronização resumida:** `docs/SINCRONIZACAO_POWERBI.md`
+- **APIs e páginas:** `docs/SINCRONIZACAO_APIS_E_PAGINAS.md`
+
+---
+
+*Última atualização: Fevereiro 2025*

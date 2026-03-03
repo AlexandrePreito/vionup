@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, DragEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Package, Loader2, Link2, ChevronLeft, ChevronRight, Boxes, X, GripVertical, Check } from 'lucide-react';
-import { Button } from '@/components/ui';
+import { Button, Modal, Input } from '@/components/ui';
 import { RawMaterial, CompanyGroup, ExternalStock, Company, CompanyMapping, ExternalCompany } from '@/types';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
 
@@ -36,6 +36,16 @@ export default function ConciliacaoEstoquePage() {
 
   // Linking
   const [linking, setLinking] = useState(false);
+
+  // Modal de peso unitário (substitui prompt nativo)
+  const [pesoModalOpen, setPesoModalOpen] = useState(false);
+  const [pesoModalValue, setPesoModalValue] = useState('1');
+  const [pesoModalPayload, setPesoModalPayload] = useState<{
+    mode: 'link' | 'edit';
+    mpId: string;
+    stockId?: string;
+    linkId?: string;
+  } | null>(null);
 
 
   // Buscar matérias-primas com vínculos de estoque
@@ -185,31 +195,82 @@ export default function ConciliacaoEstoquePage() {
     });
   };
 
-  // Vincular estoque
-  const handleLink = async (mpId: string, stockId: string) => {
+  // Atualizar peso unitário do vínculo
+  const handleUpdatePesoUnitario = async (mpId: string, linkId: string, pesoUnitario: number) => {
     try {
-      setLinking(true);
       const res = await fetch(`/api/raw-materials/${mpId}/stock`, {
-        method: 'POST',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ external_stock_id: stockId })
+        body: JSON.stringify({ link_id: linkId, peso_unitario: pesoUnitario })
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        alert(data.error || 'Erro ao vincular');
-        return;
-      }
-
-      if (selectedGroupId) {
+      if (res.ok && selectedGroupId) {
         await fetchRawMaterials(selectedGroupId);
+      } else {
+        alert('Erro ao atualizar peso unitário');
       }
     } catch (error) {
-      console.error('Erro ao vincular:', error);
-      alert('Erro ao vincular estoque');
-    } finally {
-      setLinking(false);
+      console.error('Erro:', error);
     }
+  };
+
+  // Abrir modal de peso para vincular
+  const openPesoModalForLink = (mpId: string, stockId: string) => {
+    setPesoModalPayload({ mode: 'link', mpId, stockId });
+    setPesoModalValue('1');
+    setPesoModalOpen(true);
+  };
+
+  // Abrir modal de peso para editar
+  const openPesoModalForEdit = (mpId: string, linkId: string, currentPeso: number) => {
+    setPesoModalPayload({ mode: 'edit', mpId, linkId });
+    setPesoModalValue(String(currentPeso));
+    setPesoModalOpen(true);
+  };
+
+  // Confirmar peso no modal
+  const confirmPesoModal = async () => {
+    if (!pesoModalPayload) return;
+    const pesoUnitario = parseFloat(pesoModalValue.replace(',', '.'));
+    if (isNaN(pesoUnitario) || pesoUnitario <= 0) {
+      alert('Informe um valor válido maior que zero.');
+      return;
+    }
+
+    setPesoModalOpen(false);
+
+    if (pesoModalPayload.mode === 'link' && pesoModalPayload.stockId) {
+      try {
+        setLinking(true);
+        const res = await fetch(`/api/raw-materials/${pesoModalPayload.mpId}/stock`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            external_stock_id: pesoModalPayload.stockId,
+            peso_unitario: pesoUnitario
+          })
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          alert(data.error || 'Erro ao vincular');
+          return;
+        }
+        if (selectedGroupId) await fetchRawMaterials(selectedGroupId);
+      } catch (error) {
+        console.error('Erro ao vincular:', error);
+        alert('Erro ao vincular estoque');
+      } finally {
+        setLinking(false);
+      }
+    } else if (pesoModalPayload.mode === 'edit' && pesoModalPayload.linkId) {
+      await handleUpdatePesoUnitario(pesoModalPayload.mpId, pesoModalPayload.linkId, pesoUnitario);
+    }
+
+    setPesoModalPayload(null);
+  };
+
+  // Vincular estoque (abre modal para peso)
+  const handleLink = (mpId: string, stockId: string) => {
+    openPesoModalForLink(mpId, stockId);
   };
 
   // Remover vínculo
@@ -563,9 +624,25 @@ export default function ConciliacaoEstoquePage() {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                                    <span className="text-teal-600 font-medium whitespace-nowrap">
-                                      {formatNumberBR(linkedStock?.quantity)} {linkedStock?.unit || mp.unit}
-                                    </span>
+                                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                                      <span className="text-gray-400 text-xs whitespace-nowrap">
+                                        {formatNumberBR(linkedStock?.quantity)} {linkedStock?.unit || 'un'}
+                                      </span>
+                                      <span className="text-gray-400">→</span>
+                                      <span className="text-teal-600 font-medium whitespace-nowrap">
+                                        {formatNumberBR((linkedStock?.quantity || 0) * (link.peso_unitario ?? 1))} kg
+                                      </span>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openPesoModalForEdit(mp.id, link.id, link.peso_unitario ?? 1);
+                                        }}
+                                        className="text-blue-500 hover:text-blue-700 p-0.5"
+                                        title="Alterar peso por unidade"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                                      </button>
+                                    </div>
                                     <button
                                       onClick={() => handleRemoveLink(mp.id, link.id)}
                                       className="text-red-500 hover:text-red-700 p-0.5"
@@ -798,6 +875,56 @@ export default function ConciliacaoEstoquePage() {
           <span>Solte na matéria-prima do sistema para vincular</span>
         </div>
       )}
+
+      {/* Modal de peso unitário */}
+      <Modal
+        isOpen={pesoModalOpen}
+        onClose={() => {
+          setPesoModalOpen(false);
+          setPesoModalPayload(null);
+        }}
+        title={pesoModalPayload?.mode === 'edit' ? 'Alterar peso por unidade' : 'Peso por unidade/porção'}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Informe o peso em kg de cada unidade ou porção do estoque.
+          </p>
+          <div className="space-y-2">
+            <Input
+              type="text"
+              inputMode="decimal"
+              label="Peso (kg)"
+              placeholder="Ex: 0.6"
+              value={pesoModalValue}
+              onChange={(e) => setPesoModalValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && confirmPesoModal()}
+            />
+            <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+              <span className="bg-gray-100 px-2 py-1 rounded">0.6 = 600g</span>
+              <span className="bg-gray-100 px-2 py-1 rounded">0.3 = 300g</span>
+              <span className="bg-gray-100 px-2 py-1 rounded">1 = já em kg</span>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setPesoModalOpen(false);
+                setPesoModalPayload(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmPesoModal}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Salvar
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -23,14 +23,18 @@ export async function GET(request: NextRequest) {
     console.log('Filial:', companyId, 'Ano:', yearNum, 'Mês:', monthNum);
 
     // 1. Buscar empresa para obter company_group_id
-    const { data: company } = await supabaseAdmin
+    const { data: company, error: companyError } = await supabaseAdmin
       .from('companies')
       .select('id, name, company_group_id')
       .eq('id', companyId)
       .single();
 
     if (!company) {
-      return NextResponse.json({ error: 'Empresa não encontrada' }, { status: 404 });
+      console.error('Empresa não encontrada:', { companyId, dbError: companyError });
+      return NextResponse.json(
+        { error: 'Empresa não encontrada', company_id: companyId },
+        { status: 404 }
+      );
     }
 
     const companyGroupId = groupId || company.company_group_id;
@@ -147,7 +151,7 @@ export async function GET(request: NextRequest) {
             .gte('sale_date', startDate)
             .lte('sale_date', endDate)
             .or('sale_uuid.not.is.null,venda_id.not.is.null')
-            .order('sale_date', { ascending: true })
+            .order('id', { ascending: true })
             .range(from, to);
 
           if (salesError) {
@@ -258,7 +262,7 @@ export async function GET(request: NextRequest) {
             .in('external_employee_id', allCodes)
             .gte('sale_date', startDate)
             .lte('sale_date', endDate)
-            .order('sale_date', { ascending: true })
+            .order('id', { ascending: true })
             .range(pFrom, pTo);
 
           if (productRows && productRows.length > 0) {

@@ -260,11 +260,13 @@ function injectDateFilter(
   return `EVALUATE\nFILTER(\n  ${queryBody},\n  ${dateFilter}\n)`;
 }
 
-/** Extrai nome da tabela da query DAX (ex.: VendaItemGeral). */
+/** Extrai nome da tabela da query DAX (ex.: VendaItemGeral, CaixaItem). */
 function getTableNameFromDaxQuery(daxQuery: string): string {
   const tableMatch = daxQuery.match(/SUMMARIZECOLUMNS\s*\(\s*([^\[]+)\[/i) ||
     daxQuery.match(/FILTER\s*\(\s*'?([^'\[]+)'?\[/i) ||
-    daxQuery.match(/SELECTCOLUMNS\s*\(\s*([^\[]+)\[/i);
+    daxQuery.match(/SELECTCOLUMNS\s*\(\s*([^\[]+)\[/i) ||
+    daxQuery.match(/SUMMARIZE\s*\(\s*([^\s,[]+)\s*[,[]/i) ||
+    daxQuery.match(/ADDCOLUMNS\s*\(\s*SUMMARIZE\s*\(\s*([^\s,[]+)\s*[,[]/i);
   return tableMatch ? tableMatch[1].trim() : 'VendaItemGeral';
 }
 
@@ -613,7 +615,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<ProcessResult
         // Extrair nome da tabela da query original
         const tableMatch = daxQuery.match(/SUMMARIZECOLUMNS\s*\(\s*([^\[]+)\[/i) || 
                                         daxQuery.match(/FILTER\s*\(\s*'?([^'\[]+)'?\[/i) ||
-                                        daxQuery.match(/SELECTCOLUMNS\s*\(\s*([^\[]+)\[/i);
+                                        daxQuery.match(/SELECTCOLUMNS\s*\(\s*([^\[]+)\[/i) ||
+                                        daxQuery.match(/SUMMARIZE\s*\(\s*([^\s,[]+)\s*[,[]/i) ||
+                                        daxQuery.match(/ADDCOLUMNS\s*\(\s*SUMMARIZE\s*\(\s*([^\s,[]+)\s*[,[]/i);
         const tableName = tableMatch ? tableMatch[1].trim() : '';
         
         if (!tableName) {
@@ -841,10 +845,15 @@ TOPN(
       function generateExternalId(record: any, entityType: string, row: any): string {
         switch (entityType) {
           case 'cash_flow': {
-            // Prioridade 1: idCaixa do Power BI
+            // Prioridade 1: idCaixa do Power BI + empresa para garantir unicidade
             const idCaixa = row?.['CaixaItem[Idcaixa]'] || row?.['CaixaItem[idCaixa]'] || 
                             row?.['[Idcaixa]'] || row?.idCaixa || row?.['[idCaixa]'];
-            if (idCaixa) return String(idCaixa).trim().toLowerCase();
+            if (idCaixa) {
+              // Incluir empresa no ID para evitar colisão entre filiais
+              const empresa = record.external_company_id || 
+                              row?.['CaixaItem[Empresa]'] || row?.['[Empresa]'] || row?.Empresa || '';
+              return empresa ? `${String(idCaixa).trim()}-${String(empresa).trim()}`.toLowerCase() : String(idCaixa).trim().toLowerCase();
+            }
 
             // Prioridade 2: hash determinístico dos campos do registro
             const cfKey = JSON.stringify({
@@ -867,6 +876,34 @@ TOPN(
             // Fallback determinístico
             const cfsKey = JSON.stringify({ date, catId, companyId, amount: record.amount ?? 0 });
             return `cfs_${deterministicHash(cfsKey)}`;
+          }
+
+          case 'sales': {
+            // Usar venda_id + produto + empresa + funcionário + quantidade + valor
+            // Isso garante que o mesmo item de venda gera sempre o mesmo external_id
+            const vendaId = record.venda_id || record.sale_uuid || '';
+            const productId = record.external_product_id || '';
+            const companyId = record.external_company_id || '';
+            const employeeId = record.external_employee_id || '';
+            const qty = String(record.quantity ?? '');
+            const value = String(record.total_value ?? '');
+            
+            if (vendaId && productId) {
+              const salesKey = `${vendaId}|${productId}|${companyId}|${employeeId}|${qty}|${value}`;
+              return `sv_${deterministicHash(salesKey)}`;
+            }
+            
+            // Fallback: hash dos campos principais
+            const salesFallbackKey = JSON.stringify({
+              venda_id: vendaId,
+              product: productId,
+              company: companyId,
+              employee: employeeId,
+              date: record.sale_date || '',
+              qty,
+              value
+            });
+            return `sv_${deterministicHash(salesFallbackKey)}`;
           }
 
           default: {

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { 
   Users, 
   Loader2, 
+  RefreshCw,
   Target,
   TrendingUp,
   Award,
@@ -130,18 +131,24 @@ export default function DashboardEquipePage() {
 
   // Buscar dados da equipe
   const fetchTeamData = async () => {
-    if (!selectedCompany) return;
+    if (!selectedCompany || !selectedGroupId) return;
     
     setLoading(true);
     try {
-      const res = await fetch(
-        `/api/dashboard/team?company_id=${selectedCompany}&year=${selectedYear}&month=${selectedMonth}&group_id=${selectedGroupId}`
-      );
+      const url = `/api/dashboard/team?company_id=${selectedCompany}&year=${selectedYear}&month=${selectedMonth}&group_id=${selectedGroupId}`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setTeamData(data);
       } else {
-        console.error('Erro ao buscar dados da equipe');
+        const text = await res.text();
+        let errorData: Record<string, unknown> = {};
+        try {
+          errorData = text ? JSON.parse(text) : {};
+        } catch {
+          errorData = { raw: text?.slice(0, 200) || res.statusText };
+        }
+        console.error('Erro ao buscar dados da equipe:', res.status, url, errorData);
         setTeamData(null);
       }
     } catch (error) {
@@ -152,14 +159,15 @@ export default function DashboardEquipePage() {
     }
   };
 
-  // Buscar automaticamente quando filial ou período mudar
+  const handleRefresh = async () => {
+    if (!selectedCompany || !selectedGroupId) return;
+    await fetchTeamData();
+  };
+
+  // Ao trocar filtros, limpa os cards e aguarda clique em "atualizar"
   useEffect(() => {
-    if (selectedCompany) {
-      fetchTeamData();
-    } else {
-      setTeamData(null);
-    }
-  }, [selectedCompany, selectedYear, selectedMonth]);
+    setTeamData(null);
+  }, [selectedCompany, selectedYear, selectedMonth, selectedGroupId]);
 
   // Formatar valor em R$
   const formatCurrency = (value: number | null | undefined) => {
@@ -341,6 +349,20 @@ export default function DashboardEquipePage() {
               <option key={year} value={year}>{year}</option>
             ))}
           </select>
+        </div>
+
+        {/* Atualizar */}
+        <div className="w-full sm:w-auto">
+          <label className="block text-sm font-medium text-gray-700 mb-1 opacity-0">Atualizar</label>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={!selectedCompany || !selectedGroupId || loading}
+            title="Atualizar"
+            className="w-full sm:w-10 h-10 inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
 

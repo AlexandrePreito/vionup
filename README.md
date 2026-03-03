@@ -110,6 +110,12 @@ O sistema possui 3 níveis de permissão:
 - **Admin**: Administrador do grupo, acesso a configurações
 - **User**: Acesso apenas às empresas vinculadas
 
+## 📚 Documentação
+
+- **[Documentação do Sistema](docs/DOCUMENTACAO_SISTEMA.md)** — Sincronização Power BI e Dashboards (visão geral, fluxos, APIs)
+- **[Sincronização Power BI (completa)](docs/SINCRONIZACAO_POWERBI_COMPLETA.md)** — Detalhes técnicos da sincronização
+- **[Sincronização Power BI (resumo)](docs/SINCRONIZACAO_POWERBI.md)** — Status e configuração
+
 ## 📊 Banco de Dados
 
 O sistema utiliza Supabase (PostgreSQL) com as seguintes tabelas principais:
