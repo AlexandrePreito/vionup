@@ -381,7 +381,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
   // ========== LOADING ==========
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      <div className="nps-survey-page min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
         <div className="text-center">
           <Loader2 size={48} className="animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-gray-600">Carregando pesquisa...</p>
@@ -393,7 +393,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
   // ========== ERRO ==========
   if (error && !linkData) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center p-4">
+      <div className="nps-survey-page min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
           <AlertCircle size={64} className="text-red-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Oops!</h1>
@@ -407,7 +407,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
   if (success) {
     const perguntasParaResumo = getPerguntasParaExibir().filter((p) => !p.isConfirmacao);
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4 py-8">
+      <div className="nps-survey-page min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4 py-8">
         <div className="bg-white rounded-2xl shadow-xl p-8 max-w-2xl w-full">
           <div className="text-center mb-6">
             <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -468,7 +468,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
   const currentContent = getStepContent();
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6">
+    <div className="nps-survey-page min-h-screen bg-gray-100 p-4 sm:p-6">
       <div className="max-w-2xl mx-auto">
 
         {/* Card */}

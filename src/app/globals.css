@@ -25,7 +25,21 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Remove setas (spinners) de inputs numéricos - campo livre para números */
+/* Forçar tema claro na página pública da pesquisa NPS para todos verem texto preto */
+.nps-survey-page,
+.nps-survey-page input,
+.nps-survey-page textarea {
+  color: #171717 !important;
+}
+.nps-survey-page input::placeholder,
+.nps-survey-page textarea::placeholder {
+  color: #6b7280;
+}
+@media (prefers-color-scheme: dark) {
+  .nps-survey-page {
+    color-scheme: light;
+  }
+}
 input.no-spin-input::-webkit-outer-spin-button,
 input.no-spin-input::-webkit-inner-spin-button {
   -webkit-appearance: none !important;
