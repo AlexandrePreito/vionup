@@ -128,6 +128,23 @@ export async function GET(request: NextRequest) {
         employee
       };
 
+      // Buscar funcionários da filial (para cliente misterioso escolher o garçom)
+      let employeesList: any[] = [];
+      if (pesquisaBase.tipo === 'cliente_misterioso' && linkData.company_id) {
+        const { data: empData, error: empError } = await supabaseAdmin
+          .from('employees')
+          .select('id, name')
+          .eq('company_id', linkData.company_id)
+          .eq('is_active', true)
+          .order('name');
+
+        if (empError) {
+          console.error('Erro ao buscar funcionários:', empError);
+        } else {
+          employeesList = empData || [];
+        }
+      }
+
       // Buscar opções de origem (como conheceu)
       const { data: opcoesOrigem, error: origemError } = await supabaseAdmin
         .from('nps_opcoes_origem')
@@ -155,9 +172,10 @@ export async function GET(request: NextRequest) {
         // Continuar mesmo se houver erro
       }
 
-      return NextResponse.json({ 
-        link: linkDataComplete, 
-        opcoesOrigem: opcoesOrigem || [] 
+      return NextResponse.json({
+        link: linkDataComplete,
+        opcoesOrigem: opcoesOrigem || [],
+        employees: employeesList
       });
     }
 

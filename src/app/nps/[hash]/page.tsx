@@ -66,7 +66,9 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
   
   const [linkData, setLinkData] = useState<LinkData | null>(null);
   const [opcoesOrigem, setOpcoesOrigem] = useState<OpcaoOrigem[]>([]);
-  
+  const [employeesList, setEmployeesList] = useState<{ id: string; name: string }[]>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+
   // Form state
   const [step, setStep] = useState(1);
   const [nome, setNome] = useState('');
@@ -109,6 +111,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
         
         setLinkData(data.link);
         setOpcoesOrigem(data.opcoesOrigem || []);
+        setEmployeesList(data.employees || []);
       } catch (err: any) {
         console.error('Erro ao carregar link:', err);
         setError(err.message || 'Erro ao carregar o link');
@@ -163,11 +166,13 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
   // Calcular total de steps (nome + perguntas + frequência/como conheceu + comentário só se não houver pergunta texto)
   const getTotalSteps = () => {
     let steps = 1; // Nome
+    const ehClienteMisterioso = linkData?.pesquisa.tipo === 'cliente_misterioso';
+    if (ehClienteMisterioso) steps += 1; // Escolher garçom
     const perguntasParaExibir = getPerguntasParaExibir();
     steps += perguntasParaExibir.length;
     const ehCliente = linkData?.pesquisa.tipo === 'cliente';
-    if (ehCliente) steps += 2;
-    if (!hasPerguntaTexto()) steps += 1; // Comentário apenas quando não há pergunta de texto na pesquisa
+    if (ehCliente) steps += 2; // Frequência + Como conheceu
+    if (!hasPerguntaTexto()) steps += 1; // Comentário
     return steps;
   };
 
@@ -175,27 +180,39 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
   const getStepContent = () => {
     const perguntasParaExibir = getPerguntasParaExibir();
     const ehCliente = linkData?.pesquisa.tipo === 'cliente';
-    
+    const ehClienteMisterioso = linkData?.pesquisa.tipo === 'cliente_misterioso';
+
     if (step === 1) return 'nome';
-    
-    const stepInicioPerguntas = 2;
+
+    let nextStep = 2;
+
+    // Step de seleção de garçom (só para cliente misterioso)
+    if (ehClienteMisterioso) {
+      if (step === nextStep) return 'selecionar_garcom';
+      nextStep++;
+    }
+
+    const stepInicioPerguntas = nextStep;
     const stepFimPerguntas = stepInicioPerguntas + perguntasParaExibir.length - 1;
     if (step >= stepInicioPerguntas && step <= stepFimPerguntas) {
       return 'perguntas';
     }
-    
-    const stepFrequencia = stepFimPerguntas + 1;
-    const stepComoConheceu = stepFimPerguntas + 2;
-    if (ehCliente && step === stepFrequencia) return 'frequencia';
-    if (ehCliente && step === stepComoConheceu) return 'como_conheceu';
-    
+
+    nextStep = stepFimPerguntas + 1;
+
+    if (ehCliente && step === nextStep) return 'frequencia';
+    if (ehCliente) nextStep++;
+    if (ehCliente && step === nextStep) return 'como_conheceu';
+    if (ehCliente) nextStep++;
+
     return 'comentario';
   };
 
   // Obter a pergunta atual (para exibir uma por vez, na ordem da pesquisa)
   const getPerguntaAtual = () => {
     const perguntasParaExibir = getPerguntasParaExibir();
-    const stepInicioPerguntas = 2;
+    const ehClienteMisterioso = linkData?.pesquisa.tipo === 'cliente_misterioso';
+    const stepInicioPerguntas = ehClienteMisterioso ? 3 : 2;
     const indexPergunta = step - stepInicioPerguntas;
     if (indexPergunta >= 0 && indexPergunta < perguntasParaExibir.length) {
       return perguntasParaExibir[indexPergunta];
@@ -212,6 +229,8 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
         const telefoneLimpo = telefone.replace(/\D/g, '');
         return nome.trim().length >= 2 && telefoneLimpo.length >= 10;
       }
+      case 'selecionar_garcom':
+        return selectedEmployeeId !== null;
       case 'perguntas': {
         const perguntaAtual = getPerguntaAtual();
         if (!perguntaAtual) return false;
@@ -274,6 +293,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
     try {
       const payload = {
         link_hash: hash,
+        employee_id_override: selectedEmployeeId || null,
         nome_respondente: nome.trim(),
         telefone_respondente: telefone.replace(/\D/g, ''),
         nps_score: npsScoreToSend,
@@ -526,6 +546,58 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
                     className="w-full px-4 py-3.5 sm:py-4 border-0 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-base sm:text-lg bg-gray-50"
                   />
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== STEP: SELECIONAR GARÇOM (cliente misterioso) ===== */}
+          {currentContent === 'selecionar_garcom' && (
+            <div className="p-6 sm:p-8">
+              {linkData?.company && (
+                <div className="text-center mb-4">
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                    {linkData.company.name}
+                  </p>
+                </div>
+              )}
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm sm:text-base text-gray-600 font-medium">Pergunta {step} de {totalSteps}</span>
+                  <span className="text-sm sm:text-base font-semibold text-gray-600">{Math.round((step / totalSteps) * 100)}%</span>
+                </div>
+                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-orange-500 to-pink-500 rounded-full transition-all duration-500"
+                    style={{ width: `${(step / totalSteps) * 100}%` }}
+                  />
+                </div>
+              </div>
+              <div className="text-center mb-6">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+                  Quem te atendeu?
+                </h2>
+                <p className="text-sm sm:text-base text-gray-600">
+                  Selecione o garçom que realizou seu atendimento
+                </p>
+              </div>
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {employeesList.map((emp) => (
+                  <button
+                    key={emp.id}
+                    type="button"
+                    onClick={() => setSelectedEmployeeId(emp.id)}
+                    className={`w-full p-4 rounded-xl border-2 transition-all text-left flex items-center gap-3 ${
+                      selectedEmployeeId === emp.id
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
+                      <User size={20} className="text-gray-500" />
+                    </div>
+                    <span className="text-base font-medium">{emp.name}</span>
+                  </button>
+                ))}
               </div>
             </div>
           )}

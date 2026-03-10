@@ -105,7 +105,8 @@ export async function POST(request: NextRequest) {
       respostas_perguntas,
       confirmacoes_uso,
       dispositivo,
-      user_agent
+      user_agent,
+      employee_id_override
     } = body;
 
     console.log('Recebendo resposta NPS:', {
@@ -230,7 +231,7 @@ export async function POST(request: NextRequest) {
         pesquisa_id: link.pesquisa.id,
         link_id: link.id,
         company_id: link.company_id,
-        employee_id: link.employee_id,
+        employee_id: employee_id_override || link.employee_id,
         nome_respondente: nome_respondente.trim(),
         telefone_respondente: telefone_respondente?.trim() || null,
         nps_score,
