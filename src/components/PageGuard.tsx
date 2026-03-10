@@ -32,6 +32,12 @@ export function PageGuard({ children }: { children: React.ReactNode }) {
         '/dashboard/equipe',
         '/dashboard/funcionario',
         '/metas',
+        '/nps',
+        '/nps/pesquisas',
+        '/nps/perguntas',
+        '/nps/links',
+        '/nps/respostas',
+        '/nps/configuracoes',
         '/cadastros/produtos',
         '/cadastros/funcionarios'
       ];

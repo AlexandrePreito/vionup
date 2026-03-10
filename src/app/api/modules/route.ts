@@ -51,22 +51,30 @@ async function syncModulesAndPages() {
         .eq('route', page.route)
         .maybeSingle();
 
+      // name: slug da rota (ex: /dashboard/nps_interno -> dashboard_nps_interno)
+      const pageName = page.route.replace(/^\//, '').replace(/\//g, '_') || 'page';
+
       if (existingPage) {
         await supabaseAdmin
           .from('system_pages')
           .update({
             module_id: moduleId,
+            name: pageName,
             label: page.label,
             display_order: page.display_order,
           })
           .eq('id', existingPage.id);
       } else {
-        await supabaseAdmin.from('system_pages').insert({
+        const { error: insertErr } = await supabaseAdmin.from('system_pages').insert({
           module_id: moduleId,
+          name: pageName,
           route: page.route,
           label: page.label,
           display_order: page.display_order,
         });
+        if (insertErr) {
+          console.error('Erro ao inserir página:', page.route, page.label, insertErr);
+        }
       }
     }
   }

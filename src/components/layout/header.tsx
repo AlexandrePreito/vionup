@@ -23,7 +23,9 @@ export function Header() {
   const hasMetasAccess = canViewRoute('/metas');
   const hasComprasAccess = canViewRoute('/compras/materias-primas');
   const hasCadastrosAccess = canViewRoute('/cadastros/produtos');
-  const hasNPSAccess = canViewRoute('/nps');
+  const NPS_ROUTES = ['/nps', '/nps/pesquisas', '/nps/perguntas', '/nps/links', '/nps/respostas', '/nps/configuracoes'];
+  const hasNPSAccess = NPS_ROUTES.some((r) => canViewRoute(r));
+  const firstNPSRoute = NPS_ROUTES.find((r) => canViewRoute(r)) || '/nps';
   const hasConfigAccess = canViewRoute('/empresas') || canViewRoute('/usuarios') || canViewRoute('/grupos');
 
   useEffect(() => {
@@ -171,7 +173,7 @@ export function Header() {
 
           {/* NPS */}
           <button
-            onClick={() => { if (hasNPSAccess) { setActiveSection('nps'); router.push('/nps'); } }}
+            onClick={() => { if (hasNPSAccess) { setActiveSection('nps'); router.push(firstNPSRoute); } }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
               !hasNPSAccess
                 ? 'text-gray-400 bg-gray-50 cursor-not-allowed opacity-70'
