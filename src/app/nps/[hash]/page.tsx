@@ -503,7 +503,7 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
             <div className="p-6 sm:p-8">
               <div className="text-center mb-8">
                 <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-3">
-                  Pesquisa de Experiência
+                  {linkData?.pesquisa.tipo === 'cliente_misterioso' ? 'Cliente Misterioso' : 'Pesquisa de Experiência'}
                 </h1>
                 <p className="text-lg sm:text-xl font-semibold text-blue-600 mb-4">
                   Queremos saber sua opinião!
