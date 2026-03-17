@@ -28,7 +28,8 @@ import {
   FileText,
   X,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Trash2
 } from 'lucide-react';
 
 interface Resposta {
@@ -257,7 +258,30 @@ export default function RespostasNPSPage() {
     setSelectedResposta(null);
   };
 
-  // Exportar respostas para Excel
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  const handleDelete = async (id: string) => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/nps/respostas?id=${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setShowModal(false);
+        setSelectedResposta(null);
+        setConfirmDelete(null);
+        fetchRespostas();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Erro ao excluir resposta');
+      }
+    } catch (err) {
+      alert('Erro ao excluir resposta');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Exportar respostas para Excel (com comentário e média real)
   const exportarRespostas = () => {
     if (respostas.length === 0) return;
 
@@ -267,32 +291,38 @@ export default function RespostasNPSPage() {
       detrator: 'Detrator'
     };
 
-    const headers = ['Data', 'Nome', 'Telefone', 'Nota', 'Total', 'Tipo', 'Pesquisa', 'Funcionário', 'Empresa'];
-    const rows = respostas.map((resposta) => [
-      new Date(resposta.created_at).toLocaleDateString('pt-BR'),
-      resposta.nome_respondente,
-      resposta.telefone_respondente || '-',
-      resposta.nps_score,
-      5,
-      tipoNpsLabels[resposta.tipo_nps],
-      resposta.pesquisa?.nome || '-',
-      resposta.employee?.name || '-',
-      resposta.company?.name || '-'
-    ]);
+    const headers = ['Data', 'Nome', 'Telefone', 'Nota Média', 'Total', 'Tipo', 'Comentário', 'Pesquisa', 'Funcionário', 'Empresa'];
+    const rows = respostas.map((resposta) => {
+      const notas = resposta.respostas_perguntas?.filter(rp => rp.nota !== null).map(rp => rp.nota!) || [];
+      const media = notas.length > 0 ? Math.round((notas.reduce((a, b) => a + b, 0) / notas.length) * 10) / 10 : resposta.nps_score;
+
+      return [
+        new Date(resposta.created_at).toLocaleDateString('pt-BR'),
+        resposta.nome_respondente,
+        resposta.telefone_respondente || '-',
+        media,
+        5,
+        tipoNpsLabels[resposta.tipo_nps],
+        resposta.comentario || '-',
+        resposta.pesquisa?.nome || '-',
+        resposta.employee?.name || '-',
+        resposta.company?.name || '-'
+      ];
+    });
 
     const data = [headers, ...rows];
     const worksheet = XLSX.utils.aoa_to_sheet(data);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Respostas');
 
-    // Ajustar largura das colunas
     worksheet['!cols'] = [
       { wch: 12 }, // Data
       { wch: 25 }, // Nome
       { wch: 15 }, // Telefone
-      { wch: 8 },  // Nota
+      { wch: 12 }, // Nota Média
       { wch: 8 },  // Total
       { wch: 12 }, // Tipo
+      { wch: 50 }, // Comentário
       { wch: 30 }, // Pesquisa
       { wch: 25 }, // Funcionário
       { wch: 25 }  // Empresa
@@ -306,7 +336,7 @@ export default function RespostasNPSPage() {
     link.click();
   };
 
-  // Exportar perguntas e respostas para Excel
+  // Exportar perguntas e respostas para Excel (com comentário geral e "Não utilizou")
   const exportarPerguntas = () => {
     if (respostas.length === 0) return;
 
@@ -316,7 +346,7 @@ export default function RespostasNPSPage() {
       detrator: 'Detrator'
     };
 
-    const headers = ['Pergunta', 'Categoria', 'Resposta', 'Nota', 'Total', 'Data', 'Nome', 'Telefone', 'Tipo', 'Pesquisa', 'Funcionário', 'Empresa'];
+    const headers = ['Pergunta', 'Categoria', 'Resposta', 'Nota', 'Total', 'Data', 'Nome', 'Telefone', 'Tipo', 'Comentário Geral', 'Pesquisa', 'Funcionário', 'Empresa'];
     const rows: any[] = [];
 
     respostas.forEach((resposta) => {
@@ -325,12 +355,14 @@ export default function RespostasNPSPage() {
           let respostaTexto = '-';
           let nota = '-';
           let total = '-';
-          
-          if (rp.nota !== null) {
+
+          if (rp.confirmou_uso === false) {
+            respostaTexto = 'Não utilizou';
+          } else if (rp.nota !== null) {
             nota = String(rp.nota);
             total = String(5);
           }
-          
+
           if (rp.texto_resposta) {
             respostaTexto = rp.texto_resposta;
           }
@@ -345,6 +377,7 @@ export default function RespostasNPSPage() {
             resposta.nome_respondente,
             resposta.telefone_respondente || '-',
             tipoNpsLabels[resposta.tipo_nps],
+            resposta.comentario || '-',
             resposta.pesquisa?.nome || '-',
             resposta.employee?.name || '-',
             resposta.company?.name || '-'
@@ -363,17 +396,17 @@ export default function RespostasNPSPage() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Perguntas e Respostas');
 
-    // Ajustar largura das colunas
     worksheet['!cols'] = [
       { wch: 40 }, // Pergunta
       { wch: 20 }, // Categoria
-      { wch: 30 }, // Resposta
+      { wch: 40 }, // Resposta
       { wch: 8 },  // Nota
       { wch: 8 },  // Total
       { wch: 12 }, // Data
       { wch: 25 }, // Nome
       { wch: 15 }, // Telefone
       { wch: 12 }, // Tipo
+      { wch: 50 }, // Comentário Geral
       { wch: 30 }, // Pesquisa
       { wch: 25 }, // Funcionário
       { wch: 25 }  // Empresa
@@ -834,7 +867,13 @@ export default function RespostasNPSPage() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-1">
                           <Star size={16} className="text-yellow-400 fill-yellow-400" />
-                          <span className="text-sm font-medium text-gray-900">{resposta.nps_score}/5</span>
+                          <span className="text-sm font-medium text-gray-900">
+                          {(() => {
+                            const notas = resposta.respostas_perguntas?.filter(rp => rp.nota !== null).map(rp => rp.nota!) || [];
+                            const media = notas.length > 0 ? (notas.reduce((a, b) => a + b, 0) / notas.length) : resposta.nps_score;
+                            return `${Math.round(media * 10) / 10}/5`;
+                          })()}
+                        </span>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -906,7 +945,36 @@ export default function RespostasNPSPage() {
       >
         {selectedResposta && (
           <div className="space-y-4">
-            <div className="flex items-center justify-end mb-4">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                {confirmDelete === selectedResposta.id ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-red-600 font-medium">Tem certeza?</span>
+                    <button
+                      onClick={() => handleDelete(selectedResposta.id)}
+                      disabled={deleting}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                    >
+                      {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      Confirmar
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(null)}
+                      className="px-3 py-1.5 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmDelete(selectedResposta.id)}
+                    className="flex items-center gap-2 px-4 py-2 text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                  >
+                    <Trash2 size={16} />
+                    Excluir
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => {
                   setTimeout(handlePrint, 100);
@@ -940,10 +1008,20 @@ export default function RespostasNPSPage() {
                         <Star
                           key={i}
                           size={16}
-                          className={i < selectedResposta.nps_score ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}
+                          className={(() => {
+                            const notas = selectedResposta.respostas_perguntas?.filter(rp => rp.nota !== null).map(rp => rp.nota!) || [];
+                            const media = notas.length > 0 ? (notas.reduce((a, b) => a + b, 0) / notas.length) : selectedResposta.nps_score;
+                            return i < Math.round(media) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300';
+                          })()}
                         />
                       ))}
-                      <span className="font-medium ml-1">({selectedResposta.nps_score}/5)</span>
+                      <span className="font-medium ml-1">
+                        {(() => {
+                          const notas = selectedResposta.respostas_perguntas?.filter(rp => rp.nota !== null).map(rp => rp.nota!) || [];
+                          const media = notas.length > 0 ? (notas.reduce((a, b) => a + b, 0) / notas.length) : selectedResposta.nps_score;
+                          return `(${Math.round(media * 10) / 10}/5)`;
+                        })()}
+                      </span>
                     </div>
                   </div>
                   <div>

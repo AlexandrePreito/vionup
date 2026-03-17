@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useGroupFilter } from '@/hooks/useGroupFilter';
 import {
   Loader2,
@@ -12,10 +12,14 @@ import {
   Star,
   TrendingUp,
   Users,
+  User,
   ChevronDown,
   ChevronUp,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  Check,
+  ScanSearch,
+  X
 } from 'lucide-react';
 import {
   LineChart,
@@ -52,6 +56,7 @@ interface NPSData {
   }[];
   frequencia: { opcao: string; frequencia: number }[];
   origem: { opcao: string; icone: string; frequencia: number }[];
+  pesquisaCards: { id: string; nome: string; tipo: string; total: number }[];
 }
 
 const MONTHS = [
@@ -123,6 +128,22 @@ export default function DashboardNPSPage() {
   const [data, setData] = useState<NPSData | null>(null);
   const [commentFilter, setCommentFilter] = useState<'todos' | 'promotor' | 'neutro' | 'detrator'>('todos');
   const [showAllComments, setShowAllComments] = useState(false);
+  const [pesquisas, setPesquisas] = useState<{ id: string; nome: string; tipo: string }[]>([]);
+  const [selectedPesquisaIds, setSelectedPesquisaIds] = useState<string[]>([]);
+  const [pesquisaDropdownOpen, setPesquisaDropdownOpen] = useState(false);
+  const pesquisaDropdownRef = useRef<HTMLDivElement>(null);
+  const [evolucaoPor, setEvolucaoPor] = useState<'dia' | 'mes'>('dia');
+
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (pesquisaDropdownRef.current && !pesquisaDropdownRef.current.contains(event.target as Node)) {
+        setPesquisaDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Carregar empresas do grupo
   useEffect(() => {
@@ -181,6 +202,27 @@ export default function DashboardNPSPage() {
     fetchEmployees();
   }, [selectedCompanyId]);
 
+  // Carregar pesquisas do grupo
+  useEffect(() => {
+    const fetchPesquisas = async () => {
+      if (!selectedGroupId) {
+        setPesquisas([]);
+        setSelectedPesquisaIds([]);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/nps/pesquisas?group_id=${selectedGroupId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setPesquisas(data.pesquisas || []);
+        }
+      } catch (err) {
+        console.error('Erro ao buscar pesquisas:', err);
+      }
+    };
+    fetchPesquisas();
+  }, [selectedGroupId]);
+
   // Carregar dados NPS
   const fetchNPSData = async () => {
     if (!selectedGroupId) return;
@@ -190,6 +232,8 @@ export default function DashboardNPSPage() {
       let url = `/api/nps/dashboard?group_id=${selectedGroupId}&year=${selectedYear}&month=${selectedMonth}`;
       if (selectedCompanyId) url += `&company_id=${selectedCompanyId}`;
       if (selectedEmployeeId) url += `&employee_id=${selectedEmployeeId}`;
+      if (selectedPesquisaIds.length > 0) url += `&pesquisa_ids=${selectedPesquisaIds.join(',')}`;
+      url += `&evolucao_por=${evolucaoPor}`;
 
       const res = await fetch(url);
       if (res.ok) {
@@ -207,7 +251,7 @@ export default function DashboardNPSPage() {
     if (selectedGroupId) {
       fetchNPSData();
     }
-  }, [selectedGroupId, selectedCompanyId, selectedEmployeeId, selectedYear, selectedMonth]);
+  }, [selectedGroupId, selectedCompanyId, selectedEmployeeId, selectedYear, selectedMonth, selectedPesquisaIds, evolucaoPor]);
 
   // Filtrar comentários
   const filteredComments = data?.comentarios.filter(
@@ -292,6 +336,74 @@ export default function DashboardNPSPage() {
           </select>
         </div>
 
+        {/* Pesquisa (multi-select dropdown) */}
+        <div className="w-full sm:w-56 relative" ref={pesquisaDropdownRef}>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Pesquisa</label>
+          <button
+            type="button"
+            onClick={() => setPesquisaDropdownOpen((o) => !o)}
+            disabled={!selectedGroupId}
+            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-left flex items-center justify-between gap-2 focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="truncate">
+              {selectedPesquisaIds.length === 0
+                ? 'Todas'
+                : selectedPesquisaIds.length === 1
+                  ? pesquisas.find((p) => p.id === selectedPesquisaIds[0])?.nome ?? '1 pesquisa'
+                  : `${selectedPesquisaIds.length} pesquisas`}
+            </span>
+            <ChevronDown size={16} className={`flex-shrink-0 transition-transform ${pesquisaDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {pesquisaDropdownOpen && (
+            <div className="absolute z-50 mt-1 w-full min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-60 overflow-auto">
+              {pesquisas.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-gray-500">Nenhuma pesquisa</div>
+              ) : (
+                <>
+                  {pesquisas.map((p) => {
+                    const isSelected = selectedPesquisaIds.includes(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedPesquisaIds((prev) =>
+                            isSelected ? prev.filter((id) => id !== p.id) : [...prev, p.id]
+                          );
+                        }}
+                        className="w-full px-3 py-2.5 text-left text-sm flex items-center gap-3 hover:bg-gray-50 rounded mx-1"
+                      >
+                        <span
+                          className={`flex-shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
+                            isSelected
+                              ? 'bg-blue-600 border-blue-600'
+                              : 'bg-white border-gray-300'
+                          }`}
+                        >
+                          {isSelected && <Check size={12} className="text-white" strokeWidth={3} />}
+                        </span>
+                        <span className="truncate text-gray-800">{p.nome}</span>
+                      </button>
+                    );
+                  })}
+                  {selectedPesquisaIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPesquisaIds([])}
+                      className="w-full px-3 py-2.5 text-left text-sm text-gray-600 hover:bg-gray-100 border-t border-gray-100 flex items-center gap-2 rounded-b-lg"
+                    >
+                      <span className="flex-shrink-0 w-4 h-4 rounded border-2 border-gray-300 bg-white flex items-center justify-center">
+                        <X size={12} className="text-gray-400" />
+                      </span>
+                      Limpar seleção
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Mês */}
         <div className="w-full sm:w-40">
           <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
@@ -357,6 +469,48 @@ export default function DashboardNPSPage() {
       {/* Dashboard Content */}
       {!loading && data && (
         <div className="space-y-4 md:space-y-6">
+          {/* Cards por tipo de pesquisa (acima do NPS e distribuição) */}
+          {(data.pesquisaCards?.length ?? 0) > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {data.pesquisaCards.map((card) => (
+                <div
+                  key={card.id}
+                  className={`rounded-xl border shadow-sm p-4 flex items-center gap-4 transition-shadow hover:shadow-md ${
+                    card.tipo === 'cliente_misterioso'
+                      ? 'bg-purple-50 border-purple-200'
+                      : 'bg-blue-50 border-blue-200'
+                  }`}
+                >
+                  <div
+                    className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${
+                      card.tipo === 'cliente_misterioso'
+                        ? 'bg-purple-500 text-white'
+                        : 'bg-blue-500 text-white'
+                    }`}
+                  >
+                    {card.tipo === 'cliente_misterioso' ? (
+                      <ScanSearch size={24} />
+                    ) : (
+                      <User size={24} />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900 truncate" title={card.nome}>
+                      {card.nome}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {card.tipo === 'cliente_misterioso' ? 'Cliente Misterioso' : 'Pesquisa de Experiência'}
+                    </p>
+                    <p className="text-xl font-bold text-gray-900 mt-2">
+                      {card.total.toLocaleString()}
+                      <span className="text-sm font-normal text-gray-600 ml-1">respostas</span>
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Row 1: NPS Principal + Distribuição - em mobile: um abaixo do outro */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Card NPS Principal */}
@@ -517,18 +671,52 @@ export default function DashboardNPSPage() {
             {data.evolucao && data.evolucao.length > 0 && (
               <MobileExpandableCard
                 title="Evolução do NPS"
-                subtitle="Últimos meses"
+                subtitle={evolucaoPor === 'dia' ? `Por dia — ${MONTHS[data.periodo.month - 1]} ${data.periodo.year}` : `Por mês — ${data.periodo.year}`}
               >
-                <div className="pt-2">
+                <div className="flex justify-end mb-3">
+                  <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setEvolucaoPor('dia')}
+                      className={`px-3 py-1.5 text-xs font-medium transition-colors ${evolucaoPor === 'dia' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      Dia
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEvolucaoPor('mes')}
+                      className={`px-3 py-1.5 text-xs font-medium transition-colors ${evolucaoPor === 'mes' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      Mês
+                    </button>
+                  </div>
+                </div>
+                <div className="pt-0">
                   <div className="h-64 min-h-[256px] w-full min-w-0">
                     <ResponsiveContainer width="100%" height="100%" minHeight={256} minWidth={0}>
                       <LineChart data={data.evolucao}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="mesNome" stroke="#9ca3af" fontSize={12} />
-                        <YAxis domain={[-100, 100]} stroke="#9ca3af" fontSize={12} />
+                        <YAxis
+                          domain={(() => {
+                            const valores = data.evolucao.map((e) => e.nps_score).filter((v): v is number => v !== null && v !== undefined);
+                            if (valores.length === 0) return [-100, 100];
+                            const min = Math.min(...valores);
+                            const max = Math.max(...valores);
+                            const padding = Math.max(5, Math.round((max - min) * 0.15) || 5);
+                            const marginTop = max >= 100 ? 6 : 0;
+                            const marginBottom = min <= -100 ? 6 : 0;
+                            const yMin = Math.max(-100, min - padding) - marginBottom;
+                            const yMax = Math.min(100, max + padding) + marginTop;
+                            return [yMin, yMax];
+                          })()}
+                          stroke="#9ca3af"
+                          fontSize={12}
+                          allowDataOverflow
+                        />
                         <Tooltip
                           formatter={(value: any) => [value !== null ? value : 'N/A', 'NPS']}
-                          labelFormatter={(label) => `Mês: ${label}`}
+                          labelFormatter={(label) => evolucaoPor === 'dia' ? `Dia ${label}` : `Mês: ${label}`}
                         />
                         <Line
                           type="monotone"

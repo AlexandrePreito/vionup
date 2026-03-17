@@ -267,11 +267,15 @@ export default function ResponderNPSPage({ params }: { params: Promise<{ hash: s
     setError(null);
 
     const perguntasParaExibir = getPerguntasParaExibir();
-    const perguntaNPS = perguntasParaExibir.find(
-      (p) => !p.isConfirmacao && p.item.pergunta.tipo_resposta === 'estrelas' &&
-        (p.item.pergunta.texto?.toLowerCase().includes('recomendaria') || p.item.pergunta.categoria?.toLowerCase().includes('nps'))
-    ) || perguntasParaExibir.find((p) => !p.isConfirmacao && p.item.pergunta.tipo_resposta === 'estrelas');
-    const npsScoreToSend = perguntaNPS ? (respostasPerguntas[perguntaNPS.item.pergunta.id] ?? null) : null;
+    // Calcular NPS como média de todas as notas de estrelas
+    const todasNotasEstrelas = perguntasParaExibir
+      .filter((p) => !p.isConfirmacao && p.item.pergunta.tipo_resposta === 'estrelas')
+      .map((p) => respostasPerguntas[p.item.pergunta.id])
+      .filter((nota): nota is number => nota !== undefined && nota !== null);
+
+    const npsScoreToSend = todasNotasEstrelas.length > 0
+      ? Math.round((todasNotasEstrelas.reduce((sum, n) => sum + n, 0) / todasNotasEstrelas.length) * 10) / 10
+      : null;
 
     const respostasPerguntasPayload = new Map<string, { nota?: number; texto_resposta?: string }>();
     perguntasParaExibir.forEach(({ item, isConfirmacao }) => {

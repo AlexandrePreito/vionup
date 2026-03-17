@@ -9,6 +9,9 @@ export async function GET(request: NextRequest) {
     const employeeId = searchParams.get('employee_id');
     const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString());
     const month = parseInt(searchParams.get('month') || (new Date().getMonth() + 1).toString());
+    const tiposParam = searchParams.get('tipos');
+    const pesquisaIdsParam = searchParams.get('pesquisa_ids');
+    const evolucaoPor = (searchParams.get('evolucao_por') || 'dia') as 'dia' | 'mes';
 
     if (!groupId) {
       return NextResponse.json({ error: 'group_id é obrigatório' }, { status: 400 });
@@ -24,13 +27,25 @@ export async function GET(request: NextRequest) {
     const lastDay = new Date(year, month, 0).getDate();
     const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-    // Buscar pesquisas do grupo (tipo cliente)
-    const { data: pesquisas, error: pesquisasError } = await supabaseAdmin
+    // Buscar pesquisas do grupo (filtradas por tipo e/ou IDs específicos)
+    let pesquisaQuery = supabaseAdmin
       .from('nps_pesquisas')
-      .select('id')
+      .select('id, nome, tipo')
       .eq('company_group_id', groupId)
-      .eq('tipo', 'cliente')
       .eq('ativo', true);
+
+    if (pesquisaIdsParam) {
+      // Filtrar por pesquisas específicas
+      const ids = pesquisaIdsParam.split(',').filter(Boolean);
+      pesquisaQuery = pesquisaQuery.in('id', ids);
+    } else if (tiposParam) {
+      // Filtrar por tipos
+      const tipos = tiposParam.split(',').filter(Boolean);
+      pesquisaQuery = pesquisaQuery.in('tipo', tipos);
+    }
+    // Se nenhum filtro, traz todas (cliente + cliente_misterioso)
+
+    const { data: pesquisas, error: pesquisasError } = await pesquisaQuery;
 
     if (pesquisasError) {
       console.error('Erro ao buscar pesquisas:', pesquisasError);
@@ -41,8 +56,9 @@ export async function GET(request: NextRequest) {
 
     // Retorno vazio se não há pesquisas
     if (pesquisaIds.length === 0) {
-      return NextResponse.json({
-        periodo: { year, month },
+    return NextResponse.json({
+      periodo: { year, month },
+        pesquisaCards: [],
         nps: {
           score: 0,
           promotores: 0,
@@ -61,37 +77,54 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Buscar respostas do período
-    let query = supabaseAdmin
-      .from('nps_respostas')
-      .select(`
-        id, nps_score, frequencia_visita, como_conheceu_id, comentario, created_at,
-        company:companies (id, name),
-        employee:employees (id, name),
-        como_conheceu:nps_opcoes_origem (id, texto, icone),
-        respostas_perguntas:nps_respostas_perguntas (
-          nota,
-          pergunta:nps_perguntas (id, texto, categoria)
-        )
-      `)
-      .in('pesquisa_id', pesquisaIds)
-      .gte('created_at', startDate)
-      .lte('created_at', `${endDate}T23:59:59`);
+    // Buscar respostas do período (com paginação para não perder registros)
+    const baseQuery = () => {
+      let q = supabaseAdmin
+        .from('nps_respostas')
+        .select(`
+          id, pesquisa_id, nps_score, frequencia_visita, como_conheceu_id, comentario, created_at,
+          company:companies (id, name),
+          employee:employees (id, name),
+          como_conheceu:nps_opcoes_origem (id, texto, icone),
+          respostas_perguntas:nps_respostas_perguntas (
+            nota,
+            pergunta:nps_perguntas (id, texto, categoria)
+          )
+        `)
+        .in('pesquisa_id', pesquisaIds)
+        .gte('created_at', startDate)
+        .lte('created_at', `${endDate}T23:59:59`);
 
-    if (companyId) {
-      query = query.eq('company_id', companyId);
+      if (companyId) q = q.eq('company_id', companyId);
+      if (employeeId) q = q.eq('employee_id', employeeId);
+      return q;
+    };
+
+    const allRespostas: any[] = [];
+    const pageSize = 1000;
+    let page = 0;
+    let hasMore = true;
+
+    while (hasMore && page < 50) {
+      const { data: rows, error: err } = await baseQuery()
+        .order('created_at', { ascending: true })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (err) {
+        console.error('Erro ao buscar respostas:', err);
+        return NextResponse.json({ error: err.message }, { status: 500 });
+      }
+
+      if (rows && rows.length > 0) {
+        allRespostas.push(...rows);
+        hasMore = rows.length === pageSize;
+        page++;
+      } else {
+        hasMore = false;
+      }
     }
 
-    if (employeeId) {
-      query = query.eq('employee_id', employeeId);
-    }
-
-    const { data: respostas, error: respostasError } = await query;
-    
-    if (respostasError) {
-      console.error('Erro ao buscar respostas:', respostasError);
-      return NextResponse.json({ error: respostasError.message }, { status: 500 });
-    }
+    const respostas = allRespostas;
 
     // ========== CALCULAR NPS ==========
     const comNps = (respostas || []).filter((r: any) => r.nps_score !== null && r.nps_score !== undefined);
@@ -134,43 +167,70 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // ========== EVOLUÇÃO ÚLTIMOS 6 MESES ==========
-    const evolucao = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(year, month - 1 - i, 1);
-      const m = d.getMonth() + 1;
-      const y = d.getFullYear();
-      const start = `${y}-${String(m).padStart(2, '0')}-01`;
-      const lastDayOfMonth = new Date(y, m, 0).getDate();
-      const end = `${y}-${String(m).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
+    // ========== EVOLUÇÃO NPS ==========
+    // evolucao_por = 'dia' (padrão): por dia do mês filtrado | 'mes': por mês do ano filtrado (ignora mês)
+    const evolucao: { mes: string; mesNome: string; nps_score: number | null; total: number }[] = [];
 
-      let evolQuery = supabaseAdmin
-        .from('nps_respostas')
-        .select('nps_score')
-        .in('pesquisa_id', pesquisaIds)
-        .gte('created_at', start)
-        .lte('created_at', `${end}T23:59:59`)
-        .not('nps_score', 'is', null);
+    if (evolucaoPor === 'mes') {
+      // Por mês do ano selecionado (Jan a Dez do year)
+      for (let m = 1; m <= 12; m++) {
+        const start = `${year}-${String(m).padStart(2, '0')}-01`;
+        const lastDayOfMonth = new Date(year, m, 0).getDate();
+        const end = `${year}-${String(m).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
 
-      if (companyId) {
-        evolQuery = evolQuery.eq('company_id', companyId);
+        let evolQuery = supabaseAdmin
+          .from('nps_respostas')
+          .select('nps_score')
+          .in('pesquisa_id', pesquisaIds)
+          .gte('created_at', start)
+          .lte('created_at', `${end}T23:59:59`)
+          .not('nps_score', 'is', null);
+
+        if (companyId) evolQuery = evolQuery.eq('company_id', companyId);
+        if (employeeId) evolQuery = evolQuery.eq('employee_id', employeeId);
+
+        const { data: evolData } = await evolQuery.order('created_at', { ascending: true });
+        const prom = (evolData || []).filter((r: any) => r.nps_score >= 4).length;
+        const det = (evolData || []).filter((r: any) => r.nps_score <= 2).length;
+        const tot = (evolData || []).length;
+
+        evolucao.push({
+          mes: `${String(m).padStart(2, '0')}/${year}`,
+          mesNome: new Date(year, m - 1).toLocaleString('pt-BR', { month: 'short' }),
+          nps_score: tot > 0 ? Math.round(((prom - det) / tot) * 100) : null,
+          total: tot
+        });
       }
+    } else {
+      // Por dia do mês filtrado (padrão)
+      const lastDay = new Date(year, month, 0).getDate();
+      for (let day = 1; day <= lastDay; day++) {
+        const start = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const end = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T23:59:59`;
 
-      if (employeeId) {
-        evolQuery = evolQuery.eq('employee_id', employeeId);
+        let evolQuery = supabaseAdmin
+          .from('nps_respostas')
+          .select('nps_score')
+          .in('pesquisa_id', pesquisaIds)
+          .gte('created_at', start)
+          .lte('created_at', end)
+          .not('nps_score', 'is', null);
+
+        if (companyId) evolQuery = evolQuery.eq('company_id', companyId);
+        if (employeeId) evolQuery = evolQuery.eq('employee_id', employeeId);
+
+        const { data: evolData } = await evolQuery.order('created_at', { ascending: true });
+        const prom = (evolData || []).filter((r: any) => r.nps_score >= 4).length;
+        const det = (evolData || []).filter((r: any) => r.nps_score <= 2).length;
+        const tot = (evolData || []).length;
+
+        evolucao.push({
+          mes: `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`,
+          mesNome: String(day),
+          nps_score: tot > 0 ? Math.round(((prom - det) / tot) * 100) : null,
+          total: tot
+        });
       }
-
-      const { data: evolData } = await evolQuery;
-      const prom = (evolData || []).filter((r: any) => r.nps_score >= 4).length;
-      const det = (evolData || []).filter((r: any) => r.nps_score <= 2).length;
-      const tot = (evolData || []).length;
-
-      evolucao.push({
-        mes: `${String(m).padStart(2, '0')}/${y}`,
-        mesNome: new Date(y, m - 1).toLocaleString('pt-BR', { month: 'short' }),
-        nps_score: tot > 0 ? Math.round(((prom - det) / tot) * 100) : null,
-        total: tot
-      });
     }
 
     // ========== COMENTÁRIOS RECENTES ==========
@@ -236,9 +296,25 @@ export async function GET(request: NextRequest) {
       .map((o) => ({ opcao: o.texto, icone: o.icone, frequencia: o.count }))
       .sort((a, b) => b.frequencia - a.frequencia);
 
+    // ========== CARDS POR PESQUISA (quantidade de respostas por tipo) ==========
+    const countPorPesquisa: Record<string, number> = {};
+    (respostas || []).forEach((r: any) => {
+      const pid = r.pesquisa_id;
+      if (pid) {
+        countPorPesquisa[pid] = (countPorPesquisa[pid] || 0) + 1;
+      }
+    });
+    const pesquisaCards = (pesquisas || []).map((p: any) => ({
+      id: p.id,
+      nome: p.nome || 'Pesquisa',
+      tipo: p.tipo || 'cliente',
+      total: countPorPesquisa[p.id] || 0
+    }));
+
     // ========== RETORNO ==========
     return NextResponse.json({
       periodo: { year, month },
+      pesquisaCards,
       nps: {
         score: npsScore,
         promotores,
